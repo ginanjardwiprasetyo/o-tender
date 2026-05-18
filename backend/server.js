@@ -123,6 +123,18 @@ app.listen(PORT, async () => {
                 console.log('   Jalankan manual: node backend/scratch/run-migration.js');
             }
         }
+        
+        // Self-healing: Tambahkan kolom notifikasi di followed_tenders jika belum ada
+        try {
+            await db.query(`
+                ALTER TABLE followed_tenders ADD COLUMN IF NOT EXISTS notif_penjelasan_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE followed_tenders ADD COLUMN IF NOT EXISTS notif_upload_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE followed_tenders ADD COLUMN IF NOT EXISTS notif_pemenang_sent BOOLEAN DEFAULT FALSE;
+            `);
+            console.log('✅ Kolom notifikasi followed_tenders OK');
+        } catch (colErr) {
+            console.warn('⚠️ Gagal menambahkan kolom notifikasi followed_tenders:', colErr.message);
+        }
     }
 
     // Schedule Crawler (6 AM and 4 PM)
@@ -133,6 +145,15 @@ app.listen(PORT, async () => {
     cron.schedule('0 16 * * *', () => {
         console.log('Running scheduled crawl (4 PM)');
         crawler.crawlAllLPSE(new Date().getFullYear()).catch(e => console.error(e));
+    });
+
+    // Schedule WA notifications check for Followed Tenders (every 15 minutes)
+    const { checkAndSendNotifications } = require('./services/notif_scheduler');
+    console.log('⏰ [Scheduler] Memulai pengecekan awal notifikasi diikuti...');
+    checkAndSendNotifications().catch(e => console.error(e));
+    
+    cron.schedule('*/15 * * * *', () => {
+        checkAndSendNotifications().catch(e => console.error(e));
     });
 });
 

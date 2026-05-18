@@ -29,7 +29,12 @@ router.get('/', async (req, res) => {
 // PUT /api/settings
 router.put('/', async (req, res) => {
     try {
-        const allowedKeys = ['company_name', 'company_address', 'company_npwp', 'wa_api_key', 'wa_target_numbers', 'wa_target_sbu', 'crawl_lpse_targets', 'default_lpse'];
+        const allowedKeys = [
+            'company_name', 'company_address', 'company_npwp', 
+            'wa_api_key', 'wa_target_numbers', 'wa_target_sbu', 
+            'crawl_lpse_targets', 'default_lpse',
+            'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang'
+        ];
         const entries = Object.entries(req.body).filter(([key]) => allowedKeys.includes(key));
         
         for (const [key, value] of entries) {
@@ -40,6 +45,37 @@ router.put('/', async (req, res) => {
             );
         }
         res.json({ success: true, message: 'Pengaturan berhasil disimpan' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /api/settings/wa-groups — Fetch Fonnte WhatsApp Groups dynamically
+router.get('/wa-groups', async (req, res) => {
+    try {
+        const axios = require('axios');
+        const apiKey = req.query.apiKey;
+        if (!apiKey) {
+            return res.status(400).json({ success: false, error: 'API Key Fonnte diperlukan' });
+        }
+
+        // Trigger sync group Fonnte
+        await axios.post('https://api.fonnte.com/fetch-group', {}, {
+            headers: { 'Authorization': apiKey },
+            timeout: 5000
+        }).catch(err => console.log('[WA Sync Groups Info] Fetch-group skipped/failed:', err.message));
+
+        // Get groups from Fonnte
+        const response = await axios.post('https://api.fonnte.com/get-whatsapp-group', {}, {
+            headers: { 'Authorization': apiKey },
+            timeout: 5000
+        });
+
+        if (response.data && response.data.status && Array.isArray(response.data.data)) {
+            res.json({ success: true, data: response.data.data });
+        } else {
+            res.json({ success: true, data: [] });
+        }
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
