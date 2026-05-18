@@ -61,7 +61,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 });
 
-// DELETE /api/uploads — Menghapus berkas langsung dari Supabase Storage berdasarkan URL Publiknya
+// DELETE /api/uploads — Menghapus berkas dari Supabase Storage ATAU Local Storage berdasarkan URL-nya
 router.delete('/', async (req, res) => {
     try {
         const { url } = req.body;
@@ -69,24 +69,41 @@ router.delete('/', async (req, res) => {
             return res.status(400).json({ success: false, error: 'URL berkas wajib disertakan' });
         }
 
+        // 1. Coba hapus dari Supabase Storage jika merupakan URL Supabase
         const parts = url.split('/storage/v1/object/public/uploads/');
-        if (parts.length <= 1) {
-            return res.status(400).json({ success: false, error: 'URL berkas tidak valid untuk dihapus dari Supabase Storage' });
+        if (parts.length > 1) {
+            const filePath = decodeURIComponent(parts[1]);
+            console.log(`[Delete] Menghapus berkas dari Supabase Storage: ${filePath}`);
+
+            const { data, error } = await supabase.storage
+                .from('uploads')
+                .remove([filePath]);
+
+            if (error) {
+                console.error('[Delete Error Supabase]', error.message);
+                return res.status(500).json({ success: false, error: `Gagal menghapus dari Supabase: ${error.message}` });
+            }
+
+            return res.json({ success: true, message: 'Berkas berhasil dihapus dari Supabase storage' });
         }
 
-        const filePath = decodeURIComponent(parts[1]);
-        console.log(`[Delete] Menghapus berkas dari Supabase Storage: ${filePath}`);
-
-        const { data, error } = await supabase.storage
-            .from('uploads')
-            .remove([filePath]);
-
-        if (error) {
-            console.error('[Delete Error Supabase]', error.message);
-            return res.status(500).json({ success: false, error: `Gagal menghapus dari Supabase: ${error.message}` });
+        // 2. Coba hapus dari Local Storage (localhost) jika merupakan URL lokal
+        const localParts = url.split('/uploads/');
+        if (localParts.length > 1) {
+            const fs = require('fs');
+            const relativePath = decodeURIComponent(localParts[1]);
+            const absolutePath = path.join(__dirname, '..', 'uploads', relativePath);
+            
+            console.log(`[Delete Local] Menghapus berkas dari localhost disk: ${absolutePath}`);
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+                return res.json({ success: true, message: 'Berkas berhasil dihapus dari localhost' });
+            } else {
+                return res.status(404).json({ success: false, error: 'Berkas lokal tidak ditemukan di server' });
+            }
         }
 
-        res.json({ success: true, message: 'Berkas berhasil dihapus dari cloud storage' });
+        return res.status(400).json({ success: false, error: 'URL berkas tidak dikenali (bukan Supabase maupun Localhost)' });
     } catch (err) {
         console.error('[Server Delete Error]', err);
         res.status(500).json({ success: false, error: err.message });

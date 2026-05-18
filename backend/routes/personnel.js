@@ -9,15 +9,30 @@ const db = require('../config/db');
 async function deleteSupabaseFile(fileUrl) {
     if (!fileUrl) return;
     try {
+        // 1. Coba hapus sebagai file Supabase
         const parts = fileUrl.split('/storage/v1/object/public/uploads/');
         if (parts.length > 1) {
             const filePath = decodeURIComponent(parts[1]);
             const supabase = require('../config/supabase');
             await supabase.storage.from('uploads').remove([filePath]);
             console.log(`[Cleanup] File successfully deleted from Supabase Storage: ${filePath}`);
+            return;
+        }
+
+        // 2. Jika bukan Supabase, coba hapus sebagai file lokal localhost
+        const localParts = fileUrl.split('/uploads/');
+        if (localParts.length > 1) {
+            const fs = require('fs');
+            const path = require('path');
+            const relativePath = decodeURIComponent(localParts[1]);
+            const absolutePath = path.join(__dirname, '..', 'uploads', relativePath);
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath);
+                console.log(`[Cleanup Local] File successfully deleted from localhost: ${absolutePath}`);
+            }
         }
     } catch (e) {
-        console.error('[Cleanup Error] Gagal menghapus file Supabase:', e.message);
+        console.error('[Cleanup Error] Gagal menghapus file:', e.message);
     }
 }
 
