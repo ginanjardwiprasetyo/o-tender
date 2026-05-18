@@ -61,4 +61,36 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 });
 
+// DELETE /api/uploads — Menghapus berkas langsung dari Supabase Storage berdasarkan URL Publiknya
+router.delete('/', async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) {
+            return res.status(400).json({ success: false, error: 'URL berkas wajib disertakan' });
+        }
+
+        const parts = url.split('/storage/v1/object/public/uploads/');
+        if (parts.length <= 1) {
+            return res.status(400).json({ success: false, error: 'URL berkas tidak valid untuk dihapus dari Supabase Storage' });
+        }
+
+        const filePath = decodeURIComponent(parts[1]);
+        console.log(`[Delete] Menghapus berkas dari Supabase Storage: ${filePath}`);
+
+        const { data, error } = await supabase.storage
+            .from('uploads')
+            .remove([filePath]);
+
+        if (error) {
+            console.error('[Delete Error Supabase]', error.message);
+            return res.status(500).json({ success: false, error: `Gagal menghapus dari Supabase: ${error.message}` });
+        }
+
+        res.json({ success: true, message: 'Berkas berhasil dihapus dari cloud storage' });
+    } catch (err) {
+        console.error('[Server Delete Error]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;

@@ -6,11 +6,31 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+async function deleteSupabaseFile(fileUrl) {
+    if (!fileUrl) return;
+    try {
+        const parts = fileUrl.split('/storage/v1/object/public/uploads/');
+        if (parts.length > 1) {
+            const filePath = decodeURIComponent(parts[1]);
+            const supabase = require('../config/supabase');
+            await supabase.storage.from('uploads').remove([filePath]);
+            console.log(`[Cleanup] File successfully deleted from Supabase Storage: ${filePath}`);
+        }
+    } catch (e) {
+        console.error('[Cleanup Error] Gagal menghapus file Supabase:', e.message);
+    }
+}
+
 // ─── Sub-routes spesifik (HARUS di atas /:id) ────────────────
 
 // DELETE /api/personnel/education/:id
 router.delete('/education/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT ijazah_url FROM education_history WHERE id = $1', [req.params.id]);
+        if (rows[0] && rows[0].ijazah_url) {
+            await deleteSupabaseFile(rows[0].ijazah_url);
+        }
+
         const { rowCount } = await db.query('DELETE FROM education_history WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'Riwayat pendidikan berhasil dihapus' });
@@ -38,6 +58,11 @@ router.put('/experience/:id', async (req, res) => {
 // DELETE /api/personnel/experience/:id
 router.delete('/experience/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT surat_referensi_url FROM experience_history WHERE id = $1', [req.params.id]);
+        if (rows[0] && rows[0].surat_referensi_url) {
+            await deleteSupabaseFile(rows[0].surat_referensi_url);
+        }
+
         const { rowCount } = await db.query('DELETE FROM experience_history WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'Pengalaman kerja berhasil dihapus' });
@@ -49,6 +74,11 @@ router.delete('/experience/:id', async (req, res) => {
 // DELETE /api/personnel/ska/:id
 router.delete('/ska/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT file_url FROM personnel_ska WHERE id = $1', [req.params.id]);
+        if (rows[0] && rows[0].file_url) {
+            await deleteSupabaseFile(rows[0].file_url);
+        }
+
         const { rowCount } = await db.query('DELETE FROM personnel_ska WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'SKA berhasil dihapus' });
@@ -150,6 +180,27 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/personnel/:id
 router.delete('/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT foto_url, ktp_url, npwp_url, skk_url FROM personnel WHERE id = $1', [req.params.id]);
+        if (rows[0]) {
+            const p = rows[0];
+            const files = [p.foto_url, p.ktp_url, p.npwp_url, p.skk_url];
+            
+            // Mengambil semua URL berkas dari riwayat pendidikan, pengalaman, dan SKA
+            const [edu, exp, ska] = await Promise.all([
+                db.query('SELECT ijazah_url FROM education_history WHERE personnel_id = $1', [req.params.id]),
+                db.query('SELECT surat_referensi_url FROM experience_history WHERE personnel_id = $1', [req.params.id]),
+                db.query('SELECT file_url FROM personnel_ska WHERE personnel_id = $1', [req.params.id])
+            ]);
+            
+            edu.rows.forEach(r => { if (r.ijazah_url) files.push(r.ijazah_url); });
+            exp.rows.forEach(r => { if (r.surat_referensi_url) files.push(r.surat_referensi_url); });
+            ska.rows.forEach(r => { if (r.file_url) files.push(r.file_url); });
+            
+            for (const f of files) {
+                if (f) await deleteSupabaseFile(f);
+            }
+        }
+
         const { rowCount } = await db.query('DELETE FROM personnel WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'Data personil berhasil dihapus' });

@@ -104,6 +104,12 @@ const CompanyPage = {
                         <div style="width:80px; height:80px; border:2px dashed var(--border-color); border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-primary); position:relative; flex-shrink:0;">
                             <img id="prev-comp-logo" src="${Fmt.url(c.foto_logo_url || '')}" style="width:100%; height:100%; object-fit:contain; display:${c.foto_logo_url ? 'block' : 'none'};">
                             <i id="icon-comp-logo" data-lucide="building-2" style="width:24px; height:24px; color:var(--text-muted); display:${c.foto_logo_url ? 'none' : 'block'};"></i>
+                            
+                            <!-- Tombol X Hapus Logo -->
+                            <button id="del-comp-logo" type="button" onclick="CompanyPage.deleteImageField('f-comp-logo-url', 'prev-comp-logo', 'icon-comp-logo', 'del-comp-logo', event)" style="position:absolute; top:4px; right:4px; background:rgba(239,68,68,0.9); color:white; width:20px; height:20px; border-radius:50%; border:none; display:${c.foto_logo_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; font-size:10px; z-index:10;" title="Hapus Gambar">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+
                             <label for="f-comp-logo-file" style="position:absolute; bottom:0; right:0; background:var(--accent); color:white; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid white;">
                                 <i data-lucide="camera" style="width:12px; height:12px;"></i>
                             </label>
@@ -193,9 +199,15 @@ const CompanyPage = {
                     <div id="comp-kop-image-field" style="display:${c.kop_is_image ? 'block' : 'none'};">
                         <div class="form-group"><label class="form-label">Upload Gambar Kop Surat</label>
                             <input type="file" class="form-input" id="f-comp-kop-img-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-kop', 'icon-comp-kop')">
-                            <div style="margin-top:8px; width:100%; height:100px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden;">
+                            
+                            <div style="margin-top:8px; width:100%; height:100px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
                                 <img id="prev-comp-kop" src="${Fmt.url(c.kop_image_url || '')}" style="max-width:100%; max-height:90px; display:${c.kop_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-kop" style="font-size:0.75rem; color:var(--text-muted); display:${c.kop_image_url ? 'none' : 'block'};">Pratinjau Kop Surat</span>
+                                
+                                <!-- Tombol X Hapus Kop -->
+                                <button id="del-comp-kop" type="button" onclick="CompanyPage.deleteImageField('f-comp-kop-img-url', 'prev-comp-kop', 'icon-comp-kop', 'del-comp-kop', event)" style="position:absolute; top:6px; right:6px; background:rgba(239,68,68,0.9); color:white; width:22px; height:22px; border-radius:50%; border:none; display:${c.kop_image_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; z-index:10;" title="Hapus Kop Surat">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
                             </div>
                             <input type="hidden" id="f-comp-kop-img-url" value="${c.kop_image_url || ''}">
                         </div>
@@ -217,18 +229,31 @@ const CompanyPage = {
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Tanda Tangan Direktur</label>
                             <input type="file" class="form-input" id="f-comp-ttd-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-ttd', 'icon-comp-ttd')">
-                            <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden;">
+                            
+                            <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
                                 <img id="prev-comp-ttd" src="${Fmt.url(c.ttd_image_url || '')}" style="max-height:70px; display:${c.ttd_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-ttd" style="font-size:0.7rem; color:var(--text-muted); display:${c.ttd_image_url ? 'none' : 'block'};">TTD PNG</span>
+                                
+                                <!-- Tombol X Hapus Ttd -->
+                                <button id="del-comp-ttd" type="button" onclick="CompanyPage.deleteImageField('f-comp-ttd-url', 'prev-comp-ttd', 'icon-comp-ttd', 'del-comp-ttd', event)" style="position:absolute; top:4px; right:4px; background:rgba(239,68,68,0.9); color:white; width:20px; height:20px; border-radius:50%; border:none; display:${c.ttd_image_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; z-index:10;" title="Hapus Tanda Tangan">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
                             </div>
                             <input type="hidden" id="f-comp-ttd-url" value="${c.ttd_image_url || ''}">
                         </div>
+
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Cap/Stempel</label>
                             <input type="file" class="form-input" id="f-comp-cap-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-cap', 'icon-comp-cap')">
-                            <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden;">
+                            
+                            <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
                                 <img id="prev-comp-cap" src="${Fmt.url(c.cap_image_url || '')}" style="max-height:70px; display:${c.cap_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-cap" style="font-size:0.7rem; color:var(--text-muted); display:${c.cap_image_url ? 'none' : 'block'};">STAMP</span>
+                                
+                                <!-- Tombol X Hapus Cap -->
+                                <button id="del-comp-cap" type="button" onclick="CompanyPage.deleteImageField('f-comp-cap-url', 'prev-comp-cap', 'icon-comp-cap', 'del-comp-cap', event)" style="position:absolute; top:4px; right:4px; background:rgba(239,68,68,0.9); color:white; width:20px; height:20px; border-radius:50%; border:none; display:${c.cap_image_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; z-index:10;" title="Hapus Cap">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
                             </div>
                             <input type="hidden" id="f-comp-cap-url" value="${c.cap_image_url || ''}">
                         </div>
@@ -358,7 +383,7 @@ const CompanyPage = {
         }
     },
 
-    removeAttachment(idx) {
+    async removeAttachment(idx) {
         const dataInput = document.getElementById('f-comp-attachments-data');
         try {
             let atts = dataInput.value || '[]';
@@ -370,10 +395,19 @@ const CompanyPage = {
             }
             if (!Array.isArray(atts)) atts = [];
 
+            const targetAtt = atts[idx];
+            if (targetAtt && targetAtt.url) {
+                Toast.info('Menghapus berkas dari cloud storage...');
+                await API.deleteFile(targetAtt.url).catch(e => console.warn('Failed to delete file from Supabase:', e.message));
+            }
+
             atts.splice(idx, 1);
             dataInput.value = JSON.stringify(atts);
             this.renderAttachments();
-        } catch(e) {}
+            Toast.success('Dokumen berhasil dihapus');
+        } catch(e) {
+            Toast.error('Gagal menghapus dokumen: ' + e.message);
+        }
     },
 
     previewFile(input, imgId, iconId) {
@@ -384,8 +418,63 @@ const CompanyPage = {
                 const icon = document.getElementById(iconId);
                 if (img) { img.src = e.target.result; img.style.display = 'block'; }
                 if (icon) { icon.style.display = 'none'; }
+                
+                // Tampilkan tombol hapus instan
+                let btnId = '';
+                if (imgId === 'prev-comp-logo') btnId = 'del-comp-logo';
+                else if (imgId === 'prev-comp-kop') btnId = 'del-comp-kop';
+                else if (imgId === 'prev-comp-ttd') btnId = 'del-comp-ttd';
+                else if (imgId === 'prev-comp-cap') btnId = 'del-comp-cap';
+                
+                const btn = document.getElementById(btnId);
+                if (btn) btn.style.display = 'flex';
             };
             reader.readAsDataURL(input.files[0]);
+        }
+    },
+
+    async deleteImageField(urlInputId, imgId, iconId, btnId, event) {
+        if (event) event.preventDefault();
+        
+        // Cari input file terkait untuk dibersihkan
+        let fileInputId = '';
+        if (urlInputId === 'f-comp-logo-url') fileInputId = 'f-comp-logo-file';
+        else if (urlInputId === 'f-comp-kop-img-url') fileInputId = 'f-comp-kop-img-file';
+        else if (urlInputId === 'f-comp-ttd-url') fileInputId = 'f-comp-ttd-file';
+        else if (urlInputId === 'f-comp-cap-url') fileInputId = 'f-comp-cap-file';
+        
+        const fileInput = document.getElementById(fileInputId);
+        const urlInput = document.getElementById(urlInputId);
+        const url = urlInput ? urlInput.value : '';
+        
+        const resetUI = () => {
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+            
+            const img = document.getElementById(imgId);
+            const icon = document.getElementById(iconId);
+            const btn = document.getElementById(btnId);
+            
+            if (img) { img.src = ''; img.style.display = 'none'; }
+            if (icon) { icon.style.display = 'block'; }
+            if (btn) { btn.style.display = 'none'; }
+        };
+        
+        if (url) {
+            Modal.confirm('Hapus Berkas', 'Yakin ingin menghapus berkas ini secara permanen dari Supabase Storage?', async () => {
+                try {
+                    Toast.info('Menghapus berkas dari cloud storage...');
+                    await API.deleteFile(url);
+                    resetUI();
+                    Toast.success('Berkas berhasil dihapus secara permanen dari cloud!');
+                } catch (err) {
+                    Toast.error('Gagal menghapus berkas: ' + err.message);
+                }
+            });
+        } else {
+            // Berkas baru dipilih secara lokal tetapi belum diupload ke cloud
+            resetUI();
+            Toast.info('Pilihan berkas lokal dihapus.');
         }
     },
 

@@ -106,6 +106,9 @@ const API = {
         if (!json.success) throw new Error(json.error || 'Upload gagal');
         return json;
     },
+    deleteFile(url) {
+        return this.request('/uploads', { method: 'DELETE', body: { url } });
+    },
 
     // ─── Schedules ────────────────────────────────────
     getSchedules() { return this.request('/schedules'); },

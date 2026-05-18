@@ -100,18 +100,79 @@ const PersonnelPage = {
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Upload KTP (PDF/Image)</label>
-                    <input type="file" class="form-input" id="f-ktp" accept="image/*,.pdf">
-                    ${p.ktp_url ? `<a href="${p.ktp_url}" target="_blank" style="font-size:0.8rem; margin-top:4px; display:inline-block;">Lihat KTP tersimpan</a>` : ''}
+                    <input type="file" class="form-input" id="f-ktp" accept="image/*,.pdf" style="margin-bottom:6px;">
+                    <input type="hidden" id="f-ktp-url" value="${p.ktp_url || ''}">
+                    
+                    <div id="prev-ktp-container" style="display:${p.ktp_url ? 'flex' : 'none'}; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color); width:fit-content;">
+                        <i data-lucide="file" style="width:16px; height:16px; color:var(--text-muted);"></i>
+                        <a id="prev-ktp-link" href="${p.ktp_url || '#'}" target="_blank" style="font-size:0.8rem; font-weight:500;">Lihat KTP tersimpan</a>
+                        <button type="button" onclick="PersonnelPage.deleteFileField('${id || ''}', 'ktp_url', 'prev-ktp-container', event)" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem; border-radius:4px; display:inline-flex; align-items:center; gap:2px; height:20px; border:none; cursor:pointer;" title="Hapus KTP dari Cloud">
+                            <i data-lucide="x" style="width:10px; height:10px;"></i> Hapus
+                        </button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Upload NPWP (PDF/Image)</label>
-                    <input type="file" class="form-input" id="f-npwp" accept="image/*,.pdf">
-                    ${p.npwp_url ? `<a href="${p.npwp_url}" target="_blank" style="font-size:0.8rem; margin-top:4px; display:inline-block;">Lihat NPWP tersimpan</a>` : ''}
+                    <input type="file" class="form-input" id="f-npwp" accept="image/*,.pdf" style="margin-bottom:6px;">
+                    <input type="hidden" id="f-npwp-url" value="${p.npwp_url || ''}">
+                    
+                    <div id="prev-npwp-container" style="display:${p.npwp_url ? 'flex' : 'none'}; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color); width:fit-content;">
+                        <i data-lucide="file" style="width:16px; height:16px; color:var(--text-muted);"></i>
+                        <a id="prev-npwp-link" href="${p.npwp_url || '#'}" target="_blank" style="font-size:0.8rem; font-weight:500;">Lihat NPWP tersimpan</a>
+                        <button type="button" onclick="PersonnelPage.deleteFileField('${id || ''}', 'npwp_url', 'prev-npwp-container', event)" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem; border-radius:4px; display:inline-flex; align-items:center; gap:2px; height:20px; border:none; cursor:pointer;" title="Hapus NPWP dari Cloud">
+                            <i data-lucide="x" style="width:10px; height:10px;"></i> Hapus
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>`;
         const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><button class="btn btn-primary" onclick="PersonnelPage.save('${id || ''}')">Simpan</button>`;
         Modal.open(title, body, footer);
+        lucide.createIcons();
+    },
+
+    async deleteFileField(id, fieldKey, containerId, event) {
+        if (event) event.preventDefault();
+        
+        let fileInputId = fieldKey === 'ktp_url' ? 'f-ktp' : 'f-npwp';
+        let urlInputId = fieldKey === 'ktp_url' ? 'f-ktp-url' : 'f-npwp-url';
+        
+        const fileInput = document.getElementById(fileInputId);
+        const urlInput = document.getElementById(urlInputId);
+        const url = urlInput ? urlInput.value : '';
+        
+        const resetUI = () => {
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+            const container = document.getElementById(containerId);
+            if (container) container.style.display = 'none';
+        };
+        
+        if (url) {
+            Modal.confirm('Hapus Berkas', `Yakin ingin menghapus berkas ${fieldKey === 'ktp_url' ? 'KTP' : 'NPWP'} ini secara permanen dari Supabase Storage?`, async () => {
+                try {
+                    Toast.info('Menghapus berkas...');
+                    await API.deleteFile(url);
+                    resetUI();
+                    
+                    if (id) {
+                        const updateData = {};
+                        updateData[fieldKey] = null;
+                        await API.updatePersonnel(id, updateData);
+                        const index = this.data.findIndex(x => x.id === id);
+                        if (index !== -1) this.data[index][fieldKey] = null;
+                        this.renderList(this.data);
+                    }
+                    
+                    Toast.success('Berkas berhasil dihapus secara permanen!');
+                } catch (err) {
+                    Toast.error('Gagal menghapus berkas: ' + err.message);
+                }
+            });
+        } else {
+            resetUI();
+            Toast.info('Pilihan berkas lokal dihapus.');
+        }
     },
 
     async save(id) {
@@ -121,14 +182,22 @@ const PersonnelPage = {
         try {
             const ktpFile = document.getElementById('f-ktp').files[0];
             const npwpFile = document.getElementById('f-npwp').files[0];
-            let ktp_url = id ? (this.data.find(x => x.id === id).ktp_url) : null;
-            let npwp_url = id ? (this.data.find(x => x.id === id).npwp_url) : null;
+            let ktp_url = document.getElementById('f-ktp-url')?.value || null;
+            let npwp_url = document.getElementById('f-npwp-url')?.value || null;
 
             if (ktpFile) {
+                const oldKtp = id ? (this.data.find(x => x.id === id)?.ktp_url) : null;
+                if (oldKtp && oldKtp !== ktp_url) {
+                    await API.deleteFile(oldKtp).catch(err => console.warn('Failed to delete old KTP:', err.message));
+                }
                 const res = await API.uploadFile(ktpFile, 'personnel');
                 ktp_url = res.url;
             }
             if (npwpFile) {
+                const oldNpwp = id ? (this.data.find(x => x.id === id)?.npwp_url) : null;
+                if (oldNpwp && oldNpwp !== npwp_url) {
+                    await API.deleteFile(oldNpwp).catch(err => console.warn('Failed to delete old NPWP:', err.message));
+                }
                 const res = await API.uploadFile(npwpFile, 'personnel');
                 npwp_url = res.url;
             }

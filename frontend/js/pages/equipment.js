@@ -104,8 +104,16 @@ const EquipmentPage = {
             <div class="form-group"><label class="form-label">Bukti Kepemilikan (No. BPKB/Faktur)</label><input class="form-input" id="f-bukti" value="${Fmt.escape(item.bukti_kepemilikan || '')}"></div>
             <div class="form-group">
                 <label class="form-label">Upload Berkas Alat (PDF/Image)</label>
-                <input type="file" class="form-input" id="f-file" accept="image/*,.pdf">
-                ${item.file_url ? `<a href="${item.file_url}" target="_blank" style="font-size:0.8rem;margin-top:4px;display:inline-block;">Lihat berkas tersimpan</a>` : ''}
+                <input type="file" class="form-input" id="f-file" accept="image/*,.pdf" style="margin-bottom:6px;">
+                <input type="hidden" id="f-file-url" value="${item.file_url || ''}">
+                
+                <div id="prev-eq-file-container" style="display:${item.file_url ? 'flex' : 'none'}; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color); width:fit-content;">
+                    <i data-lucide="file-text" style="width:16px; height:16px; color:var(--text-muted);"></i>
+                    <a id="prev-eq-file-link" href="${item.file_url || '#'}" target="_blank" style="font-size:0.8rem; font-weight:500;">Lihat berkas tersimpan</a>
+                    <button type="button" onclick="EquipmentPage.deleteFileField('${id || ''}', event)" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem; border-radius:4px; display:inline-flex; align-items:center; gap:2px; height:20px; border:none; cursor:pointer;" title="Hapus Berkas dari Cloud">
+                        <i data-lucide="x" style="width:10px; height:10px;"></i> Hapus
+                    </button>
+                </div>
             </div>
         </div>
         `;
@@ -114,6 +122,46 @@ const EquipmentPage = {
             <button class="btn btn-primary" onclick="EquipmentPage.save('${id || ''}')">Simpan</button>
         `;
         Modal.open(title, body, footer);
+        lucide.createIcons();
+    },
+
+    async deleteFileField(id, event) {
+        if (event) event.preventDefault();
+        
+        const urlInput = document.getElementById('f-file-url');
+        const url = urlInput ? urlInput.value : '';
+        const fileInput = document.getElementById('f-file');
+        
+        const resetUI = () => {
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+            const container = document.getElementById('prev-eq-file-container');
+            if (container) container.style.display = 'none';
+        };
+        
+        if (url) {
+            Modal.confirm('Hapus Berkas', 'Yakin ingin menghapus berkas alat ini secara permanen dari Supabase Storage?', async () => {
+                try {
+                    Toast.info('Menghapus berkas...');
+                    await API.deleteFile(url);
+                    resetUI();
+                    
+                    if (id) {
+                        await API.updateEquipment(id, { file_url: null });
+                        const index = this.data.findIndex(x => x.id === id);
+                        if (index !== -1) this.data[index].file_url = null;
+                        this.renderTable(this.data);
+                    }
+                    
+                    Toast.success('Berkas berhasil dihapus secara permanen!');
+                } catch (err) {
+                    Toast.error('Gagal menghapus berkas: ' + err.message);
+                }
+            });
+        } else {
+            resetUI();
+            Toast.info('Pilihan berkas lokal dihapus.');
+        }
     },
 
     async save(id) {
@@ -122,9 +170,14 @@ const EquipmentPage = {
 
         try {
             const fileInput = document.getElementById('f-file');
-            let file_url = id ? (this.data.find(x => x.id === id).file_url) : null;
+            let file_url = document.getElementById('f-file-url')?.value || null;
 
             if (fileInput.files.length) {
+                const oldFile = id ? (this.data.find(x => x.id === id)?.file_url) : null;
+                if (oldFile && oldFile !== file_url) {
+                    await API.deleteFile(oldFile).catch(err => console.warn('Failed to delete old file:', err.message));
+                }
+                
                 const res = await API.uploadFile(fileInput.files[0], 'equipment');
                 file_url = res.url;
             }

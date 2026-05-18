@@ -5,6 +5,21 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+async function deleteSupabaseFile(fileUrl) {
+    if (!fileUrl) return;
+    try {
+        const parts = fileUrl.split('/storage/v1/object/public/uploads/');
+        if (parts.length > 1) {
+            const filePath = decodeURIComponent(parts[1]);
+            const supabase = require('../config/supabase');
+            await supabase.storage.from('uploads').remove([filePath]);
+            console.log(`[Cleanup] File successfully deleted from Supabase Storage: ${filePath}`);
+        }
+    } catch (e) {
+        console.error('[Cleanup Error] Gagal menghapus file Supabase:', e.message);
+    }
+}
+
 // GET /api/equipments
 router.get('/', async (req, res) => {
     try {
@@ -69,6 +84,11 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/equipments/:id
 router.delete('/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT file_url FROM equipments WHERE id = $1', [req.params.id]);
+        if (rows[0] && rows[0].file_url) {
+            await deleteSupabaseFile(rows[0].file_url);
+        }
+
         const { rowCount } = await db.query('DELETE FROM equipments WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'Data alat berhasil dihapus' });

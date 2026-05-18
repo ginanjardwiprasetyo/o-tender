@@ -5,6 +5,21 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+async function deleteSupabaseFile(fileUrl) {
+    if (!fileUrl) return;
+    try {
+        const parts = fileUrl.split('/storage/v1/object/public/uploads/');
+        if (parts.length > 1) {
+            const filePath = decodeURIComponent(parts[1]);
+            const supabase = require('../config/supabase');
+            await supabase.storage.from('uploads').remove([filePath]);
+            console.log(`[Cleanup] File successfully deleted from Supabase Storage: ${filePath}`);
+        }
+    } catch (e) {
+        console.error('[Cleanup Error] Gagal menghapus file Supabase:', e.message);
+    }
+}
+
 const FIELDS = [
     'nama_perusahaan', 'singkatan', 'direktur', 'nik_direktur', 'npwp_usaha', 
     'npwp_direktur', 'kbli', 'no_hp', 'email', 'website', 'alamat', 'kota', 
@@ -97,6 +112,27 @@ router.put('/:id', async (req, res) => {
 // DELETE company
 router.delete('/:id', async (req, res) => {
     try {
+        const { rows } = await db.query('SELECT * FROM companies WHERE id = $1', [req.params.id]);
+        if (rows[0]) {
+            const c = rows[0];
+            const filesToDelete = [
+                c.foto_logo_url, c.ttd_image_url, c.cap_image_url, c.kop_image_url
+            ];
+            
+            if (c.attachments) {
+                try {
+                    const atts = typeof c.attachments === 'string' ? JSON.parse(c.attachments) : c.attachments;
+                    if (Array.isArray(atts)) {
+                        atts.forEach(a => { if (a.url) filesToDelete.push(a.url); });
+                    }
+                } catch (e) { console.error('Failed to parse attachments for cleanup:', e.message); }
+            }
+
+            for (const f of filesToDelete) {
+                if (f) await deleteSupabaseFile(f);
+            }
+        }
+
         await db.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
