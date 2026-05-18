@@ -102,14 +102,14 @@ const CompanyPage = {
                     
                     <div style="display:flex; gap:16px; margin-bottom:16px;">
                         <div style="width:80px; height:80px; border:2px dashed var(--border-color); border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-primary); position:relative; flex-shrink:0;">
-                            <img id="prev-comp-logo" src="${Fmt.url(c.foto_logo_url || '')}" style="width:100%; height:100%; object-fit:contain; display:${c.foto_logo_url ? 'block' : 'none'};">
+                            <img id="prev-comp-logo" src="${c.foto_logo_url ? Fmt.url(c.foto_logo_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="width:100%; height:100%; object-fit:contain; display:${c.foto_logo_url ? 'block' : 'none'};">
                             <i id="icon-comp-logo" data-lucide="building-2" style="width:24px; height:24px; color:var(--text-muted); display:${c.foto_logo_url ? 'none' : 'block'};"></i>
                             
                             <!-- Tombol X Hapus Logo -->
                             <button id="del-comp-logo" type="button" onclick="CompanyPage.deleteImageField('f-comp-logo-url', 'prev-comp-logo', 'icon-comp-logo', 'del-comp-logo', event)" style="position:absolute; top:4px; right:4px; background:rgba(239,68,68,0.9); color:white; width:20px; height:20px; border-radius:50%; border:none; display:${c.foto_logo_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; font-size:10px; z-index:10;" title="Hapus Gambar">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                             </button>
-
+ 
                             <label for="f-comp-logo-file" style="position:absolute; bottom:0; right:0; background:var(--accent); color:white; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; border:2px solid white;">
                                 <i data-lucide="camera" style="width:12px; height:12px;"></i>
                             </label>
@@ -123,7 +123,7 @@ const CompanyPage = {
                             <div style="margin-top:6px; font-size:0.7rem; color:var(--text-muted);">Format: PT/CV. Nama Perusahaan</div>
                         </div>
                     </div>
-
+ 
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">Singkatan</label>
                             <input class="form-input" id="f-comp-singkatan" value="${Fmt.escape(c.singkatan||'')}" placeholder="PT. NP">
@@ -132,13 +132,13 @@ const CompanyPage = {
                             <input class="form-input" id="f-comp-kbli" value="${Fmt.escape(c.kbli||'')}" placeholder="41011, 42211">
                         </div>
                     </div>
-
+ 
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">Nama Direktur Utama</label>
                             <input class="form-input" id="f-comp-direktur" value="${Fmt.escape(c.direktur||'')}" placeholder="Nama Lengkap & Gelar">
                         </div>
                     </div>
-
+ 
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">NPWP Badan Usaha</label>
                             <input class="form-input" id="f-comp-npwp" value="${Fmt.escape(c.npwp_usaha||'')}" placeholder="00.000.000.0-000.000">
@@ -148,13 +148,13 @@ const CompanyPage = {
                         </div>
                     </div>
                 </section>
-
+ 
                 <section style="background:var(--bg-secondary); padding:20px; border-radius:12px; border:1px solid var(--border-color);">
                     <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
                         <i data-lucide="map-pin" style="width:18px; height:18px; color:var(--accent);"></i>
                         <span style="font-weight:700; font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">Kontak & Lokasi</span>
                     </div>
-
+ 
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">Email Kantor</label>
                             <input type="email" class="form-input" id="f-comp-email" value="${Fmt.escape(c.email||'')}" placeholder="info@perusahaan.com">
@@ -163,15 +163,15 @@ const CompanyPage = {
                             <input class="form-input" id="f-comp-hp" value="${Fmt.escape(c.no_hp||'')}" placeholder="081234567xxx">
                         </div>
                     </div>
-
+ 
                     <div class="form-group"><label class="form-label">Website</label>
                         <input class="form-input" id="f-comp-web" value="${Fmt.escape(c.website||'')}" placeholder="https://www.perusahaan.com">
                     </div>
-
+ 
                     <div class="form-group"><label class="form-label">Alamat Lengkap</label>
                         <textarea class="form-textarea" id="f-comp-alamat" rows="2" placeholder="Jl. Nama Jalan No. XX, Kelurahan, Kecamatan">${Fmt.escape(c.alamat||'')}</textarea>
                     </div>
-
+ 
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">Kota / Kabupaten</label>
                             <input class="form-input" id="f-comp-kota" value="${Fmt.escape(c.kota||'')}" placeholder="Surakarta">
@@ -182,7 +182,7 @@ const CompanyPage = {
                     </div>
                 </section>
             </div>
-
+ 
             <!-- KOLOM KANAN: KOP, TTD & LAMPIRAN -->
             <div style="display:flex; flex-direction:column; gap:20px;">
                 <section style="background:var(--bg-secondary); padding:20px; border-radius:12px; border:1px solid var(--border-color);">
@@ -195,13 +195,13 @@ const CompanyPage = {
                             <input type="checkbox" id="f-comp-kop-is-image" ${c.kop_is_image ? 'checked' : ''} onchange="document.getElementById('comp-kop-text-fields').style.display = this.checked ? 'none' : 'block'; document.getElementById('comp-kop-image-field').style.display = this.checked ? 'block' : 'none';"> Gunakan Gambar Kop
                         </label>
                     </div>
-
+ 
                     <div id="comp-kop-image-field" style="display:${c.kop_is_image ? 'block' : 'none'};">
                         <div class="form-group"><label class="form-label">Upload Gambar Kop Surat</label>
                             <input type="file" class="form-input" id="f-comp-kop-img-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-kop', 'icon-comp-kop')">
                             
                             <div style="margin-top:8px; width:100%; height:100px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-kop" src="${Fmt.url(c.kop_image_url || '')}" style="max-width:100%; max-height:90px; display:${c.kop_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-kop" src="${c.kop_image_url ? Fmt.url(c.kop_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-width:100%; max-height:90px; display:${c.kop_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-kop" style="font-size:0.75rem; color:var(--text-muted); display:${c.kop_image_url ? 'none' : 'block'};">Pratinjau Kop Surat</span>
                                 
                                 <!-- Tombol X Hapus Kop -->
@@ -212,7 +212,7 @@ const CompanyPage = {
                             <input type="hidden" id="f-comp-kop-img-url" value="${c.kop_image_url || ''}">
                         </div>
                     </div>
-
+ 
                     <div id="comp-kop-text-fields" style="display:${c.kop_is_image ? 'none' : 'block'};">
                         <div class="form-group"><label class="form-label">Nama di Kop</label>
                             <input class="form-input" id="f-comp-kop-nama" value="${Fmt.escape(c.kop_nama || '')}" placeholder="PT. CONTOH PERUSAHAAN UTAMA">
@@ -224,14 +224,14 @@ const CompanyPage = {
                             <input class="form-input" id="f-comp-kop-kontak" value="${Fmt.escape(c.kop_kontak || '')}" placeholder="Telp: (021) 123456 | Email: info@perusahaan.com">
                         </div>
                     </div>
-
+ 
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Tanda Tangan Direktur</label>
                             <input type="file" class="form-input" id="f-comp-ttd-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-ttd', 'icon-comp-ttd')">
                             
                             <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-ttd" src="${Fmt.url(c.ttd_image_url || '')}" style="max-height:70px; display:${c.ttd_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-ttd" src="${c.ttd_image_url ? Fmt.url(c.ttd_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.ttd_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-ttd" style="font-size:0.7rem; color:var(--text-muted); display:${c.ttd_image_url ? 'none' : 'block'};">TTD PNG</span>
                                 
                                 <!-- Tombol X Hapus Ttd -->
@@ -241,13 +241,13 @@ const CompanyPage = {
                             </div>
                             <input type="hidden" id="f-comp-ttd-url" value="${c.ttd_image_url || ''}">
                         </div>
-
+ 
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Cap/Stempel</label>
                             <input type="file" class="form-input" id="f-comp-cap-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-cap', 'icon-comp-cap')">
                             
                             <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-cap" src="${Fmt.url(c.cap_image_url || '')}" style="max-height:70px; display:${c.cap_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-cap" src="${c.cap_image_url ? Fmt.url(c.cap_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.cap_image_url ? 'block' : 'none'}; object-fit:contain;">
                                 <span id="icon-comp-cap" style="font-size:0.7rem; color:var(--text-muted); display:${c.cap_image_url ? 'none' : 'block'};">STAMP</span>
                                 
                                 <!-- Tombol X Hapus Cap -->
@@ -455,7 +455,10 @@ const CompanyPage = {
             const icon = document.getElementById(iconId);
             const btn = document.getElementById(btnId);
             
-            if (img) { img.src = ''; img.style.display = 'none'; }
+            if (img) { 
+                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; 
+                img.style.display = 'none'; 
+            }
             if (icon) { icon.style.display = 'block'; }
             if (btn) { btn.style.display = 'none'; }
         };
