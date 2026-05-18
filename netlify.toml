@@ -9,7 +9,7 @@
 [[redirects]]
   # Proxy otomatis untuk semua endpoint API ke Backend Server (Ganti URL dengan backend produksi Anda nanti)
   from = "/api/*"
-  to = "https://tenderbuild-backend.onrender.com"
+  to = "https://tenderbuild-backend.onrender.com/api/:splat"
   status = 200
   force = true
 
