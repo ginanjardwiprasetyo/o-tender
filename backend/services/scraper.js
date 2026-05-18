@@ -14,7 +14,15 @@ async function launchBrowser() {
             '--disable-blink-features=AutomationControlled',
             '--window-size=1366,768',
             '--disable-web-security',
-            '--disable-features=IsolateOrigins,site-per-process'
+            '--disable-features=IsolateOrigins,site-per-process',
+            // Ultra-low memory optimizations for 512MB RAM environment
+            '--single-process',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
+            '--no-first-run',
+            '--js-flags=--max-old-space-size=128'
         ],
     });
 }

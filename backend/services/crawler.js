@@ -109,23 +109,17 @@ class CrawlerService {
             this.status.totalLpse = lpseList.length;
             this.log(`Ditemukan ${lpseList.length} LPSE target. Mulai batch crawl tahun ${year}...`);
 
-            // 3. Process in batches to avoid overwhelming the API
-            const BATCH_SIZE = 5;
-            for (let i = 0; i < lpseList.length; i += BATCH_SIZE) {
-                const batch = lpseList.slice(i, i + BATCH_SIZE);
-                
-                await Promise.all(batch.map(async (lpse) => {
-                    try {
-                        await this.crawlSingleLPSE(lpse.kd_lpse, lpse.nama_lpse, year);
-                    } catch (err) {
-                        console.error(`[Crawler] Failed LPSE ${lpse.kd_lpse}:`, err.message);
-                    } finally {
-                        this.status.processedLpse++;
-                    }
-                }));
-
-                // Delay between batches
-                await new Promise(r => setTimeout(r, 1000));
+            // 3. Process sequentially to prevent OOM (Out Of Memory) on 512MB RAM free tier
+            for (const lpse of lpseList) {
+                try {
+                    await this.crawlSingleLPSE(lpse.kd_lpse, lpse.nama_lpse, year);
+                } catch (err) {
+                    console.error(`[Crawler] Failed LPSE ${lpse.kd_lpse}:`, err.message);
+                } finally {
+                    this.status.processedLpse++;
+                }
+                // Short delay between LPSE crawls to let garbage collection run
+                await new Promise(r => setTimeout(r, 800));
             }
 
             // 4. Run deep scan for missing SBU & deadlines
