@@ -14,9 +14,9 @@
   force = true
 
 [[redirects]]
-  # Proxy otomatis untuk semua file uploads ke Backend Server
+  # Proxy otomatis untuk semua file uploads langsung ke Supabase Storage Bucket
   from = "/uploads/*"
-  to = "https://tenderbuild-backend.onrender.com/uploads/:splat"
+  to = "https://xsrvztxlgaljgqpzovny.supabase.co/storage/v1/object/public/uploads/:splat"
   status = 200
   force = true
 
