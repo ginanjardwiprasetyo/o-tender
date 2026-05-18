@@ -8,14 +8,14 @@ ENV PORT=3000
 # Set direktori kerja di dalam container
 WORKDIR /app
 
-# Salin package.json dan package-lock.json terlebih dahulu
-COPY package*.json ./
+# Salin package.json dan package-lock.json terlebih dahulu dengan ownership pptruser
+COPY --chown=pptruser:pptruser package*.json ./
 
 # Instal dependensi produksi saja secara bersih
 RUN npm ci --only=production
 
-# Salin seluruh kode backend ke dalam container
-COPY . .
+# Salin seluruh kode backend ke dalam container dengan ownership pptruser
+COPY --chown=pptruser:pptruser . .
 
 # Jalankan aplikasi menggunakan user pptruser (aman bawaan Puppeteer image)
 CMD ["node", "server.js"]
