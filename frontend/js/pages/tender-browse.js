@@ -279,7 +279,12 @@ const TenderBrowsePage = {
             }
         } catch(e) {
             const textEl = document.getElementById('crawl-status-text');
-            if (textEl) textEl.innerHTML = `<span style="color:var(--danger);">Server tidak terhubung.</span> Pastikan backend berjalan di port 3000.`;
+            if (textEl) {
+                const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+                textEl.innerHTML = isLocal
+                    ? `<span style="color:var(--danger);">Server tidak terhubung.</span> Pastikan backend berjalan di port 3000.`
+                    : `<span style="color:var(--warning);"><span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Menghubungkan ke server...</span> Server Render sedang dibangunkan (Cold Start). Membutuhkan waktu 30-50 detik jika tertidur. Silakan tunggu lalu coba refresh halaman.`;
+            }
         }
     },
 
