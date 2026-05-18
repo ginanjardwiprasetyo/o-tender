@@ -58,7 +58,8 @@ const CompanyDetailPage = {
             <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
                 <div style="width:120px; height:120px; border-radius:12px; background:var(--bg-primary); display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px solid var(--border-color); flex-shrink:0;">
                     ${c.foto_logo_url 
-                        ? `<img src="${Fmt.url(c.foto_logo_url)}" style="width:100%;height:100%;object-fit:contain;">` 
+                        ? `<img src="${Fmt.url(c.foto_logo_url)}" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                           <i data-lucide="building-2" style="width:48px;height:48px;color:var(--text-muted);display:none;"></i>` 
                         : `<i data-lucide="building-2" style="width:48px;height:48px;color:var(--text-muted);"></i>`}
                 </div>
                 <div style="flex:1; min-width:300px;">
@@ -110,22 +111,29 @@ const CompanyDetailPage = {
                 <span style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:8px;">Kop Surat</span>
                 <div style="width:100%;min-height:60px;border:1px dashed var(--border-color);border-radius:8px;padding:12px;background:white;display:flex;align-items:center;justify-content:center;">
                     ${c.kop_is_image && c.kop_image_url 
-                        ? `<img src="${Fmt.url(c.kop_image_url)}" style="max-width:100%;max-height:120px;">` 
+                        ? `<img src="${Fmt.url(c.kop_image_url)}" style="max-width:100%;max-height:120px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                           <span style="font-size:0.75rem;color:var(--text-muted);display:none;">Belum dikonfigurasi</span>` 
                         : (c.kop_nama ? `<div style="text-align:center;"><strong>${c.kop_nama}</strong><br><small>${c.kop_alamat||''}</small></div>` : '<span style="font-size:0.7rem;color:var(--text-muted);">Belum dikonfigurasi</span>')}
                 </div>
             </div>
-
+ 
             <div style="margin-top:24px; border-top:1px solid var(--border-color); padding-top:20px; display:flex; gap:40px; flex-wrap:wrap;">
                 <div>
                     <span style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:8px;">Tanda Tangan</span>
                     <div style="width:160px;height:100px;border:1px dashed var(--border-color);border-radius:8px;display:flex;align-items:center;justify-content:center;background:white;">
-                        ${c.ttd_image_url ? `<img src="${Fmt.url(c.ttd_image_url)}" style="max-height:80px;max-width:140px;">` : '<span style="font-size:0.7rem;color:var(--text-muted);">Belum diupload</span>'}
+                        ${c.ttd_image_url 
+                            ? `<img src="${Fmt.url(c.ttd_image_url)}" style="max-height:80px;max-width:140px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                               <span style="font-size:0.7rem;color:var(--text-muted);display:none;">Belum diupload</span>` 
+                            : '<span style="font-size:0.7rem;color:var(--text-muted);">Belum diupload</span>'}
                     </div>
                 </div>
                 <div>
                     <span style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:8px;">Cap/Stempel</span>
                     <div style="width:160px;height:100px;border:1px dashed var(--border-color);border-radius:8px;display:flex;align-items:center;justify-content:center;background:white;">
-                        ${c.cap_image_url ? `<img src="${Fmt.url(c.cap_image_url)}" style="max-height:80px;max-width:140px;">` : '<span style="font-size:0.7rem;color:var(--text-muted);">Belum diupload</span>'}
+                        ${c.cap_image_url 
+                            ? `<img src="${Fmt.url(c.cap_image_url)}" style="max-height:80px;max-width:140px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                               <span style="font-size:0.7rem;color:var(--text-muted);display:none;">Belum diupload</span>` 
+                            : '<span style="font-size:0.7rem;color:var(--text-muted);">Belum diupload</span>'}
                     </div>
                 </div>
             </div>

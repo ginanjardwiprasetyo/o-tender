@@ -102,7 +102,7 @@ const CompanyPage = {
                     
                     <div style="display:flex; gap:16px; margin-bottom:16px;">
                         <div style="width:80px; height:80px; border:2px dashed var(--border-color); border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-primary); position:relative; flex-shrink:0;">
-                            <img id="prev-comp-logo" src="${c.foto_logo_url ? Fmt.url(c.foto_logo_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="width:100%; height:100%; object-fit:contain; display:${c.foto_logo_url ? 'block' : 'none'};">
+                            <img id="prev-comp-logo" src="${c.foto_logo_url ? Fmt.url(c.foto_logo_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="width:100%; height:100%; object-fit:contain; display:${c.foto_logo_url ? 'block' : 'none'};" onerror="this.style.display='none'; document.getElementById('icon-comp-logo').style.display='block';">
                             <i id="icon-comp-logo" data-lucide="building-2" style="width:24px; height:24px; color:var(--text-muted); display:${c.foto_logo_url ? 'none' : 'block'};"></i>
                             
                             <!-- Tombol X Hapus Logo -->
@@ -201,7 +201,7 @@ const CompanyPage = {
                             <input type="file" class="form-input" id="f-comp-kop-img-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-kop', 'icon-comp-kop')">
                             
                             <div style="margin-top:8px; width:100%; height:100px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-kop" src="${c.kop_image_url ? Fmt.url(c.kop_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-width:100%; max-height:90px; display:${c.kop_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-kop" src="${c.kop_image_url ? Fmt.url(c.kop_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-width:100%; max-height:90px; display:${c.kop_image_url ? 'block' : 'none'}; object-fit:contain;" onerror="this.style.display='none'; document.getElementById('icon-comp-kop').style.display='block';">
                                 <span id="icon-comp-kop" style="font-size:0.75rem; color:var(--text-muted); display:${c.kop_image_url ? 'none' : 'block'};">Pratinjau Kop Surat</span>
                                 
                                 <!-- Tombol X Hapus Kop -->
@@ -231,7 +231,7 @@ const CompanyPage = {
                             <input type="file" class="form-input" id="f-comp-ttd-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-ttd', 'icon-comp-ttd')">
                             
                             <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-ttd" src="${c.ttd_image_url ? Fmt.url(c.ttd_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.ttd_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-ttd" src="${c.ttd_image_url ? Fmt.url(c.ttd_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.ttd_image_url ? 'block' : 'none'}; object-fit:contain;" onerror="this.style.display='none'; document.getElementById('icon-comp-ttd').style.display='block';">
                                 <span id="icon-comp-ttd" style="font-size:0.7rem; color:var(--text-muted); display:${c.ttd_image_url ? 'none' : 'block'};">TTD PNG</span>
                                 
                                 <!-- Tombol X Hapus Ttd -->
@@ -247,7 +247,7 @@ const CompanyPage = {
                             <input type="file" class="form-input" id="f-comp-cap-file" accept="image/*" onchange="CompanyPage.previewFile(this, 'prev-comp-cap', 'icon-comp-cap')">
                             
                             <div style="margin-top:6px; height:80px; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; background:white; overflow:hidden; position:relative;">
-                                <img id="prev-comp-cap" src="${c.cap_image_url ? Fmt.url(c.cap_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.cap_image_url ? 'block' : 'none'}; object-fit:contain;">
+                                <img id="prev-comp-cap" src="${c.cap_image_url ? Fmt.url(c.cap_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:70px; display:${c.cap_image_url ? 'block' : 'none'}; object-fit:contain;" onerror="this.style.display='none'; document.getElementById('icon-comp-cap').style.display='block';">
                                 <span id="icon-comp-cap" style="font-size:0.7rem; color:var(--text-muted); display:${c.cap_image_url ? 'none' : 'block'};">STAMP</span>
                                 
                                 <!-- Tombol X Hapus Cap -->

@@ -97,10 +97,11 @@ router.delete('/', async (req, res) => {
             console.log(`[Delete Local] Menghapus berkas dari localhost disk: ${absolutePath}`);
             if (fs.existsSync(absolutePath)) {
                 fs.unlinkSync(absolutePath);
-                return res.json({ success: true, message: 'Berkas berhasil dihapus dari localhost' });
+                console.log(`[Delete Local] File physically unlinked: ${absolutePath}`);
             } else {
-                return res.status(404).json({ success: false, error: 'Berkas lokal tidak ditemukan di server' });
+                console.log(`[Delete Local] File was already missing from disk: ${absolutePath}`);
             }
+            return res.json({ success: true, message: 'Berkas berhasil dihapus dari localhost' });
         }
 
         return res.status(400).json({ success: false, error: 'URL berkas tidak dikenali (bukan Supabase maupun Localhost)' });
