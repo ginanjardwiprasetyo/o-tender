@@ -14,6 +14,13 @@
   force = true
 
 [[redirects]]
+  # Proxy otomatis untuk semua file uploads ke Backend Server
+  from = "/uploads/*"
+  to = "https://tenderbuild-backend.onrender.com/uploads/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   # Penanganan SPA Routing (mencegah 404 jika halaman direfresh di browser)
   from = "/*"
   to = "/index.html"
