@@ -33,7 +33,8 @@ router.put('/', async (req, res) => {
             'company_name', 'company_address', 'company_npwp', 
             'wa_api_key', 'wa_target_numbers', 'wa_target_sbu', 
             'crawl_lpse_targets', 'default_lpse',
-            'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang'
+            'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang',
+            'wa_target_group_id', 'wa_target_group_name'
         ];
         const entries = Object.entries(req.body).filter(([key]) => allowedKeys.includes(key));
         

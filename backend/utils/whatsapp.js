@@ -8,12 +8,20 @@ async function sendWhatsAppMessage(to, message) {
 
         // Fallback to db settings if env is missing
         if (!apiKey || !target) {
-            const { rows } = await db.query("SELECT key, value FROM settings WHERE key IN ('wa_api_key', 'wa_target_numbers')");
+            const { rows } = await db.query(
+                "SELECT key, value FROM settings WHERE key IN ('wa_api_key', 'wa_target_numbers', 'wa_target_group_id')"
+            );
             const settings = {};
             rows.forEach(r => settings[r.key] = r.value);
             
             apiKey = apiKey || settings['wa_api_key'];
-            target = target || settings['wa_target_numbers'];
+            
+            // Prioritaskan Group ID jika ada, kemudian nomor HP tujuan pribadi
+            if (!to) {
+                target = settings['wa_target_group_id'] || settings['wa_target_numbers'];
+            } else {
+                target = to;
+            }
         }
 
         if (!apiKey || !target) {

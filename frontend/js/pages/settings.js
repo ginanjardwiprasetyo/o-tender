@@ -2,6 +2,8 @@ const SettingsPage = {
     lpseList: [],
     selectedLpse: [],
     groupsList: [],
+    selectedGroupId: '',
+    selectedGroupName: '',
 
     async render() {
         return `
@@ -88,7 +90,7 @@ const SettingsPage = {
                 <div id="s-lpse-selected" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;"></div>
             </div>
 
-            <!-- Default Filter Card -->
+            <!-- Default LPSE Filter Card -->
             <div class="card" style="margin-bottom:24px; padding:28px;">
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
                     <div style="width:40px; height:40px; border-radius:10px; background:rgba(59,130,246,0.1); color:var(--accent); display:flex; align-items:center; justify-content:center;">
@@ -113,7 +115,7 @@ const SettingsPage = {
                     <h3 style="font-size:1.1rem; font-weight:700;">Integrasi Notifikasi WA</h3>
                 </div>
                 <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
-                    Data WhatsApp akan otomatis terisi dari konfigurasi server (<code>.env</code>) jika belum tersimpan di database.
+                    Data API Key dan nomor telepon akan otomatis terisi dari server (<code>.env</code>) jika belum tersimpan di database.
                 </p>
                 
                 <div class="form-row">
@@ -122,8 +124,9 @@ const SettingsPage = {
                         <input type="password" class="form-input" id="s-wakey" placeholder="API Key fonnte.com">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Nomor Tujuan / ID Grup WA</label>
-                        <input class="form-input" id="s-wanum" placeholder="628xxxxxxxxxx atau id_grup@g.us">
+                        <label class="form-label">Nomor Tujuan WA (Pribadi / HP)</label>
+                        <input class="form-input" id="s-wanum" placeholder="Contoh: 628xxxxxxxxxx">
+                        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Gunakan kode negara (62). Digunakan sebagai fallback jika tidak ada grup yang dipilih.</p>
                     </div>
                 </div>
 
@@ -131,14 +134,21 @@ const SettingsPage = {
                 <div class="form-group" style="position:relative; margin-top: 16px;">
                     <label class="form-label">Cari & Pilih Grup WA (Fonnte)</label>
                     <div style="display:flex; gap:8px;">
-                        <input type="text" class="form-input" id="s-wagroup-search" placeholder="Cari nama grup WA Anda di Fonnte..." autocomplete="off">
+                        <div style="position:relative; flex:1; display:flex; align-items:center;">
+                            <input type="text" class="form-input" id="s-wagroup-search" placeholder="Cari nama grup WA Anda di Fonnte..." autocomplete="off" style="padding-right:36px;">
+                            <button id="s-btn-clear-group" class="hidden" onclick="SettingsPage.clearGroupSelection(event)" style="position:absolute; right:10px; background:none; border:none; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Hapus grup terpilih">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                            </button>
+                        </div>
                         <button class="btn btn-secondary" style="padding:0 18px; font-size:0.85rem; display:flex; align-items:center; gap:6px; height:42px; border-radius:8px;" id="s-btn-sync-groups" onclick="SettingsPage.fetchGroups(event)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                             Sinkron Grup
                         </button>
                     </div>
                     <div id="s-wagroup-dropdown" class="tb-dropdown hidden" style="width:100%; top: calc(100% + 4px);"></div>
-                    <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Klik "Sinkron Grup" untuk memuat daftar grup WhatsApp dari akun Fonnte Anda.</p>
+                    <div id="s-wagroup-selected-info" style="margin-top:6px; font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+                        <span id="s-wagroup-info-text">Tidak ada grup WA yang dipilih (akan dikirim ke nomor HP pribadi).</span>
+                    </div>
                 </div>
 
                 <div class="form-group" style="margin-top: 16px;">
@@ -223,6 +233,11 @@ const SettingsPage = {
             document.getElementById('s-notif-upload').checked = data.wa_notif_upload !== 'false';
             document.getElementById('s-notif-pemenang').checked = data.wa_notif_pemenang !== 'false';
 
+            // Load saved Fonnte group selection
+            this.selectedGroupId = data.wa_target_group_id || '';
+            this.selectedGroupName = data.wa_target_group_name || '';
+            this.updateGroupUIState();
+
             if (data.crawl_lpse_targets) {
                 try {
                     this.selectedLpse = JSON.parse(data.crawl_lpse_targets);
@@ -276,6 +291,32 @@ const SettingsPage = {
         }
     },
 
+    updateGroupUIState() {
+        const input = document.getElementById('s-wagroup-search');
+        const clearBtn = document.getElementById('s-btn-clear-group');
+        const infoText = document.getElementById('s-wagroup-info-text');
+
+        if (!input) return;
+
+        if (this.selectedGroupId && this.selectedGroupName) {
+            input.value = this.selectedGroupName;
+            clearBtn.classList.remove('hidden');
+            infoText.innerHTML = `🟢 Grup aktif: <strong>${this.selectedGroupName}</strong> <span style="font-family:monospace; font-size:0.75rem;">(${this.selectedGroupId})</span>`;
+        } else {
+            input.value = '';
+            clearBtn.classList.add('hidden');
+            infoText.innerHTML = `Tidak ada grup WA yang dipilih (akan dikirim ke nomor HP pribadi).`;
+        }
+    },
+
+    clearGroupSelection(e) {
+        if (e) e.preventDefault();
+        this.selectedGroupId = '';
+        this.selectedGroupName = '';
+        this.updateGroupUIState();
+        Toast.info('Pilihan grup dihapus. Notifikasi dialihkan ke Nomor Tujuan Pribadi.');
+    },
+
     _showWAGroupsDropdown(q) {
         const dropdown = document.getElementById('s-wagroup-dropdown');
         if (!dropdown) return;
@@ -312,10 +353,12 @@ const SettingsPage = {
             const item = e.target.closest('.tb-dd-item');
             if (item) {
                 e.preventDefault();
-                document.getElementById('s-wanum').value = item.dataset.id;
-                input.value = item.dataset.name;
+                this.selectedGroupId = item.dataset.id;
+                this.selectedGroupName = item.dataset.name;
+                
+                this.updateGroupUIState();
                 dropdown.classList.add('hidden');
-                Toast.success(`Grup "${item.dataset.name}" terpilih sebagai Target WA!`);
+                Toast.success(`Grup "${item.dataset.name}" terpilih!`);
             }
         });
 
@@ -440,6 +483,8 @@ const SettingsPage = {
                 wa_notif_penjelasan: document.getElementById('s-notif-penjelasan').checked ? 'true' : 'false',
                 wa_notif_upload: document.getElementById('s-notif-upload').checked ? 'true' : 'false',
                 wa_notif_pemenang: document.getElementById('s-notif-pemenang').checked ? 'true' : 'false',
+                wa_target_group_id: this.selectedGroupId,
+                wa_target_group_name: this.selectedGroupName
             });
             Toast.success('Pengaturan berhasil disimpan');
         } catch(e) { Toast.error(e.message); }
@@ -448,10 +493,12 @@ const SettingsPage = {
     async testWA(e) {
         if (e) e.preventDefault();
         const apiKey = document.getElementById('s-wakey').value.trim();
-        const target = document.getElementById('s-wanum').value.trim();
+        
+        // Prioritaskan ID Grup yang dipilih jika ada, jika tidak gunakan nomor pribadi
+        const target = this.selectedGroupId || document.getElementById('s-wanum').value.trim();
         
         if (!apiKey || !target) {
-            Toast.error('API Key Fonnte dan Nomor Tujuan/ID Grup harus diisi untuk uji coba!');
+            Toast.error('API Key Fonnte dan Target (Nomor Pribadi atau Grup WA) harus diisi untuk uji coba!');
             return;
         }
 
