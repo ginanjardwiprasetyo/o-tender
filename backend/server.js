@@ -76,7 +76,16 @@ app.post('/api/db-migrate', async (req, res) => {
 // ─── SPA Fallback ─────────────────────────────────────────────
 app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
+        const indexPath = path.join(__dirname, '..', 'frontend', 'index.html');
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            res.json({ 
+                success: true, 
+                message: "TenderBuild API Server is running successfully.", 
+                timestamp: new Date().toISOString() 
+            });
+        }
     }
 });
 
