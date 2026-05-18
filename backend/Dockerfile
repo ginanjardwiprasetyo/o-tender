@@ -11,8 +11,8 @@ WORKDIR /app
 # Salin package.json dan package-lock.json terlebih dahulu dengan ownership pptruser
 COPY --chown=pptruser:pptruser package*.json ./
 
-# Instal dependensi produksi saja secara bersih
-RUN npm ci --only=production
+# Instal dependensi produksi secara aman
+RUN npm install --omit=dev
 
 # Salin seluruh kode backend ke dalam container dengan ownership pptruser
 COPY --chown=pptruser:pptruser . .
