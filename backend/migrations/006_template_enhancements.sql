@@ -1,0 +1,25 @@
+
+-- Add missing columns to templates (if any)
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_logo_url TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_nama TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_alamat TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_kontak TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS ttd_nama TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS ttd_jabatan TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS ttd_image_url TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS cap_image_url TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS paper_size VARCHAR(10) DEFAULT 'A4';
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS margin_top INT DEFAULT 25;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS margin_bottom INT DEFAULT 25;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS margin_left INT DEFAULT 30;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS margin_right INT DEFAULT 25;
+
+-- New features for templates
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_is_image BOOLEAN DEFAULT FALSE;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS kop_image_url TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS fit_layout BOOLEAN DEFAULT FALSE;
+
+-- New features for companies
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS ttd_image_url TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS cap_image_url TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS ttd_jabatan TEXT;

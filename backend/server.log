@@ -1,0 +1,16 @@
+
+> tenderbuild-backend@1.0.0 start
+> node server.js
+
+
+╔══════════════════════════════════════════════╗
+║   🏗️  TenderBuild Server v1.0.0              ║
+║   📍 http://localhost:3000                  ║
+║   🔧 Mode: development                  ║
+╚══════════════════════════════════════════════╝
+    
+✅ Database connected: 2026-05-15T03:32:36.952Z
+✅ Database tables OK
+[Scraper] Warming session via: https://spse.inaproc.id/banjarnegarakab/lelang?kategoriId=2
+[Scraper] Scraping pengumuman: https://spse.inaproc.id/banjarnegarakab/lelang/10130534000/pengumumanlelang
+[Scraper] Scraping jadwal: https://spse.inaproc.id/banjarnegarakab/lelang/10130534000/jadwal

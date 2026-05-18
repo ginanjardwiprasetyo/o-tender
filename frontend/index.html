@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TenderBuild — Sistem Otomasi Dokumen & Pengingat Jadwal Tender Konstruksi">
+    <title>TenderBuild — Manajemen Tender Konstruksi</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+
+<body class="light-theme" >
+    <!-- ─── App Shell ──────────────────────────────────────── -->
+    <div id="app" class="app-layout">
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-img">
+                        <img src="/img/logo.png" alt="TenderBuild" style="width:100%; height:100%; object-fit:contain;">
+                    </div>
+                    <div class="logo-text">
+                        <h1>oTender</h1>
+                        <span>Manajemen Tender</span>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <span class="nav-section-title">UTAMA</span>
+                    <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="#tender-browse" class="nav-item" data-page="tender-browse">
+                        <i data-lucide="search"></i>
+                        <span>Cari Tender LKPP</span>
+                    </a>
+                    <a href="#tender-manage" class="nav-item" data-page="tender-manage">
+                        <i data-lucide="folder-kanban"></i>
+                        <span>Tender Saya</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section-title">MASTER DATA</span>
+                    <a href="#company" class="nav-item" data-page="company">
+                        <i data-lucide="building-2"></i>
+                        <span>Perusahaan</span>
+                    </a>
+                    <a href="#equipment" class="nav-item" data-page="equipment">
+                        <i data-lucide="truck"></i>
+                        <span>Data Peralatan</span>
+                    </a>
+                    <a href="#personnel" class="nav-item" data-page="personnel">
+                        <i data-lucide="users"></i>
+                        <span>Data Personil</span>
+                    </a>
+                    <a href="#experience" class="nav-item" data-page="experience">
+                        <i data-lucide="briefcase"></i>
+                        <span>Pengalaman</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section-title">DOKUMEN</span>
+                    <a href="#documents" class="nav-item" data-page="documents">
+                        <i data-lucide="file-text"></i>
+                        <span>Surat</span>
+                    </a>
+                    <a href="#templates" class="nav-item" data-page="templates">
+                        <i data-lucide="layout"></i>
+                        <span>Template</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section-title">SISTEM</span>
+                    <a href="#settings" class="nav-item" data-page="settings">
+                        <i data-lucide="settings"></i>
+                        <span>Pengaturan</span>
+                    </a>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-footer-info">
+                    <i data-lucide="info"></i>
+                    <span>v1.0.0 — oTender</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Navbar -->
+            <header class="topbar">
+                <button id="sidebar-toggle" class="topbar-btn" aria-label="Toggle sidebar">
+                    <i data-lucide="menu"></i>
+                </button>
+                <div class="topbar-title" id="page-title">Dashboard</div>
+                <div class="topbar-actions">
+                    <div class="topbar-clock" id="topbar-clock"></div>
+                    <button class="topbar-btn" id="theme-toggle" aria-label="Toggle tema">
+                        <i data-lucide="moon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Page Content (dynamically rendered) -->
+            <div class="page-container" id="page-container">
+                <!-- Pages are injected here by the SPA router -->
+                <div class="page-loading">
+                    <div class="spinner"></div>
+                    <p>Memuat...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Modal Container -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <button class="modal-close" id="modal-close" aria-label="Tutup">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer" id="modal-footer"></div>
+        </div>
+    </div>
+
+    <!-- Background decoration removed for cleaner light UI -->
+
+    <!-- Scripts -->
+    <script src="/js/utils/formatter.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/components/toast.js"></script>
+    <script src="/js/components/modal.js"></script>
+    <script src="/js/pages/setup.js"></script>
+    <script src="/js/pages/dashboard.js"></script>
+    <script src="/js/pages/equipment.js"></script>
+    <script src="/js/pages/personnel.js"></script>
+    <script src="/js/pages/experience.js"></script>
+    <script src="/js/pages/company.js"></script>
+    <script src="/js/pages/company-detail.js"></script>
+    <script src="/js/pages/documents.js"></script>
+    <script src="/js/pages/templates.js"></script>
+    <script src="/js/pages/tender-browse.js"></script>
+    <script src="/js/pages/tender-manage.js"></script>
+    <script src="/js/pages/tender-detail.js"></script>
+    <script src="/js/pages/settings.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+
+</html>

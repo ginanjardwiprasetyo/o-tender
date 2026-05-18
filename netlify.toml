@@ -1,0 +1,20 @@
+# Netlify Configuration for o-tender / TenderBuild
+# Menentukan folder frontend sebagai base publikasi dan mengatur proxy API
+
+[build]
+  # Mengarahkan Netlify untuk mempublikasikan folder frontend saja
+  base = "frontend"
+  publish = "."
+
+[[redirects]]
+  # Proxy otomatis untuk semua endpoint API ke Backend Server (Ganti URL dengan backend produksi Anda nanti)
+  from = "/api/*"
+  to = "https://your-backend-api.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  # Penanganan SPA Routing (mencegah 404 jika halaman direfresh di browser)
+  from = "/*"
+  to = "/index.html"
+  status = 200
