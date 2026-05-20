@@ -327,11 +327,14 @@ async function scrapeTenderList(slug, year) {
 
 function parsePaguStr(raw) {
     if (!raw) return 0;
-    raw = String(raw).trim().replace(/\s+/g, ' ');
+    let s = String(raw).trim().replace(/\s+/g, ' ');
+    
+    // Remove "Rp", "Rp.", and any non-numeric prefix characters at the start
+    s = s.replace(/^rp\.?\s*/i, '');
     
     // Case 1: Has units like T, M, Jt, Rb
     // Regex matches numbers like "520,8 Jt" or "1.5 M"
-    const unitMatch = raw.match(/([\d,\.]+)\s*(T|M|Jt|Rb)\b/i);
+    const unitMatch = s.match(/([\d,\.]+)\s*(T|M|Jt|Rb)\b/i);
     if (unitMatch) {
         const num = parseFloat(unitMatch[1].replace(/\./g, '').replace(',', '.'));
         const unit = unitMatch[2].toLowerCase();
@@ -343,7 +346,7 @@ function parsePaguStr(raw) {
 
     // Case 2: Plain number with dots as thousands and comma as decimal (e.g. 520.800.000,00)
     // We remove dots, replace comma with dot
-    const plain = parseFloat(raw.replace(/\./g, '').replace(',', '.'));
+    const plain = parseFloat(s.replace(/\./g, '').replace(',', '.'));
     return isNaN(plain) ? 0 : Math.round(plain);
 }
 
@@ -453,29 +456,30 @@ async function scrapeMultiple(slug, kodes) {
                     let hps = '';
                     
                     document.querySelectorAll('table tr').forEach(row => {
-                        const th = row.querySelector('th');
-                        const td = row.querySelector('td');
-                        const cells = Array.from(row.querySelectorAll('td'));
-                        
-                        // Extract label and value
-                        let label = '';
-                        let value = '';
-                        
-                        if (th && td) {
-                            label = th.innerText.trim().toLowerCase();
-                            value = td.innerText.trim();
-                        } else if (cells.length >= 2) {
-                            label = cells[0].innerText.trim().toLowerCase();
-                            value = cells[cells.length - 1].innerText.trim();
+                        const cells = Array.from(row.querySelectorAll('th, td'));
+                        if (cells.length === 0) return;
+
+                        const pairs = [];
+                        if (cells.length === 2) {
+                            pairs.push({ label: cells[0].innerText.trim(), value: cells[1].innerText.trim() });
+                        } else if (cells.length >= 4) {
+                            for (let i = 0; i + 1 < cells.length; i += 2) {
+                                pairs.push({ label: cells[i].innerText.trim(), value: cells[i + 1].innerText.trim() });
+                            }
+                        } else if (cells.length === 3) {
+                            pairs.push({ label: cells[0].innerText.trim(), value: cells[2].innerText.trim() });
                         }
-                        
-                        if (label.includes('sbu') || label.includes('sertifikat badan usaha')) {
-                            sbu = value;
-                        } else if (label.includes('nilai pagu') || label.includes('pagu')) {
-                            pagu = value;
-                        } else if (label.includes('nilai hps') || label.includes('hps')) {
-                            hps = value;
-                        }
+
+                        pairs.forEach(({ label, value }) => {
+                            const lbl = label.toLowerCase();
+                            if (lbl.includes('sbu') || lbl.includes('sertifikat badan usaha')) {
+                                sbu = value;
+                            } else if (lbl.includes('nilai pagu') || lbl.includes('pagu')) {
+                                pagu = value;
+                            } else if (lbl.includes('nilai hps') || lbl.includes('hps')) {
+                                hps = value;
+                            }
+                        });
                     });
                     return { sbu, pagu, hps };
                 });
