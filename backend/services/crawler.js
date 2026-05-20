@@ -8,6 +8,18 @@ const { getSlug } = require('../utils/lpse-mapper');
 const { scrapeTender, scrapeTenderList, scrapeMultiple } = require('./scraper');
 const { normalizeDate } = require('../utils/date-formatter');
 
+const parseCurrency = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const str = String(val).trim();
+    if (/^-?[0-9]+(\.[0-9]+)?$/.test(str)) {
+        return Math.round(parseFloat(str));
+    }
+    let clean = str.replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '');
+    clean = clean.split(',')[0];
+    return parseInt(clean, 10) || 0;
+};
+
 class CrawlerService {
     constructor() {
         this.status = {
@@ -86,9 +98,10 @@ class CrawlerService {
             const { data: allLpse } = await axios.get('https://isb.lkpp.go.id/isb-2/api/satudata/MasterLPSE', { timeout: 30000 });
             
             // Read targets from settings
-            const { rows: settings } = await db.query("SELECT key, value FROM settings WHERE key IN ('crawl_lpse_targets', 'wa_target_sbu')");
+            const { rows: settings } = await db.query("SELECT key, value FROM settings WHERE key IN ('crawl_lpse_targets', 'wa_target_sbu', 'wa_target_max_hps')");
             let targets = [];
             this.status.waTargetSbu = [];
+            this.status.waTargetMaxHps = 0;
             this.status.newTendersMap = {};
             
             for (const row of settings) {
@@ -97,6 +110,9 @@ class CrawlerService {
                 }
                 if (row.key === 'wa_target_sbu' && row.value) {
                     this.status.waTargetSbu = row.value.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(s => s);
+                }
+                if (row.key === 'wa_target_max_hps' && row.value) {
+                    this.status.waTargetMaxHps = parseInt(row.value) || 0;
                 }
             }
             
@@ -186,10 +202,39 @@ class CrawlerService {
                 if (kode) combined.set(kode, t);
             });
             
-            // Add/Overwrite with Scraped results (scraped often has more up-to-date status)
+            // Merge with Scraped results (scraped often has more up-to-date status)
             scrapedTenders.forEach(t => {
                 const kode = String(t['Kode Tender'] || t.kode_tender || '');
-                if (kode) combined.set(kode, t);
+                if (kode) {
+                    if (combined.has(kode)) {
+                        const apiTender = combined.get(kode);
+                        
+                        // Parse pagu and hps from both sources to ensure we don't save 0 or lose data
+                        const apiPagu = parseCurrency(apiTender.Pagu || apiTender.pagu);
+                        const apiHps = parseCurrency(apiTender.HPS || apiTender.hps);
+                        
+                        const scrapedPagu = parseCurrency(t.Pagu || t.pagu);
+                        const scrapedHps = parseCurrency(t.HPS || t.hps);
+                        
+                        // LKPP API has actual separate Pagu and HPS. Scraped only has HPS (which was stored in Pagu and HPS).
+                        // Prefer API values if they are > 0, otherwise use scraped.
+                        const finalPagu = apiPagu > 0 ? apiPagu : scrapedPagu;
+                        const finalHps = apiHps > 0 ? apiHps : scrapedHps;
+
+                        combined.set(kode, {
+                            ...apiTender,
+                            ...t,
+                            // Ensure Pagu and HPS are correctly resolved
+                            'Pagu': finalPagu,
+                            'HPS': finalHps,
+                            // Retain specific API objects/arrays
+                            'lokasi_paket': apiTender.lokasi_paket || t.lokasi_paket,
+                            'Instansi dan Satker': apiTender['Instansi dan Satker'] || t['Instansi dan Satker']
+                        });
+                    } else {
+                        combined.set(kode, t);
+                    }
+                }
             });
 
             const tenders = Array.from(combined.values());
@@ -238,8 +283,8 @@ class CrawlerService {
                     null;
                 const batasUpload = normalizeDate(batasUploadRaw);
 
-                const paguVal = Math.round(parseFloat(t.Pagu || t.pagu || 0)) || 0;
-                const hpsVal  = Math.round(parseFloat(t.HPS  || t.hps  || 0)) || 0;
+                const paguVal = parseCurrency(t.Pagu || t.pagu);
+                const hpsVal  = parseCurrency(t.HPS  || t.hps);
 
                 // Sanitize raw_data for JSONB — remove circular refs, ensure serializable
                 let rawData = null;
@@ -302,7 +347,9 @@ class CrawlerService {
                     if (tenderSbu !== '-') {
                         const sbus = tenderSbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
                         const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
-                        if (matchesTarget) {
+                        const maxHps = this.status.waTargetMaxHps || 0;
+                        const matchesHps = maxHps === 0 || hpsVal <= maxHps;
+                        if (matchesTarget && matchesHps) {
                             const { sendWhatsAppMessage } = require('../utils/whatsapp');
                             const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                             const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${t['Nama Paket'] || t.nama_paket || ''}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
@@ -393,8 +440,11 @@ class CrawlerService {
                                 if (hasSbu) {
                                     const sbus = res.sbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
                                     const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
+                                    const finalHps = Math.round(res.hps || tenderInfo.hps || 0);
+                                    const maxHps = this.status.waTargetMaxHps || 0;
+                                    const matchesHps = maxHps === 0 || finalHps <= maxHps;
                                     
-                                    if (matchesTarget) {
+                                    if (matchesTarget && matchesHps) {
                                         const { sendWhatsAppMessage } = require('../utils/whatsapp');
                                         const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                         const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(res.pagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(res.hps || tenderInfo.hps)}\n*Tgl Upload:* ${normalizedDeadline || '-'}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;

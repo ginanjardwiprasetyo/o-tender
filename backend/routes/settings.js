@@ -32,6 +32,7 @@ router.put('/', async (req, res) => {
         const allowedKeys = [
             'company_name', 'company_address', 'company_npwp', 
             'wa_api_key', 'wa_target_numbers', 'wa_target_sbu', 
+            'wa_target_max_hps',
             'crawl_lpse_targets', 'default_lpse',
             'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang',
             'wa_target_group_id', 'wa_target_group_name'
@@ -116,6 +117,36 @@ router.post('/test-wa', async (req, res) => {
         } else {
             res.status(500).json({ success: false, error: `Gagal mengirim pesan uji coba. Detail: ${result.error}` });
         }
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /api/settings/wa-logs — Ambil riwayat pengiriman notifikasi WA (paginated)
+router.get('/wa-logs', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const page = parseInt(req.query.page) || 1;
+        const offset = (page - 1) * limit;
+
+        const { rows: countRows } = await db.query("SELECT COUNT(*) FROM wa_logs");
+        const total = parseInt(countRows[0].count) || 0;
+
+        const { rows } = await db.query(
+            "SELECT * FROM wa_logs ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            [limit, offset]
+        );
+
+        res.json({ 
+            success: true, 
+            data: rows,
+            pagination: {
+                total,
+                limit,
+                page,
+                pages: Math.ceil(total / limit) || 1
+            }
+        });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

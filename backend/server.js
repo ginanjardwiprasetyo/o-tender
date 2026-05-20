@@ -137,15 +137,21 @@ app.listen(PORT, async () => {
         }
     }
 
-    // Schedule Crawler (6 AM and 4 PM)
-    cron.schedule('0 6 * * *', () => {
-        console.log('Running scheduled crawl (6 AM)');
-        crawler.crawlAllLPSE(new Date().getFullYear()).catch(e => console.error(e));
-    });
-    cron.schedule('0 16 * * *', () => {
-        console.log('Running scheduled crawl (4 PM)');
-        crawler.crawlAllLPSE(new Date().getFullYear()).catch(e => console.error(e));
-    });
+    // Schedule Crawler (6 AM and 4 PM) - Can be disabled via env DISABLE_CRAWLER=true (e.g. for Render.com instance)
+    const disableCrawler = process.env.DISABLE_CRAWLER === 'true';
+    if (!disableCrawler) {
+        cron.schedule('0 6 * * *', () => {
+            console.log('Running scheduled crawl (6 AM)');
+            crawler.crawlAllLPSE(new Date().getFullYear()).catch(e => console.error(e));
+        });
+        cron.schedule('0 16 * * *', () => {
+            console.log('Running scheduled crawl (4 PM)');
+            crawler.crawlAllLPSE(new Date().getFullYear()).catch(e => console.error(e));
+        });
+        console.log('📅 [Scheduler] Crawler scheduled at 6 AM and 4 PM');
+    } else {
+        console.log('🚫 [Scheduler] Crawler is disabled on this instance (DISABLE_CRAWLER = true)');
+    }
 
     // Schedule WA notifications check for Followed Tenders (every 15 minutes)
     const { checkAndSendNotifications } = require('./services/notif_scheduler');
@@ -154,6 +160,17 @@ app.listen(PORT, async () => {
     
     cron.schedule('*/15 * * * *', () => {
         checkAndSendNotifications().catch(e => console.error(e));
+    });
+
+    // Supabase Keep-Alive: Ping database every 12 hours to prevent auto-pause of free tier projects
+    cron.schedule('0 */12 * * *', async () => {
+        console.log('⏰ [Supabase Keep-Alive] Mengirim ping database...');
+        try {
+            await db.query('SELECT 1');
+            console.log('✅ [Supabase Keep-Alive] Ping database sukses!');
+        } catch (err) {
+            console.error('❌ [Supabase Keep-Alive] Ping database gagal:', err.message);
+        }
     });
 });
 

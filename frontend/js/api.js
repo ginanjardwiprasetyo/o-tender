@@ -137,6 +137,7 @@ const API = {
     updateSettings(data) { return this.request('/settings', { method: 'PUT', body: data }); },
     testWA(data) { return this.request('/settings/test-wa', { method: 'POST', body: data }); },
     getWAGroups(apiKey) { return this.request(`/settings/wa-groups?apiKey=${encodeURIComponent(apiKey)}`); },
+    getWALogs(page = 1, limit = 20) { return this.request(`/settings/wa-logs?page=${page}&limit=${limit}`); },
 
     // ─── Health ───────────────────────────────────────
     health() { return this.request('/health'); },

@@ -294,14 +294,15 @@ async function scrapeTenderList(slug, year) {
             const instansi = $(cells[2]).text().trim();
             const status   = $(cells[3]).text().trim().replace(/\s*\[\.+\]\s*$/, '').trim();
             const hpsRaw   = $(cells[4]).text().trim();
-            let pagu = parsePaguStr(hpsRaw);
+            let parsedHps = parsePaguStr(hpsRaw);
 
             if (kodeFromHref && nama) {
                 results.push({
                     'Kode Tender':       kodeFromHref,
                     'Nama Paket':        nama,
                     'Instansi':          instansi,
-                    'Pagu':              pagu,
+                    'Pagu':              parsedHps,
+                    'HPS':               parsedHps,
                     'Status_Tender':     status,
                     'Kategori Pekerjaan':'Pekerjaan Konstruksi',
                     'SBU':               '-',
@@ -395,14 +396,14 @@ async function scrapeTenderListPuppeteer(slug, year) {
                 let pagu = 0;
                 const sm = hpsRaw.match(/([\d,\.]+)\s*(T|M|Jt|Rb)?/i);
                 if (sm) {
-                    const n = parseFloat(sm[1].replace(',', '.')), u = (sm[2]||'').toLowerCase();
-                    if (u==='t') pagu=n*1e12; else if(u==='m') pagu=n*1e9; else if(u==='jt') pagu=n*1e6; else if(u==='rb') pagu=n*1e3;
+                    const n = parseFloat(sm[1].replace(/\./g, '').replace(',', '.')), u = (sm[2]||'').toLowerCase();
+                    if (u==='t') pagu=Math.round(n*1e12); else if(u==='m') pagu=Math.round(n*1e9); else if(u==='jt') pagu=Math.round(n*1e6); else if(u==='rb') pagu=Math.round(n*1e3);
                     else { const p=parseFloat(hpsRaw.replace(/\./g,'').replace(',','.')); pagu=isNaN(p)?0:p; }
                 }
                 
                 if (kodeFromHref && nama) results.push({
                     'Kode Tender': kodeFromHref, 'Nama Paket': nama, 'Instansi': instansi,
-                    'Pagu': pagu, 'Status_Tender': status, 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
+                    'Pagu': pagu, 'HPS': pagu, 'Status_Tender': status, 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
                     'SBU': '-', 'Batas Upload': '-'
                 });
             });
@@ -470,9 +471,9 @@ async function scrapeMultiple(slug, kodes) {
                         
                         if (label.includes('sbu') || label.includes('sertifikat badan usaha')) {
                             sbu = value;
-                        } else if (label.includes('nilai pagu paket')) {
+                        } else if (label.includes('nilai pagu') || label.includes('pagu')) {
                             pagu = value;
-                        } else if (label.includes('nilai hps paket')) {
+                        } else if (label.includes('nilai hps') || label.includes('hps')) {
                             hps = value;
                         }
                     });

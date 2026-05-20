@@ -157,6 +157,12 @@ const SettingsPage = {
                     <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Pisahkan dengan koma. Untuk notifikasi tender baru yang cocok dengan kualifikasi SBU perusahaan Anda.</p>
                 </div>
 
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label">Batasan HPS Maksimal Notifikasi (Rp)</label>
+                    <input type="number" class="form-input" id="s-wamaxhps" placeholder="Contoh: 3500000000">
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Hanya tender dengan HPS lebih kecil atau sama dengan nominal ini yang akan dikirimkan ke WhatsApp/Grup (kosongkan atau isi 0 untuk mengirim semua).</p>
+                </div>
+
                 <!-- WA Schedule Preferences Toggles -->
                 <div style="margin-top: 28px; border-top: 1px solid var(--border, #e2e8f0); padding-top: 24px;">
                     <h4 style="font-size:0.95rem; font-weight:700; color:var(--text-main); margin-bottom:16px;">🔔 Pengaturan Jadwal Notifikasi (Tender Saya)</h4>
@@ -197,8 +203,6 @@ const SettingsPage = {
                                 <span class="tb-slider"></span>
                             </label>
                         </div>
-
-                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; margin-top:24px; border-top: 1px solid var(--border, #e2e8f0); padding-top:20px;">
@@ -208,6 +212,56 @@ const SettingsPage = {
                 </div>
             </div>
 
+            <!-- WA Logs Card -->
+            <div class="card" style="margin-top:32px; margin-bottom:32px; padding:28px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="width:40px; height:40px; border-radius:10px; background:rgba(16,185,129,0.1); color:#10b981; display:flex; align-items:center; justify-content:center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-history"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </div>
+                        <div>
+                            <h3 style="font-size:1.1rem; font-weight:700;">Riwayat Pengiriman WA</h3>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">Menampilkan 20 riwayat pengiriman notifikasi WhatsApp per halaman.</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.8rem; display:flex; align-items:center; gap:6px; height:34px; border-radius:6px;" onclick="SettingsPage.loadWALogs(event)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-refresh-cw"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                        Segarkan
+                    </button>
+                </div>
+
+                <div style="overflow-x:auto; border:1px solid var(--border, #e2e8f0); border-radius:8px; max-height:400px; overflow-y:auto; margin-bottom:16px;">
+                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+                        <thead>
+                            <tr style="background:#f8fafc; border-bottom:1px solid var(--border, #e2e8f0); position:sticky; top:0; z-index:1;">
+                                <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Waktu</th>
+                                <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Target</th>
+                                <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Pesan</th>
+                                <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="s-walogs-table-body">
+                            <tr>
+                                <td colspan="4" style="padding:20px; text-align:center; color:var(--text-muted); font-style:italic;">Memuat riwayat pengiriman...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Controls -->
+                <div style="display:flex; align-items:center; justify-content:space-between; padding-top:16px; border-top:1px solid var(--border, #e2e8f0); font-size:0.82rem;">
+                    <span style="color:var(--text-muted); font-weight:500;" id="s-walogs-page-info">Halaman 1 dari 1 (Total: 0)</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="btn btn-secondary" id="s-walogs-btn-prev" style="padding:6px 12px; font-size:0.78rem; border-radius:6px; display:flex; align-items:center; gap:4px; height:32px;" onclick="SettingsPage.changeWALogsPage(-1)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg> Sebelum
+                        </button>
+                        <button class="btn btn-secondary" id="s-walogs-btn-next" style="padding:6px 12px; font-size:0.78rem; border-radius:6px; display:flex; align-items:center; gap:4px; height:32px;" onclick="SettingsPage.changeWALogsPage(1)">
+                            Berikutnya <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+ 
             <!-- Save button -->
             <div style="display:flex; justify-content:flex-end;">
                 <button class="btn btn-primary" style="padding:12px 32px; font-size:1rem; border-radius:var(--radius-md); display:flex; align-items:center; gap:8px;" onclick="SettingsPage.save()">
@@ -227,6 +281,7 @@ const SettingsPage = {
             if (data.wa_api_key) document.getElementById('s-wakey').value = data.wa_api_key;
             if (data.wa_target_numbers) document.getElementById('s-wanum').value = data.wa_target_numbers;
             if (data.wa_target_sbu) document.getElementById('s-wasbu').value = data.wa_target_sbu;
+            if (data.wa_target_max_hps) document.getElementById('s-wamaxhps').value = data.wa_target_max_hps;
             
             // Set notif preferences switches
             document.getElementById('s-notif-penjelasan').checked = data.wa_notif_penjelasan !== 'false';
@@ -256,6 +311,7 @@ const SettingsPage = {
         this._setupLpseSearch();
         this._setupDefaultLpseSearch();
         this._setupWAGroupSearch();
+        this.loadWALogs();
         
         if (window.lucide) window.lucide.createIcons();
     },
@@ -475,6 +531,7 @@ const SettingsPage = {
                 wa_api_key: document.getElementById('s-wakey').value.trim(),
                 wa_target_numbers: document.getElementById('s-wanum').value.trim(),
                 wa_target_sbu: document.getElementById('s-wasbu').value.trim(),
+                wa_target_max_hps: document.getElementById('s-wamaxhps').value.trim(),
                 crawl_lpse_targets: JSON.stringify(this.selectedLpse),
                 default_lpse: document.getElementById('s-default-lpse-val').value ? JSON.stringify({
                     kd_lpse: document.getElementById('s-default-lpse-val').value,
@@ -507,11 +564,117 @@ const SettingsPage = {
             const res = await API.testWA({ wa_api_key: apiKey, wa_target_numbers: target });
             if (res.success) {
                 Toast.success('Pesan uji coba berhasil terkirim! Periksa WhatsApp/Grup Anda.');
+                // Reload logs after testing
+                setTimeout(() => this.loadWALogs(), 1500);
             } else {
                 Toast.error(res.error || 'Gagal mengirim pesan uji coba.');
             }
         } catch (err) {
             Toast.error(err.message || 'Gagal mengirim pesan uji coba.');
+        }
+    },
+
+    async loadWALogs(e) {
+        if (e) e.preventDefault();
+        this.waLogsPage = this.waLogsPage || 1;
+        const tbody = document.getElementById('s-walogs-table-body');
+        if (!tbody) return;
+
+        try {
+            tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:var(--text-muted);"><svg class="spin" style="margin-right:8px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Memuat data...</td></tr>`;
+            const res = await API.getWALogs(this.waLogsPage, 20);
+            if (res.success && Array.isArray(res.data)) {
+                const pag = res.pagination || { total: 0, limit: 20, page: 1, pages: 1 };
+                this.waLogsTotalPages = pag.pages;
+                
+                // Update pagination indicators and buttons
+                const pageInfoEl = document.getElementById('s-walogs-page-info');
+                const btnPrevEl = document.getElementById('s-walogs-btn-prev');
+                const btnNextEl = document.getElementById('s-walogs-btn-next');
+                
+                if (pageInfoEl) pageInfoEl.innerText = `Halaman ${pag.page} dari ${pag.pages} (Total: ${pag.total})`;
+                if (btnPrevEl) btnPrevEl.disabled = pag.page <= 1;
+                if (btnNextEl) btnNextEl.disabled = pag.page >= pag.pages;
+
+                if (res.data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:var(--text-muted); font-style:italic;">Belum ada riwayat pengiriman.</td></tr>`;
+                    return;
+                }
+                
+                tbody.innerHTML = res.data.map(log => {
+                    const date = new Date(log.created_at).toLocaleString('id-ID', { hour12: false });
+                    const isSuccess = log.status === 'success';
+                    const badge = isSuccess 
+                        ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600;">Sukses</span>`
+                        : `<span style="background:rgba(239,68,68,0.1); color:#ef4444; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600;" title="${(log.error_message || '').replace(/"/g, '&quot;')}">Gagal</span>`;
+                    
+                    const msgPreview = log.message.length > 60 ? log.message.substring(0, 60) + '...' : log.message;
+                    const logId = log.id || Math.random().toString(36).substr(2, 9);
+                    
+                    return `
+                        <tr style="border-bottom:1px solid #f1f5f9; cursor:pointer;" onclick="SettingsPage.toggleLogDetail('${logId}')">
+                            <td style="padding:10px 14px; white-space:nowrap; color:var(--text-muted);">${date}</td>
+                            <td style="padding:10px 14px; font-family:monospace; font-size:0.8rem;">${log.target}</td>
+                            <td style="padding:10px 14px; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${msgPreview}</td>
+                            <td style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
+                                ${badge}
+                                <svg id="icon-${logId}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
+                            </td>
+                        </tr>
+                        <tr id="detail-${logId}" style="display:none; background:#f8fafc; border-bottom:1px solid #f1f5f9;">
+                            <td colspan="4" style="padding:16px 20px;">
+                                <div style="font-size:0.85rem; color:var(--text-main); white-space:pre-wrap; font-family:inherit; line-height:1.6;">${SettingsPage.formatWAMarkdown(log.message)}</div>
+                                ${!isSuccess && log.error_message ? `<div style="margin-top:8px; padding:8px; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:6px; font-size:0.8rem;"><strong>Error:</strong> ${log.error_message}</div>` : ''}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:#ef4444;">Gagal memuat riwayat pengiriman.</td></tr>`;
+            }
+        } catch (err) {
+            tbody.innerHTML = `<tr><td colspan="4" style="padding:20px; text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+        }
+    },
+
+    async changeWALogsPage(offset) {
+        this.waLogsPage = (this.waLogsPage || 1) + offset;
+        if (this.waLogsPage < 1) this.waLogsPage = 1;
+        if (this.waLogsTotalPages && this.waLogsPage > this.waLogsTotalPages) {
+            this.waLogsPage = this.waLogsTotalPages;
+        }
+        await this.loadWALogs();
+    },
+
+    formatWAMarkdown(text) {
+        if (!text) return '';
+        let escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        
+        // WhatsApp Markdown styling:
+        // Bold: *text*
+        escaped = escaped.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
+        // Italic: _text_
+        escaped = escaped.replace(/_(.*?)_/g, '<em>$1</em>');
+        // Strikethrough: ~text~
+        escaped = escaped.replace(/~(.*?)~/g, '<del>$1</del>');
+        // Monospace block: ```text```
+        escaped = escaped.replace(/```([\s\S]*?)```/g, '<code style="background:rgba(241,245,249,0.9); padding:10px; border-radius:6px; font-family:monospace; display:block; white-space:pre; margin: 8px 0; border: 1px solid var(--border,#e2e8f0); font-size:0.8rem;">$1</code>');
+        // Monospace inline: `text`
+        escaped = escaped.replace(/`([^`\n]+)`/g, '<code style="background:rgba(241,245,249,0.9); padding:2px 6px; border-radius:4px; font-family:monospace; border: 1px solid var(--border,#e2e8f0); font-size:0.8rem;">$1</code>');
+        
+        return escaped;
+    },
+
+    toggleLogDetail(id) {
+        const detailRow = document.getElementById(`detail-${id}`);
+        const icon = document.getElementById(`icon-${id}`);
+        if (!detailRow) return;
+        if (detailRow.style.display === 'none') {
+            detailRow.style.display = 'table-row';
+            if (icon) icon.style.transform = 'rotate(180deg)';
+        } else {
+            detailRow.style.display = 'none';
+            if (icon) icon.style.transform = 'rotate(0deg)';
         }
     }
 };

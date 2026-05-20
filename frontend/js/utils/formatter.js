@@ -10,20 +10,26 @@ const Fmt = {
         if (typeof num === 'number') {
             value = num;
         } else if (typeof num === 'string') {
+            const trimmed = num.trim();
             // If already formatted like "Rp 1.234", just return it
-            if (num.trim().match(/^Rp\s*[\d\.,]+$/i)) return num.trim();
+            if (trimmed.match(/^Rp\s*[\d\.,]+$/i)) return trimmed;
             
-            // Clean string: remove everything except digits, comma, and dot
-            let cleaned = num.replace(/[^0-9,\.]/g, '');
-            // Handle Indonesian format: "1.234,56" or "1.234"
-            // If it has a comma at the end (,00), it's a decimal separator.
-            if (cleaned.includes(',') && cleaned.split(',')[1].length <= 2) {
-                cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+            // Check if it matches a standard postgres/JS float string like "123456.78"
+            if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+                value = parseFloat(trimmed);
             } else {
-                // Otherwise treat dots as thousands separators and ignore commas
-                cleaned = cleaned.replace(/\./g, '').replace(',', '');
+                // Clean string: remove everything except digits, negative sign, comma, and dot
+                let cleaned = trimmed.replace(/[^0-9,\.-]/g, '');
+                // Handle Indonesian format: "1.234,56" or "1.234"
+                // If it has a comma at the end (,00), it's a decimal separator.
+                if (cleaned.includes(',') && cleaned.split(',')[1].length <= 2) {
+                    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+                } else {
+                    // Otherwise treat dots as thousands separators and ignore commas
+                    cleaned = cleaned.replace(/\./g, '').replace(',', '');
+                }
+                value = parseFloat(cleaned);
             }
-            value = parseFloat(cleaned);
         }
 
         if (isNaN(value) || value === 0) {
@@ -32,7 +38,7 @@ const Fmt = {
             return '-';
         }
         
-        return 'Rp ' + Math.floor(value).toLocaleString('id-ID');
+        return 'Rp ' + Math.round(value).toLocaleString('id-ID');
     },
 
     /** Format date string to Indonesian locale */

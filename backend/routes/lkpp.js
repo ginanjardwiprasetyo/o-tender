@@ -189,6 +189,42 @@ router.get('/scrape', async (req, res) => {
         if (!slug || !kode) return res.status(400).json({ success: false, error: 'Slug and kode required' });
         
         const data = await scrapeTender(slug, kode);
+        
+        // Sync the rich detailed data (real Pagu, HPS, SBU, Batas Upload) back to crawled_tenders DB row in the background
+        const { details, sbu, uploadDate } = data;
+        if (details) {
+            const parseCurrency = (val) => {
+                if (typeof val === 'number') return val;
+                if (!val) return 0;
+                const str = String(val).trim();
+                if (/^-?[0-9]+(\.[0-9]+)?$/.test(str)) {
+                    return Math.round(parseFloat(str));
+                }
+                let clean = str.replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '');
+                clean = clean.split(',')[0];
+                return parseInt(clean, 10) || 0;
+            };
+            const { normalizeDate } = require('../utils/date-formatter');
+            
+            const realPagu = parseCurrency(details['Nilai Pagu Paket'] || details['Pagu'] || 0);
+            const realHps = parseCurrency(details['Nilai HPS Paket'] || details['HPS'] || 0);
+            const normalizedDeadline = normalizeDate(uploadDate);
+            
+            db.query(`
+                UPDATE crawled_tenders 
+                SET pagu = CASE WHEN $1::bigint > 0 THEN $1::bigint ELSE pagu END,
+                    hps  = CASE WHEN $2::bigint > 0 THEN $2::bigint ELSE hps  END,
+                    sbu  = CASE WHEN $3::text IS NOT NULL AND $3::text != '-' THEN $3::text ELSE sbu END,
+                    batas_upload = CASE WHEN $4::text IS NOT NULL AND $4::text != '-' THEN $4::text ELSE batas_upload END,
+                    raw_data = jsonb_set(
+                        jsonb_set(raw_data, '{Pagu}', to_jsonb($1::bigint)),
+                        '{HPS}', to_jsonb($2::bigint)
+                    )
+                WHERE kode_tender = $5 AND slug = $6
+            `, [realPagu, realHps, sbu || null, normalizedDeadline || null, kode, slug])
+            .catch(err => console.error('[Scrape DB Sync Error]', err.message));
+        }
+        
         res.json({ success: true, data });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
