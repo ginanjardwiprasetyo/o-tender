@@ -13,7 +13,13 @@ async function checkWinLose(slug, kode, companyNames) {
     
     try {
         // Cek Pemenang
-        const respPem = await axios.get(pemenangUrl, { timeout: 15000 });
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8',
+            'Referer': `${base}/lelang`,
+        };
+        const respPem = await axios.get(pemenangUrl, { headers, timeout: 15000 });
         const $pem = cheerio.load(respPem.data);
         
         let pemenangText = $pem('body').text().toLowerCase();
@@ -27,7 +33,7 @@ async function checkWinLose(slug, kode, companyNames) {
         
         if (!isMenang) {
             // Cek Hasil Evaluasi untuk alasan kalah
-            const respHas = await axios.get(hasilUrl, { timeout: 15000 });
+            const respHas = await axios.get(hasilUrl, { headers, timeout: 15000 });
             const $has = cheerio.load(respHas.data);
             
             $has('table tr').each((_, row) => {

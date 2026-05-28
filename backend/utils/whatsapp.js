@@ -49,14 +49,14 @@ async function sendWhatsAppMessage(to, message) {
         if (response.data.status) {
             console.log('[WhatsApp] Pesan berhasil dikirim ke', target);
             await db.query(
-                "INSERT INTO wa_logs (target, message, status) VALUES ($1, $2, 'success')"
-            , [target, message]).catch(err => console.error('[WhatsApp Log Error]', err.message));
+                "INSERT INTO wa_logs (target, message, status, api_response) VALUES ($1, $2, 'success', $3)"
+            , [target, message, JSON.stringify(response.data)]).catch(err => console.error('[WhatsApp Log Error]', err.message));
             return { success: true };
         } else {
             console.error('[WhatsApp] Gagal mengirim pesan:', response.data.reason);
             await db.query(
-                "INSERT INTO wa_logs (target, message, status, error_message) VALUES ($1, $2, 'failed', $3)"
-            , [target, message, response.data.reason || 'Respons Fonnte gagal.']).catch(err => console.error('[WhatsApp Log Error]', err.message));
+                "INSERT INTO wa_logs (target, message, status, error_message, api_response) VALUES ($1, $2, 'failed', $3, $4)"
+            , [target, message, response.data.reason || 'Respons Fonnte gagal.', JSON.stringify(response.data)]).catch(err => console.error('[WhatsApp Log Error]', err.message));
             return { success: false, error: response.data.reason || 'Respons Fonnte gagal.' };
         }
     } catch (error) {

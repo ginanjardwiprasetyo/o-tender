@@ -4,6 +4,39 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
+const fs = require('fs');
+const path = require('path');
+
+const ENV_FILES = [
+    path.resolve(__dirname, '../../.env'),
+    path.resolve(__dirname, '../.env')
+];
+
+function syncEnvToFile(key, value) {
+    const envVar = key === 'wa_api_key' ? 'FONNTE_API_KEY'
+                : key === 'wa_target_numbers' ? 'WA_TARGET'
+                : null;
+    if (!envVar) return;
+
+    // Update process.env immediately
+    process.env[envVar] = value;
+
+    // Update .env files
+    for (const envPath of ENV_FILES) {
+        try {
+            let content = fs.readFileSync(envPath, 'utf8');
+            const regex = new RegExp(`^${envVar}=.*`, 'm');
+            if (regex.test(content)) {
+                content = content.replace(regex, `${envVar}=${value}`);
+            } else {
+                content += `\n${envVar}=${value}`;
+            }
+            fs.writeFileSync(envPath, content, 'utf8');
+        } catch (err) {
+            console.error(`[Settings] Gagal update ${envPath}:`, err.message);
+        }
+    }
+}
 
 // GET /api/settings
 router.get('/', async (req, res) => {
@@ -45,6 +78,7 @@ router.put('/', async (req, res) => {
                  ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
                 [key, value]
             );
+            syncEnvToFile(key, value);
         }
         res.json({ success: true, message: 'Pengaturan berhasil disimpan' });
     } catch (err) {
