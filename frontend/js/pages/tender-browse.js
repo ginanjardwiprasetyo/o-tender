@@ -423,14 +423,14 @@ const TenderBrowsePage = {
         if (!slug || slug === 'null') slug = 'lpse';
         const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
         if (!isLocal) {
-            const evalUrl = `https://spse.inaproc.id/${slug}/evaluasi/${kode}/hasil`;
+            const pengumumanUrl = `https://spse.inaproc.id/${slug}/lelang/${kode}/pengumumanlelang`;
             Modal.open(
                 'Akses Lokal Diperlukan',
                 `<div style="text-align:center;">
-                    <div style="font-size:3rem;color:var(--danger);margin-bottom:12px;">✕</div>
+                    <div style="width:56px;height:56px;border-radius:50%;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><i data-lucide="x" style="width:28px;height:28px;color:var(--danger);stroke-width:2.5;"></i></div>
                     <p style="color:var(--text-secondary);margin-bottom:8px;">Halaman detail tender membutuhkan komputasi berat (scraping SPSE).</p>
                     <p style="color:var(--text-secondary);margin-bottom:20px;">Akses melalui <strong>aplikasi lokal</strong> untuk performa terbaik.</p>
-                    <a href="${evalUrl}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i data-lucide="external-link"></i> Buka Pengumuman SPSE</a>
+                    <a href="${pengumumanUrl}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;color:#fff;"><i data-lucide="external-link"></i> Website SPSE</a>
                 </div>`,
                 '<button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>'
             );
