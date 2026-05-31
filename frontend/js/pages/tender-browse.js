@@ -423,11 +423,18 @@ const TenderBrowsePage = {
         if (!slug || slug === 'null') slug = 'lpse';
         const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
         if (!isLocal) {
+            const evalUrl = `https://spse.inaproc.id/${slug}/evaluasi/${kode}/hasil`;
             Modal.open(
-                '<span style="font-size:2rem;color:var(--danger);">✕</span> Akses Lokal Diperlukan',
-                `<p style="text-align:center;color:var(--text-secondary);margin-top:12px;">Halaman detail tender membutuhkan komputasi berat (scraping SPSE).</p><p style="text-align:center;color:var(--text-secondary);">Akses melalui <strong>aplikasi lokal</strong> untuk performa terbaik.</p>`,
-                '<button class="btn btn-primary" onclick="Modal.close()">Tutup</button>'
+                'Akses Lokal Diperlukan',
+                `<div style="text-align:center;">
+                    <div style="font-size:3rem;color:var(--danger);margin-bottom:12px;">✕</div>
+                    <p style="color:var(--text-secondary);margin-bottom:8px;">Halaman detail tender membutuhkan komputasi berat (scraping SPSE).</p>
+                    <p style="color:var(--text-secondary);margin-bottom:20px;">Akses melalui <strong>aplikasi lokal</strong> untuk performa terbaik.</p>
+                    <a href="${evalUrl}" target="_blank" class="btn btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><i data-lucide="external-link"></i> Buka Pengumuman SPSE</a>
+                </div>`,
+                '<button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>'
             );
+            lucide.createIcons();
             return;
         }
         location.hash = `#tender-detail/${kode}/${slug}`;
