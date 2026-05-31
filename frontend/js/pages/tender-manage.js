@@ -143,7 +143,7 @@ const TenderManagePage = {
                     <div class="card-title" style="margin-bottom:0;">${Fmt.escape(t.nama_tender)}</div>
                     ${t.status && t.status !== 'Diproses' ? `<span class="badge badge-${t.status === 'Menang' ? 'success' : 'danger'}">${t.status}</span>` : '<span class="badge badge-info">Diproses</span>'}
                 </div>
-                ${t.status === 'Kalah' && t.history_alasan ? `<div style="background:rgba(239,68,68,0.1); border-left:3px solid var(--danger); padding:8px 12px; border-radius:4px; font-size:0.8rem; color:var(--danger); margin-bottom:12px;"><i data-lucide="info" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> <b>Alasan Gugur:</b> ${Fmt.escape(t.history_alasan)}</div>` : ''}
+                ${t.status === 'Kalah' ? `<div style="background:rgba(239,68,68,0.1); border-left:3px solid var(--danger); padding:8px 12px; border-radius:4px; font-size:0.8rem; color:var(--danger); margin-bottom:12px;"><i data-lucide="external-link" style="width:14px; height:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> Cek hasil evaluasi di <a href="https://spse.inaproc.id/${t.slug || 'lpse'}/evaluasi/${t.kode_tender}/hasil" target="_blank" style="color:var(--danger);text-decoration:underline;font-weight:700;">SPSE &rarr;</a></div>` : ''}
                 <div class="card-info-grid">
                     <div class="info-box">
                         <div class="info-label">K/L/PD</div>
@@ -176,6 +176,9 @@ const TenderManagePage = {
                     <button class="btn btn-secondary" onclick="TenderManagePage.viewDetail('${t.kode_tender}', '${t.slug || 'lpse'}')">
                         <i data-lucide="eye"></i> Detail
                     </button>
+                    <a class="btn btn-secondary" href="https://spse.inaproc.id/${t.slug || 'lpse'}/evaluasi/${t.kode_tender}/hasil" target="_blank" style="text-decoration:none;">
+                        <i data-lucide="file-search"></i> Evaluasi
+                    </a>
                     <button class="btn btn-danger btn-icon" onclick="TenderManagePage.remove('${t.id}')">
                         <i data-lucide="trash-2"></i>
                     </button>
