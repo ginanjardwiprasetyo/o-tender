@@ -421,6 +421,10 @@ const TenderBrowsePage = {
 
     viewDetailCrawl(kode, slug) {
         if (!slug || slug === 'null') slug = 'lpse';
+        const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        if (!isLocal) {
+            Toast.info('Halaman detail membutuhkan komputasi berat (scraping SPSE). Untuk performa terbaik, akses melalui aplikasi lokal.');
+        }
         location.hash = `#tender-detail/${kode}/${slug}`;
     },
 

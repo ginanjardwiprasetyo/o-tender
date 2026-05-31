@@ -82,6 +82,13 @@ const TenderDetailPage = {
         const kode = parts[1];
         const slug = parts[2];
 
+        // Set external link immediately, no need to wait for scrape
+        const baseUrl = `https://spse.inaproc.id/${slug}`;
+        const extBtn = document.getElementById('td-external');
+        if (extBtn) {
+            extBtn.href = `${baseUrl}/lelang/${kode}/pengumumanlelang`;
+        }
+
         try {
             // Check status first and update UI immediately
             const followRes = await API.checkFollowed(kode);
