@@ -47,7 +47,21 @@ function extractSbu(text) {
 async function scrape() {
     const browser = await chromium.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--single-process',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
+            '--disable-sync',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-breakpad',
+            '--js-flags=--max-old-space-size=256'
+        ]
     });
     
     const context = await browser.newContext({

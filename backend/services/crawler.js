@@ -7,6 +7,7 @@ const db = require('../config/db');
 const { getSlug, getBaseUrl } = require('../utils/lpse-mapper');
 const { exec } = require('child_process');
 const util = require('util');
+const os = require('os');
 const execPromise = util.promisify(exec);
 const { normalizeDate } = require('../utils/date-formatter');
 
@@ -32,7 +33,14 @@ function extractAanwizingDate(schedules) {
 }
 
 async function runScraper(type, url, yearStr) {
-    const cmd = `node /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
+    // Skip Playwright if memory is critically low (avoids OOM on Render free tier)
+    const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
+    if (freeMemMb < 200) {
+        const warnMsg = `Memory too low (${freeMemMb}MB free), skipping Playwright ${type}`;
+        console.warn(`[Crawler] ${warnMsg}`);
+        return type === 'list' ? [] : null;
+    }
+    const cmd = `node --max-old-space-size=256 /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
     const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
     try {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
