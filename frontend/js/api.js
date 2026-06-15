@@ -77,6 +77,7 @@ const API = {
 
     // ─── Crawler ──────────────────────────────────────
     startCrawl(year) { return this.request('/crawler/start', { method: 'POST', body: { year } }); },
+    stopCrawl() { return this.request('/crawler/stop', { method: 'POST' }); },
     getCrawlStatus() { return this.request('/crawler/status'); },
     getCrawledTenders(params) {
         const clean = {};

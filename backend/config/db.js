@@ -9,10 +9,13 @@ const { Pool } = require('pg');
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }, // Diperlukan untuk Supabase pooler
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+    max: 5,
+    idleTimeoutMillis: 60000,
+    connectionTimeoutMillis: 15000,
     statement_timeout: 15000, // Kill queries that run over 15s
+    allowExitOnIdle: true,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
 });
 
 pool.on('error', (err) => {

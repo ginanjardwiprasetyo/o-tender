@@ -4,9 +4,46 @@
  */
 const axios = require('axios');
 const db = require('../config/db');
-const { getSlug } = require('../utils/lpse-mapper');
-const { scrapeTender, scrapeTenderList, scrapeMultiple } = require('./scraper');
+const { getSlug, getBaseUrl } = require('../utils/lpse-mapper');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const { normalizeDate } = require('../utils/date-formatter');
+
+function isDeadlineFuture(dateStr) {
+    if (!dateStr || dateStr === '-') return false;
+    const normalized = normalizeDate(dateStr);
+    if (!normalized) return false;
+    const d = new Date(normalized);
+    if (isNaN(d.getTime())) return false;
+    return d.getTime() > Date.now();
+}
+
+function extractAanwizingDate(schedules) {
+    if (!schedules || !Array.isArray(schedules)) return null;
+    const keywords = ['pemberian penjelasan', 'anwijzing', 'aanwijzing'];
+    for (const s of schedules) {
+        const name = (s.stage || '').toLowerCase();
+        if (keywords.some(k => name.includes(k))) {
+            return s.start || s.end || null;
+        }
+    }
+    return null;
+}
+
+async function runScraper(type, url, yearStr) {
+    const cmd = `node /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
+    const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
+    try {
+        const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
+        if (lines.length > 0) {
+            return JSON.parse(lines[lines.length - 1]);
+        }
+        return type === 'list' ? [] : null;
+    } catch(e) {
+        throw new Error("Failed to parse scraper output");
+    }
+}
 
 const parseCurrency = (val) => {
     if (typeof val === 'number') return val;
@@ -36,6 +73,7 @@ class CrawlerService {
         };
         // List of allowed Kategori for Konstruksi
         this.kategoriKonstruksi = ['Pekerjaan Konstruksi'];
+        this.shouldStop = false;
     }
 
     log(msg) {
@@ -66,6 +104,13 @@ class CrawlerService {
         };
     }
 
+    stop() {
+        if (this.status.state === 'running') {
+            this.shouldStop = true;
+            this.log('Menerima perintah stop, mohon tunggu hingga proses saat ini selesai...');
+        }
+    }
+
     async crawlAllLPSE(year = new Date().getFullYear()) {
         if (this.status.state === 'running') {
             throw new Error('Crawl is already running');
@@ -83,6 +128,7 @@ class CrawlerService {
             logId: null,
             logs: []
         };
+        this.shouldStop = false;
         this.log('Memulai proses crawl seluruh LPSE...');
 
         try {
@@ -127,6 +173,10 @@ class CrawlerService {
 
             // 3. Process sequentially to prevent OOM (Out Of Memory) on 512MB RAM free tier
             for (const lpse of lpseList) {
+                if (this.shouldStop) {
+                    this.log('Proses crawl dihentikan oleh user.');
+                    break;
+                }
                 try {
                     await this.crawlSingleLPSE(lpse.kd_lpse, lpse.nama_lpse, year);
                 } catch (err) {
@@ -190,8 +240,17 @@ class CrawlerService {
             // 1. Fetch from API
             let apiTenders = await this.fetchFromAPI(year, kd_lpse);
             
-            // 2. Fetch from Scraper (Fast-fetch axios)
-            let scrapedTenders = await scrapeTenderList(slug, year);
+            // 2. Queue Task to Chrome Extension
+            const baseUrl = getBaseUrl(slug);
+            const listUrl = `${baseUrl}/lelang?kategoriId=2&tahun=${year}&instansiId=&rekanan=&kontrak_status=&kontrak_tipe=`;
+
+            let scrapedTenders = [];
+            try {
+                this.log(`Menjalankan Playwright scraper list untuk ${slug}...`);
+                scrapedTenders = await runScraper('list', listUrl, String(year));
+            } catch (err) {
+                this.log(`Scrape list timeout/error untuk ${slug}: ${err.message}`);
+            }
             
             // 3. Merge results by Kode Tender
             const combined = new Map();
@@ -350,10 +409,16 @@ class CrawlerService {
                         const maxHps = this.status.waTargetMaxHps || 0;
                         const matchesHps = maxHps === 0 || hpsVal <= maxHps;
                         if (matchesTarget && matchesHps) {
-                            const { sendWhatsAppMessage } = require('../utils/whatsapp');
-                            const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
-                            const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${t['Nama Paket'] || t.nama_paket || ''}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
-                            sendWhatsAppMessage(null, msg).catch(() => {});
+                            const deadlineOk = isDeadlineFuture(batasUpload);
+                            if (!deadlineOk) {
+                                this.log(`Skip notif ${tenderKodeStr}: batas upload sudah lewat (${batasUpload || '-'})`);
+                            } else {
+                                const { sendWhatsAppMessage } = require('../utils/whatsapp');
+                                const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
+                                const aanwizingDate = extractAanwizingDate(t.Jadwal || t.schedules || null) || '-';
+                                const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${t['Nama Paket'] || t.nama_paket || ''}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
+                                sendWhatsAppMessage(null, msg).catch(() => {});
+                            }
                         }
                     } else {
                         this.status.newTendersMap = this.status.newTendersMap || {};
@@ -398,9 +463,9 @@ class CrawlerService {
             this.log('Semua data tender sudah lengkap. Deep Scan dilewati.');
             return;
         }
-        this.log(`Ditemukan ${rows.length} tender tanpa SBU/Deadline. Melengkapi data via Puppeteer...`);
+        this.log(`Ditemukan ${rows.length} tender tanpa SBU/Deadline. Melengkapi data via Ekstensi Chrome...`);
 
-        // Group by slug to batch Puppeteer requests
+        // Group by slug to batch requests
         const bySlug = {};
         for (const r of rows) {
             if (!r.slug) continue;
@@ -408,56 +473,100 @@ class CrawlerService {
             bySlug[r.slug].push(r.kode_tender);
         }
 
-        const CHUNK_SIZE = 10;
+        const MAX_RETRIES = 2;
         let processed = 0;
         const totalSlugs = Object.keys(bySlug).length;
 
         for (const [slug, kodes] of Object.entries(bySlug)) {
+            if (this.shouldStop) {
+                this.log('Deep Scan dihentikan oleh user.');
+                break;
+            }
             processed++;
             this.log(`[${processed}/${totalSlugs}] Melengkapi ${kodes.length} paket di ${slug}...`);
             
-            for (let i = 0; i < kodes.length; i += CHUNK_SIZE) {
-                const chunk = kodes.slice(i, i + CHUNK_SIZE);
-                try {
-                    const results = await scrapeMultiple(slug, chunk);
-                    for (const kode of chunk) {
-                        const res = results[kode];
-                        if (res && (res.sbu !== '-' || res.deadline !== '-')) {
-                            const normalizedDeadline = normalizeDate(res.deadline);
-                            await db.query(`
-                                UPDATE crawled_tenders 
-                                SET sbu = CASE WHEN $1::text IS NOT NULL AND $1::text != '-' THEN $1::text ELSE sbu END,
-                                    batas_upload = CASE WHEN $2::text IS NOT NULL AND $2::text != '-' THEN $2::text ELSE batas_upload END,
-                                    pagu = CASE WHEN $3::bigint > 0 THEN $3::bigint ELSE pagu END,
-                                    hps  = CASE WHEN $4::bigint > 0 THEN $4::bigint ELSE hps  END
-                                WHERE kode_tender = $5 AND slug = $6
-                            `, [res.sbu || null, normalizedDeadline || null, Math.round(res.pagu || 0), Math.round(res.hps || 0), kode, slug]);
+            const baseUrl = getBaseUrl(slug);
+            const listUrl = `${baseUrl}/lelang?kategoriId=2&tahun=${year}&instansiId=&rekanan=&kontrak_status=&kontrak_tipe=`;
 
-                            // Trigger WA notification if it's a new tender and SBU matches
+            for (const kode of kodes) {
+                if (this.shouldStop) break;
+
+                let lastError = null;
+                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+
+                    try {
+                        const pengumumanUrl = `${baseUrl}/lelang/${kode}/pengumumanlelang`;
+                        this.log(`Detail ${kode} (via list)...`);
+
+                        // viaList: navigate to list page → click tender link → scrape detail
+                        // This bypasses both Cloudflare and SPSE WAF by using real browser CSRF token
+                        const res = await runScraper('detail', pengumumanUrl, String(year));
+
+                        if (res) {
+                            const parsedPagu = parseCurrency(res.pagu);
+                            const parsedHps = parseCurrency(res.hps);
+                            const hasSbu = res.sbu && res.sbu !== '-';
+                            const hasPagu = parsedPagu > 0;
+
+                            if (hasSbu || hasPagu || res.batas_upload) {
+                                const normDeadline = res.batas_upload ? res.batas_upload.replace(/\s+/g, ' ').trim() : null;
+                                await db.query(`
+                                    UPDATE crawled_tenders 
+                                    SET sbu = CASE WHEN $1::text IS NOT NULL AND $1::text != '-' THEN $1::text ELSE sbu END,
+                                        pagu = CASE WHEN $2::bigint > 0 THEN $2::bigint ELSE pagu END,
+                                        hps  = CASE WHEN $3::bigint > 0 THEN $3::bigint ELSE hps  END,
+                                        batas_upload = CASE WHEN $4::text IS NOT NULL AND $4::text != '-' THEN $4::text ELSE batas_upload END
+                                    WHERE kode_tender = $5 AND slug = $6
+                                `, [res.sbu || null, parsedPagu, parsedHps, normDeadline, kode, slug]);
+                                this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} Deadline=${normDeadline || '-'}`);
+                            } else {
+                                this.log(`Data empty ${kode}: SBU="${res.sbu}" Pagu="${res.pagu}"`);
+                            }
+
                             if (this.status.newTendersMap && this.status.newTendersMap[kode]) {
                                 const tenderInfo = this.status.newTendersMap[kode];
-                                const hasSbu = res.sbu && res.sbu !== '-';
                                 if (hasSbu) {
                                     const sbus = res.sbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
                                     const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
-                                    const finalHps = Math.round(res.hps || tenderInfo.hps || 0);
+                                    const finalHps = parsedHps || tenderInfo.hps || 0;
                                     const maxHps = this.status.waTargetMaxHps || 0;
                                     const matchesHps = maxHps === 0 || finalHps <= maxHps;
-                                    
+
                                     if (matchesTarget && matchesHps) {
-                                        const { sendWhatsAppMessage } = require('../utils/whatsapp');
-                                        const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
-                                        const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(res.pagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(res.hps || tenderInfo.hps)}\n*Tgl Upload:* ${normalizedDeadline || '-'}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
-                                        
-                                        sendWhatsAppMessage(null, msg).catch(() => {});
+                                        const normDeadline = res.batas_upload ? res.batas_upload.replace(/\s+/g, ' ').trim() : '-';
+                                        const deadlineOk = isDeadlineFuture(normDeadline);
+                                        if (!deadlineOk) {
+                                            this.log(`Skip notif ${kode}: batas upload sudah lewat (${normDeadline})`);
+                                        } else {
+                                            const { sendWhatsAppMessage } = require('../utils/whatsapp');
+                                            const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
+                                            const aanwizingDate = extractAanwizingDate(res.schedules) || '-';
+                                            const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(parsedPagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(parsedHps || tenderInfo.hps)}\n*Batas Upload:* ${normDeadline}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
+                                            sendWhatsAppMessage(null, msg).catch(() => {});
+                                        }
                                     }
                                 }
                                 delete this.status.newTendersMap[kode];
                             }
+                        } else {
+                            this.log(`No result ${kode}: extension returned null`);
+                        }
+
+                        lastError = null;
+                        break;
+                    } catch (err) {
+                        lastError = err;
+                        const isWaf = err.message.includes('WAF') || err.message.includes('Akses Ditolak') || err.message.includes('timeout');
+                        if (attempt < MAX_RETRIES && isWaf) {
+                            this.log(`WAF/timeout ${kode} (${attempt}/${MAX_RETRIES}), retry...`);
+                        } else if (attempt < MAX_RETRIES) {
+                            this.log(`GAGAL ${kode} (${attempt}/${MAX_RETRIES}): ${err.message}`);
                         }
                     }
-                } catch (err) {
-                    console.error(`[Crawler DeepScan] Error on ${slug}:`, err.message);
+                }
+
+                if (lastError) {
+                    console.error(`[DeepScan] Error ${slug} ${kode}:`, lastError.message);
                 }
             }
         }

@@ -3,6 +3,10 @@
  */
 const TenderBrowsePage = {
     lpseList: [],
+    _lpseLoaded: false,
+    _dropdownsSetup: false,
+    _crawlLoading: false,
+    _debounceTimers: {},
     
     // Tab 1 (Crawl) State
     crawlResults: [],
@@ -50,9 +54,14 @@ const TenderBrowsePage = {
                             <p style="font-size:0.85rem; color:var(--text-muted); margin:4px 0 0 0;" id="crawl-status-text">Status: Mengambil data...</p>
                         </div>
                     </div>
-                    <button class="btn btn-secondary btn-sm" onclick="TenderBrowsePage.startManualCrawl()" style="background:var(--bg-primary); border:1px solid var(--border-color);">
-                        <i data-lucide="refresh-cw"></i> Jalankan Crawl
-                    </button>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary btn-sm" id="btn-stop-crawl" onclick="TenderBrowsePage.stopCrawl()" style="background:var(--bg-primary); border:1px solid var(--danger); color:var(--danger); display:none;">
+                            <i data-lucide="square"></i> Stop Crawl
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="btn-start-crawl" onclick="TenderBrowsePage.startManualCrawl()" style="background:var(--bg-primary); border:1px solid var(--border-color);">
+                            <i data-lucide="refresh-cw"></i> Jalankan Crawl
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="tb-grid">
@@ -60,7 +69,7 @@ const TenderBrowsePage = {
                         <label class="form-label">Cari Keyword</label>
                         <div class="search-box">
                             <i data-lucide="search"></i>
-                            <input type="text" id="crawl-search" placeholder="Nama paket, instansi, atau kode..." onkeypress="if(event.key==='Enter') TenderBrowsePage.loadCrawledData()">
+                            <input type="text" id="crawl-search" placeholder="Nama paket, instansi, atau kode..." onkeypress="if(event.key==='Enter') TenderBrowsePage._debounce('search', ()=>TenderBrowsePage.loadCrawledData(), 300)">
                         </div>
                     </div>
                     <div class="form-group" style="position:relative; margin-bottom:0;">
@@ -70,11 +79,10 @@ const TenderBrowsePage = {
                         <div id="crawl-lpse-dropdown" class="tb-dropdown hidden"></div>
                     </div>
                     <div class="form-group" style="margin-bottom:0;">
-                        <label class="form-label">Urutkan</label>
+                        <label class="form-label">Batas Upload</label>
                         <select class="form-select" id="crawl-sort" style="height:38px;" onchange="TenderBrowsePage.loadCrawledData()">
-                            <option value="deadline_desc" selected>Batas Upload (Terjauh)</option>
-                            <option value="deadline_asc">Batas Upload (Terdekat)</option>
-                            <option value="crawled_at">Update Terakhir</option>
+                            <option value="deadline_desc" selected>Terbaru</option>
+                            <option value="deadline_asc">Terdahulu</option>
                         </select>
                     </div>
                     <div class="form-group" style="margin-bottom:0; align-self:flex-end;">
@@ -139,33 +147,33 @@ const TenderBrowsePage = {
     },
 
     async afterRender() {
-        this.loadLPSE();
         this._setupDropdowns();
         this.updateCrawlStatus();
 
-        // Load followed tenders to show checkmarks
-        try {
-            const res = await API.getFollowedTenders();
-            this.followedCodes = new Set((res.data || []).map(t => String(t.kode_tender)));
-        } catch (e) { console.error('Failed to load followed status:', e); }
+        const [, followedRes, settingsRes] = await Promise.allSettled([
+            this.loadLPSE(),
+            API.getFollowedTenders(),
+            API.getSettings()
+        ]);
 
-        // Preserve state in UI
+        if (followedRes.status === 'fulfilled') {
+            this.followedCodes = new Set((followedRes.value?.data || []).map(t => String(t.kode_tender)));
+        } else {
+            console.error('Failed to load followed status:', followedRes.reason);
+        }
+
         if (this.crawlFilter.search) document.getElementById('crawl-search').value = this.crawlFilter.search;
-        
+
         if (this.crawlFilter.lpse) {
             document.getElementById('crawl-lpse-val').value = this.crawlFilter.lpse;
             const match = this.lpseList.find(l => String(l.kd_lpse) === String(this.crawlFilter.lpse));
             if (match) document.getElementById('crawl-lpse').value = match.nama_lpse;
-        } else {
-            // Apply default from settings if no filter is set
+        } else if (settingsRes.status === 'fulfilled' && settingsRes.value?.data?.default_lpse) {
             try {
-                const { data } = await API.getSettings();
-                if (data.default_lpse) {
-                    const def = JSON.parse(data.default_lpse);
-                    this.crawlFilter.lpse = def.kd_lpse;
-                    document.getElementById('crawl-lpse-val').value = def.kd_lpse;
-                    document.getElementById('crawl-lpse').value = def.nama_lpse;
-                }
+                const def = JSON.parse(settingsRes.value.data.default_lpse);
+                this.crawlFilter.lpse = def.kd_lpse;
+                document.getElementById('crawl-lpse-val').value = def.kd_lpse;
+                document.getElementById('crawl-lpse').value = def.nama_lpse;
             } catch {}
         }
 
@@ -182,20 +190,25 @@ const TenderBrowsePage = {
     },
 
     async loadLPSE() {
+        if (this._lpseLoaded) return;
         try {
             const { data } = await API.getLPSEList();
             this.lpseList = data || [];
+            this._lpseLoaded = true;
         } catch { Toast.error('Gagal memuat daftar LPSE'); }
     },
 
     _setupDropdowns() {
+        if (this._dropdownsSetup) return;
+        this._dropdownsSetup = true;
+
         const setup = (inputId, hiddenId, dropdownId) => {
             const input    = document.getElementById(inputId);
             const hidden   = document.getElementById(hiddenId);
             const dropdown = document.getElementById(dropdownId);
             if (!input || !dropdown) return;
 
-            const show = (q) => {
+            const renderDropdown = (q) => {
                 const matches = this.lpseList
                     .filter(l => l.nama_lpse.toLowerCase().includes(q.toLowerCase()))
                     .slice(0, 60);
@@ -218,23 +231,34 @@ const TenderBrowsePage = {
             input.addEventListener('input', (e) => {
                 hidden.value = '';
                 const q = e.target.value.trim();
-                q.length >= 2 ? show(q) : dropdown.classList.add('hidden');
+                if (q.length >= 2) {
+                    this._debounce('dropdown-' + inputId, () => renderDropdown(q), 150);
+                } else {
+                    clearTimeout(this._debounceTimers['dropdown-' + inputId]);
+                    dropdown.classList.add('hidden');
+                }
             });
             input.addEventListener('focus', (e) => {
-                if (e.target.value.trim().length >= 2) show(e.target.value.trim());
+                if (e.target.value.trim().length >= 2) renderDropdown(e.target.value.trim());
             });
             input.addEventListener('blur', () => setTimeout(() => dropdown.classList.add('hidden'), 150));
             input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { 
-                    dropdown.classList.add('hidden'); 
+                if (e.key === 'Enter') {
+                    clearTimeout(this._debounceTimers['dropdown-' + inputId]);
+                    dropdown.classList.add('hidden');
                     if(inputId === 'crawl-lpse') this.loadCrawledData();
-                    else this.searchManual(); 
+                    else this.searchManual();
                 }
             });
         };
 
         setup('tb-lpse', 'tb-lpse-val', 'lpse-dropdown');
         setup('crawl-lpse', 'crawl-lpse-val', 'crawl-lpse-dropdown');
+    },
+
+    _debounce(key, fn, ms = 250) {
+        clearTimeout(this._debounceTimers[key]);
+        this._debounceTimers[key] = setTimeout(fn, ms);
     },
 
     // ─── TAB 1: CRAWLER LOGIC ────────────────────────────
@@ -246,6 +270,15 @@ const TenderBrowsePage = {
             if (!textEl) return;
 
             if (data.current && data.current.state === 'running') {
+                const btnStart = document.getElementById('btn-start-crawl');
+                const btnStop = document.getElementById('btn-stop-crawl');
+                if (btnStart) btnStart.style.display = 'none';
+                if (btnStop && !btnStop.disabled) {
+                    btnStop.style.display = 'inline-flex';
+                    btnStop.innerHTML = '<i data-lucide="square"></i> Stop Crawl';
+                    lucide.createIcons({ nodes: [btnStop] });
+                }
+
                 textEl.innerHTML = `<span style="color:var(--warning);"><span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Sedang berjalan (${data.current.processedLpse || 0}/${data.current.totalLpse || 0} LPSE)</span>`;
                 
                 // Update Logs
@@ -258,6 +291,14 @@ const TenderBrowsePage = {
                 
                 setTimeout(() => this.updateCrawlStatus(), 3000);
             } else {
+                const btnStart = document.getElementById('btn-start-crawl');
+                const btnStop = document.getElementById('btn-stop-crawl');
+                if (btnStart) btnStart.style.display = 'inline-flex';
+                if (btnStop) {
+                    btnStop.style.display = 'none';
+                    btnStop.disabled = false;
+                }
+
                 // Not running, hide log container
                 const logContainer = document.getElementById('crawl-log-container');
                 if (logContainer) logContainer.classList.add('hidden');
@@ -289,7 +330,7 @@ const TenderBrowsePage = {
     },
 
     async startManualCrawl() {
-        const btn = document.querySelector('[onclick*="startManualCrawl"]');
+        const btn = document.getElementById('btn-start-crawl');
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Memulai...';
@@ -303,20 +344,42 @@ const TenderBrowsePage = {
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<i data-lucide="refresh-cw"></i> Jalankan Crawl Sekarang';
+                btn.innerHTML = '<i data-lucide="refresh-cw"></i> Jalankan Crawl';
+                lucide.createIcons({ nodes: [btn] });
+            }
+        }
+    },
+
+    async stopCrawl() {
+        const btn = document.getElementById('btn-stop-crawl');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Stopping...';
+        }
+        try {
+            await API.stopCrawl();
+            Toast.success('Permintaan stop dikirim. Crawl akan berhenti setelah proses berjalan selesai.');
+        } catch(e) {
+            Toast.error('Gagal stop crawl: ' + e.message);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="square"></i> Stop Crawl';
                 lucide.createIcons({ nodes: [btn] });
             }
         }
     },
 
     async loadCrawledData(page = 1) {
+        if (this._crawlLoading) return;
+        this._crawlLoading = true;
+
         this.crawlPage = page;
         this.crawlFilter.search = document.getElementById('crawl-search').value.trim();
         this.crawlFilter.lpse = document.getElementById('crawl-lpse-val').value;
         this.crawlSort = document.getElementById('crawl-sort').value;
 
         const el = document.getElementById('crawl-results-container');
-        if (!el) return;
+        if (!el) { this._crawlLoading = false; return; }
         el.innerHTML = '<div class="page-loading"><div class="spinner"></div><p>Memuat data...</p></div>';
 
         try {
@@ -332,7 +395,9 @@ const TenderBrowsePage = {
             this.renderCrawlTable();
         } catch(e) {
             el.innerHTML = `<div class="empty-state"><i data-lucide="inbox" style="opacity:0.3;"></i><p>Tidak ada data tender di database. Klik <strong>Jalankan Crawl Sekarang</strong> untuk mulai mengambil data.</p></div>`;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [el] });
+        } finally {
+            this._crawlLoading = false;
         }
     },
 
@@ -341,11 +406,12 @@ const TenderBrowsePage = {
         if (!el) return;
         if (!this.crawlResults.length) {
             el.innerHTML = `<div class="empty-state"><i data-lucide="inbox" style="opacity:0.3;"></i><p>Tidak ada data ditemukan.</p></div>`;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [el] });
             document.getElementById('crawl-pagination').innerHTML = '';
             return;
         }
 
+        const containerEl = el;
         const rows = this.crawlResults.map((t, i) => {
             const offset = (this.crawlPage - 1) * 20;
             const batasRaw = t.batas_upload || null;
@@ -399,7 +465,7 @@ const TenderBrowsePage = {
                 </table>
             </div>
         `;
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [containerEl] });
         this.renderPagination();
     },
 
@@ -481,7 +547,7 @@ const TenderBrowsePage = {
                 <i data-lucide="alert-circle" style="color:var(--danger);"></i>
                 <p style="color:var(--danger);margin-top:12px;">Gagal memuat data: ${Fmt.escape(e.message)}</p>
             </div>`;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [el] });
         }
     },
 
@@ -632,7 +698,7 @@ const TenderBrowsePage = {
                 <p style="margin-top:12px;">Tidak ditemukan paket Pekerjaan Konstruksi.</p>
                 <p style="font-size:0.85rem;color:var(--text-muted);">Total ${this.manualTotalRaw} paket ditemukan, tidak ada kategori Konstruksi.</p>
             </div>`;
-            lucide.createIcons();
+            lucide.createIcons({ nodes: [el] });
             return;
         }
 
@@ -690,6 +756,6 @@ const TenderBrowsePage = {
                     <tbody>${rows}</tbody>
                 </table>
             </div>`;
-        lucide.createIcons();
+        lucide.createIcons({ nodes: [el] });
     }
 };

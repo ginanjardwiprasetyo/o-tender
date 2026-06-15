@@ -10,9 +10,20 @@ const db = require('../config/db');
 router.post('/start', async (req, res) => {
     try {
         const year = req.body.year || new Date().getFullYear();
+        crawler.status.finishedAt = null;
         // Start asynchronously, do not await
         crawler.crawlAllLPSE(year).catch(e => console.error('Crawl failed:', e));
         res.json({ success: true, message: 'Crawl started' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Stop crawl
+router.post('/stop', async (req, res) => {
+    try {
+        crawler.stop();
+        res.json({ success: true, message: 'Crawl stop requested' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -31,7 +42,7 @@ router.get('/status', async (req, res) => {
 // Get crawled tenders
 router.get('/tenders', async (req, res) => {
     try {
-        const { search, lpse, page = 1, limit = 20, sort = 'deadline_asc' } = req.query;
+        const { search, lpse, page = 1, limit = 20, sort = 'deadline_desc' } = req.query;
         const offset = (page - 1) * limit;
 
         let query = 'SELECT * FROM crawled_tenders WHERE 1=1';
@@ -49,12 +60,35 @@ router.get('/tenders', async (req, res) => {
             paramIndex++;
         }
 
-        // Sorting logic
-        let orderBy = 'batas_upload ASC NULLS LAST, crawled_at DESC';
-        if (sort === 'deadline_desc') {
-            orderBy = 'batas_upload DESC NULLS LAST, crawled_at DESC';
-        } else if (sort === 'crawled_at') {
-            orderBy = 'crawled_at DESC';
+        // Sorting logic — parse batas_upload text to proper date for sorting
+        // Handle both ISO dates (2026-03-12) and Indonesian dates (12 Maret 2026)
+        const dateExpr = `
+            CASE
+                WHEN batas_upload ~ '^\\d{4}-\\d{2}-\\d{2}' THEN batas_upload::timestamp
+                WHEN batas_upload ~ '^\\d{1,2}\\s+\\w+\\s+\\d{4}' THEN
+                    to_date(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+                    regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+                    regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+                        batas_upload,
+                        'Januari', '01'),
+                        'Februari', '02'),
+                        'Maret', '03'),
+                        'April', '04'),
+                        'Mei', '05'),
+                        'Juni', '06'),
+                        'Juli', '07'),
+                        'Agustus', '08'),
+                        'September', '09'),
+                        'Oktober', '10'),
+                        'November', '11'),
+                        'Desember', '12'),
+                    'DD MM YYYY')
+                ELSE NULL
+            END
+        `;
+        let orderBy = `${dateExpr} DESC NULLS LAST, crawled_at DESC`;
+        if (sort === 'deadline_asc') {
+            orderBy = `${dateExpr} ASC NULLS LAST, crawled_at DESC`;
         }
 
         query += ` ORDER BY ${orderBy} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "TenderBuild Scraper Worker",
+  "version": "1.0",
+  "description": "Scrapes LPSE targets bypassing Cloudflare",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://spse.inaproc.id/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://spse.inaproc.id/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TenderBuild Scraper"
+  }
+}
