@@ -37,6 +37,7 @@ app.use('/api/templates',  require('./routes/templates'));
 app.use('/api/documents',  require('./routes/documents'));
 app.use('/api/letters',    require('./routes/letters'));
 app.use('/api/settings',   require('./routes/settings'));
+app.use('/api/cron',       require('./routes/cron'));
 
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

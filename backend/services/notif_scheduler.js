@@ -6,6 +6,7 @@ const db = require('../config/db');
 const { sendWhatsAppMessage } = require('../utils/whatsapp');
 
 // Parser tanggal Indonesia yang kokoh
+// LPSE dates selalu dalam WIB (UTC+7). Konversi eksplisit agar konsisten di semua server.
 function parseIndonesianDate(dateStr) {
     if (!dateStr) return null;
     const months = {
@@ -26,7 +27,8 @@ function parseIndonesianDate(dateStr) {
         
         const monthIndex = months[monthName];
         if (monthIndex !== undefined) {
-            return new Date(year, monthIndex, day, hour, minute);
+            // Treat as WIB (UTC+7) explicitly
+            return new Date(Date.UTC(year, monthIndex, day, hour - 7, minute));
         }
     }
     
@@ -38,7 +40,7 @@ function parseIndonesianDate(dateStr) {
         const year = parseInt(m2[3]);
         const monthIndex = months[monthName];
         if (monthIndex !== undefined) {
-            return new Date(year, monthIndex, day, 0, 0);
+            return new Date(Date.UTC(year, monthIndex, day, -7, 0));
         }
     }
     
