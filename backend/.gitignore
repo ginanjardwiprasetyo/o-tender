@@ -7,5 +7,6 @@ uploads/attachments/*
 services/drission_data/
 services/drission_test_profile/
 services/drission_test_profile2/
+uploads/onlyoffice/
 server.log
 nohup.out

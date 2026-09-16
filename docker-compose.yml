@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ONLYOFFICE_URL=http://onlyoffice:8000
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-}
+      - ONLYOFFICE_JWT_ENABLED=false
+    volumes:
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - onlyoffice
+    restart: unless-stopped
+
+  onlyoffice:
+    image: onlyoffice/documentserver:8.2
+    ports:
+      - "8000:80"
+    environment:
+      - JWT_ENABLED=false
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-mysecret}
+      - WOPI_ENABLED=false
+    volumes:
+      - onlyoffice_data:/var/lib/onlyoffice
+      - onlyoffice_logs:/var/log/onlyoffice
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_logs:

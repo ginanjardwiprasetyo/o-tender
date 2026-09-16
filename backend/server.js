@@ -39,6 +39,7 @@ app.use('/api/letters',    require('./routes/letters'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/cron',       require('./routes/cron'));
 app.use('/api/dokpil',     require('./routes/dokpil'));
+app.use('/api/onlyoffice', require('./routes/onlyoffice'));
 
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

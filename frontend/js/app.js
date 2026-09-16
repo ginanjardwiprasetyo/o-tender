@@ -14,6 +14,7 @@ const App = {
         'company-detail': { page: CompanyDetailPage,title: 'Detail Perusahaan' },
         'documents':      { page: DocumentsPage,    title: 'Surat' },
         'templates':      { page: TemplatesPage,    title: 'Template' },
+        'onlyoffice':     { page: OnlyOfficePage,   title: 'Word Online' },
         'dokpil':         { page: DokpilPage,       title: 'Dokumen Pemilihan (Dokpil)' },
         'settings':       { page: SettingsPage,     title: 'Pengaturan' },
     },
@@ -104,7 +105,8 @@ const App = {
 
     async navigate() {
         const hash = location.hash.slice(1) || 'dashboard';
-        const pageKey = hash.split('/')[0];
+        const [pageKeyWithQuery] = hash.split('?');
+        const pageKey = pageKeyWithQuery.split('/')[0];
         const entry = this.pages[pageKey];
 
         if (!entry) {
@@ -138,8 +140,9 @@ const App = {
         container.innerHTML = '<div class="page-loading"><div class="spinner"></div><p>Memuat...</p></div>';
 
         try {
+            const query = hash.includes('?') ? hash.split('?')[1] : '';
             const params = hash.split('/').slice(1);
-            const html = await entry.page.render(params);
+            const html = await entry.page.render(query, ...params);
             container.innerHTML = html;
             lucide.createIcons({ nodes: [container] });
             if (entry.page.afterRender) await entry.page.afterRender();

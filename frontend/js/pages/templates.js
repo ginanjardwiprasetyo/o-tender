@@ -78,8 +78,9 @@ const TemplatesPage = {
                     </div>
                 </div>
                 <div class="table-actions" onclick="event.stopPropagation()">
+                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); window.location.hash='#onlyoffice?id=${t.id}'" title="Edit dengan OnlyOffice Word Online (seperti filestash)"><i data-lucide="file-pen-line"></i> Word Online</button>
                     <button class="btn btn-secondary btn-sm" onclick="TemplatesPage.preview('${t.id}')"><i data-lucide="eye"></i> Preview</button>
-                    <button class="btn btn-secondary btn-icon btn-sm" onclick="TemplatesPage.openEditor('${t.id}')" title="Edit"><i data-lucide="pencil"></i></button>
+                    <button class="btn btn-secondary btn-icon btn-sm" onclick="TemplatesPage.openEditor('${t.id}')" title="Edit HTML WYSIWYG"><i data-lucide="pencil"></i></button>
                     <button class="btn btn-danger btn-icon btn-sm" onclick="TemplatesPage.remove('${t.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
                 </div>
             </div>
