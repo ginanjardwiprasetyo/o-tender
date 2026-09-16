@@ -302,12 +302,21 @@ const DokpilPage = {
 
   createSuratFromDokpil() {
     const fields = this.getFields();
+    // ponytail: include tables for auto-fill in Documents (D.5)
+    const peralatan = this.extractedTables.peralatan?.rows || this.extractedFields.peralatan || [];
+    const personel = this.extractedTables.personel?.rows || this.extractedFields.personel || [];
+    const rkk = this.extractedTables.rkk?.rows || this.extractedFields.rkk || [];
     sessionStorage.setItem('dokpil_extracted_data', JSON.stringify({
       nama_paket: fields.nama_paket || this.extractedFields.nama_paket || '',
       pokja: fields.pokja || this.extractedFields.pokja || '',
+      alamat_pokja: fields.alamat_pokja || this.extractedFields.alamat_pokja || '',
       pagu_anggaran: fields.pagu_anggaran || this.extractedFields.pagu_anggaran || '',
+      pagu_terbilang: this.extractedFields.pagu_terbilang || '',
       jangka_waktu: fields.jangka_waktu || this.extractedFields.jangka_waktu || '',
-      lokasi: fields.lokasi || this.extractedFields.lokasi || ''
+      lokasi: fields.lokasi || this.extractedFields.lokasi || '',
+      peralatan,
+      personel,
+      rkk
     }));
     window.location.hash = '#documents';
   },

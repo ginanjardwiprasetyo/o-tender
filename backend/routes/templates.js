@@ -319,6 +319,109 @@ const DEFAULT_TEMPLATES = [
     </td>
   </tr>
 </table>`
+    },
+    {
+        nama_template: 'Pernyataan Mengikuti Tender',
+        kategori: 'Pernyataan',
+        paper_size: 'A4',
+        margin_top: 25, margin_bottom: 25, margin_left: 30, margin_right: 25,
+        html_content: `<h3 style="text-align:center; font-size:14pt; margin-bottom:20px; text-decoration:underline; text-transform:uppercase;">Pernyataan Mengikuti Tender</h3>
+
+<p>Saya yang bertandatangan di bawah ini:</p>
+<table style="width:100%; margin-bottom:15px;">
+  <tr><td style="width:160px; padding:3px 0;">Nama</td><td style="width:10px;">:</td><td><strong>{{direktur}}</strong></td></tr>
+  <tr><td style="padding:3px 0;">Jabatan</td><td>:</td><td>Direktur</td></tr>
+  <tr><td style="padding:3px 0;">Alamat</td><td>:</td><td>{{alamat}}</td></tr>
+  <tr><td style="padding:3px 0;">Dalam hal ini mewakili</td><td>:</td><td><strong>{{nama_perusahaan}}</strong></td></tr>
+</table>
+
+<p style="text-align:justify;">Menyatakan bahwa saya bersedia mengikuti proses Tender pekerjaan <strong>{{nama_paket}}</strong> pada {{pokja}} dengan menaati semua peraturan yang berlaku.</p>
+
+<p style="text-align:justify;">Demikian surat kesediaan ini dibuat dengan sebenar-benarnya.</p>
+
+<br>
+<table style="width:100%;">
+  <tr>
+    <td style="width:50%;"></td>
+    <td style="width:50%; text-align:center;">
+      <p>{{tanggal_surat}}</p>
+      {{ttd_direktur}}
+    </td>
+  </tr>
+</table>`
+    },
+    {
+        nama_template: 'Surat Pernyataan Kesediaan BPJS Ketenagakerjaan',
+        kategori: 'Pernyataan',
+        paper_size: 'A4',
+        margin_top: 25, margin_bottom: 25, margin_left: 30, margin_right: 25,
+        html_content: `<h3 style="text-align:center; font-size:13pt; margin-bottom:20px; text-decoration:underline; text-transform:uppercase;">Surat Pernyataan</h3>
+
+<p>Saya yang bertandatangan di bawah ini :</p>
+<table style="width:100%; margin-bottom:15px;">
+  <tr><td style="width:160px; padding:3px 0;">Nama</td><td style="width:10px;">:</td><td><strong>{{direktur}}</strong></td></tr>
+  <tr><td style="padding:3px 0;">Jabatan</td><td>:</td><td>Direktur</td></tr>
+  <tr><td style="padding:3px 0;">Alamat</td><td>:</td><td>{{alamat}}</td></tr>
+  <tr><td style="padding:3px 0;">Dalam hal ini mewakili</td><td>:</td><td><strong>{{nama_perusahaan}}</strong></td></tr>
+</table>
+
+<p style="text-align:justify;">Dengan ini menyatakan dengan sesungguhnya bahwa kami bersedia mengikuti program kepesertaan BPJS Ketenagakerjaan untuk Pekerjaan <strong>{{nama_paket}}</strong>.</p>
+
+<p style="text-align:justify;">Demikian Surat Pernyataan ini kami buat dengan sesungguhnya dan dapat dipergunakan sebagaimana mestinya.</p>
+
+<br>
+<table style="width:100%;">
+  <tr>
+    <td style="width:50%;"></td>
+    <td style="width:50%; text-align:center;">
+      <p>{{tanggal_surat}}</p>
+      {{ttd_direktur}}
+    </td>
+  </tr>
+</table>`
+    },
+    {
+        nama_template: 'Daftar Peralatan Utama',
+        kategori: 'Dukungan',
+        paper_size: 'A4',
+        margin_top: 25, margin_bottom: 25, margin_left: 30, margin_right: 25,
+        html_content: `<h3 style="text-align:center; font-size:13pt; margin-bottom:5px; text-transform:uppercase; text-decoration:underline;">Daftar Peralatan Utama</h3>
+<br>
+<table style="width:100%; margin-bottom:15px;">
+  <tr><td style="width:130px;">Pekerjaan</td><td style="width:10px;">:</td><td>{{nama_paket}}</td></tr>
+  <tr><td>Lokasi</td><td>:</td><td>{{lokasi}}</td></tr>
+  <tr><td>Instansi</td><td>:</td><td>{{instansi}}</td></tr>
+</table>
+{{tabel_peralatan}}
+<br>
+<table style="width:100%;">
+  <tr><td style="width:50%;"></td>
+    <td style="width:50%; text-align:center;"><p>{{tanggal_surat}}</p>{{ttd_direktur}}</td>
+  </tr>
+</table>`
+    },
+    {
+        nama_template: 'Daftar Personil Manajerial & Struktur Organisasi',
+        kategori: 'Dukungan',
+        paper_size: 'A4',
+        margin_top: 25, margin_bottom: 25, margin_left: 30, margin_right: 25,
+        html_content: `<h3 style="text-align:center; font-size:13pt; margin-bottom:5px; text-transform:uppercase; text-decoration:underline;">Daftar Personil Manajerial</h3>
+<br>
+<table style="width:100%; margin-bottom:15px;">
+  <tr><td style="width:130px;">Pekerjaan</td><td style="width:10px;">:</td><td>{{nama_paket}}</td></tr>
+  <tr><td>Lokasi</td><td>:</td><td>{{lokasi}}</td></tr>
+  <tr><td>Instansi</td><td>:</td><td>{{instansi}}</td></tr>
+</table>
+{{tabel_personil}}
+
+<h4 style="text-align:center; margin-top:30px; text-transform:uppercase;">Struktur Organisasi Lapangan</h4>
+{{struktur_organisasi}}
+<br>
+<table style="width:100%;">
+  <tr><td style="width:50%;"></td>
+    <td style="width:50%; text-align:center;"><p>{{tanggal_surat}}</p>{{ttd_direktur}}</td>
+  </tr>
+</table>`
     }
 ];
 
