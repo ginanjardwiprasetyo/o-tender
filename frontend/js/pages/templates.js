@@ -142,14 +142,14 @@ const TemplatesPage = {
         if (this._historyIdx > 0) {
             this._historyIdx--;
             const ed = document.getElementById('tpl-editor');
-            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; this.updateLiveEditorPreview(); }
+            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; setTimeout(()=>this._enhanceTables(),30); this.updateLiveEditorPreview(); }
         } else Toast.info('Tidak ada lagi untuk undo');
     },
     _redo() {
         if (this._historyIdx < this._editorHistory.length - 1) {
             this._historyIdx++;
             const ed = document.getElementById('tpl-editor');
-            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; this.updateLiveEditorPreview(); }
+            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; setTimeout(()=>this._enhanceTables(),30); this.updateLiveEditorPreview(); }
         } else Toast.info('Tidak ada lagi untuk redo');
     },
     _initHistory() {
@@ -376,17 +376,76 @@ const TemplatesPage = {
         for (const row of t.rows) { if (row.cells[idx]) row.deleteCell(idx); }
         this._pushHistory(); this.updateLiveEditorPreview();
     },
+    _enhanceTables() {
+        const ed = document.getElementById('tpl-editor');
+        if (!ed) return;
+        ed.querySelectorAll('table').forEach(tbl => {
+            tbl.style.tableLayout = 'fixed';
+            tbl.style.width = '100%';
+            const rows = tbl.rows;
+            if (!rows.length) return;
+            // ensure each cell has width set for dragging
+            for (let r = 0; r < rows.length; r++) {
+                for (let c = 0; c < rows[r].cells.length; c++) {
+                    const cell = rows[r].cells[c];
+                    if (!cell.style.width) cell.style.width = (cell.offsetWidth || 100) + 'px';
+                    // add resizer to header cells and first row data cells (visual handle)
+                    if (r === 0 && c < rows[r].cells.length - 1 && !cell.querySelector('.col-resizer')) {
+                        const h = document.createElement('span');
+                        h.className = 'col-resizer';
+                        h.title = 'Drag untuk atur lebar kolom';
+                        h.addEventListener('mousedown', (e) => this._startColResize(e, tbl, c));
+                        cell.appendChild(h);
+                        cell.style.position = 'relative';
+                    }
+                }
+            }
+        });
+    },
+    _startColResize(e, table, colIdx) {
+        e.preventDefault();
+        const startX = e.pageX;
+        const cols = table.rows[0].cells;
+        if (colIdx >= cols.length - 1) return;
+        const leftCell = cols[colIdx];
+        const rightCell = cols[colIdx + 1];
+        const startWLeft = leftCell.offsetWidth;
+        const startWRight = rightCell.offsetWidth;
+        const handle = e.target;
+        handle.classList.add('dragging');
+        const onMove = (ev) => {
+            const dx = ev.pageX - startX;
+            let nl = startWLeft + dx;
+            let nr = startWRight - dx;
+            if (nl < 30) nl = 30;
+            if (nr < 30) nr = 30;
+            // apply to all rows
+            for (const row of table.rows) {
+                if (row.cells[colIdx]) row.cells[colIdx].style.width = nl + 'px';
+                if (row.cells[colIdx + 1]) row.cells[colIdx + 1].style.width = nr + 'px';
+            }
+        };
+        const onUp = () => {
+            handle.classList.remove('dragging');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            this._pushHistory();
+            this.updateLiveEditorPreview();
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    },
     _insertTable(cols) {
         const editor = document.getElementById('tpl-editor');
         if (!editor) return;
         editor.focus();
         let html = '';
         if (cols === 2) {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Kolom 1</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Kolom 2</th></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
+            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Kolom 1</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Kolom 2</th></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
         } else if (cols === 4) {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Vol</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Ket</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
+            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:10%;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:20%;">Vol</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:20%;">Ket</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
         } else {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Keterangan</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
+            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:10%;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:45%;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:45%;">Keterangan</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
         }
         if (document.queryCommandSupported('insertHTML')) {
             document.execCommand('insertHTML', false, html);
@@ -403,6 +462,7 @@ const TemplatesPage = {
             } else editor.innerHTML += html;
         }
         this._pushHistory();
+        setTimeout(() => this._enhanceTables(), 50);
         this.updateLiveEditorPreview();
         editor.focus();
     },
@@ -413,12 +473,12 @@ const TemplatesPage = {
         if (id) {
             try { const res = await API.request(`/templates/${id}`); t = res.data; } catch (e) { Toast.error(e.message); return; }
         }
-        // inject Aptos font (cdnfonts) once
+        // inject Aptos font (onlinewebfonts) once
         if (!document.getElementById('aptos-font-link')) {
             const l = document.createElement('link');
             l.id = 'aptos-font-link';
             l.rel = 'stylesheet';
-            l.href = 'https://fonts.cdnfonts.com/css/aptos';
+            l.href = 'https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos';
             document.head.appendChild(l);
         }
         const title = id ? 'Edit Template' : 'Buat Template Baru';
@@ -465,15 +525,15 @@ const TemplatesPage = {
                     <div style="display:flex; flex-wrap:wrap; gap:6px; padding:10px; align-items:center; border-right:1px solid #e2e8f0; flex:1;">
                         <select class="form-select" style="width:150px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontFamily(this.value)" title="Jenis font">
                             <option value="">Font</option>
-                            <option value="'Aptos', Calibri, sans-serif">Aptos ★</option>
-                            <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                            <option value="Arial, Helvetica, sans-serif">Arial</option>
-                            <option value="Calibri, sans-serif">Calibri</option>
-                            <option value="Cambria, serif">Cambria</option>
-                            <option value="'Courier New', monospace">Courier New</option>
-                            <option value="Georgia, serif">Georgia</option>
-                            <option value="Tahoma, sans-serif">Tahoma</option>
-                            <option value="Verdana, sans-serif">Verdana</option>
+                            <option value="'Aptos', Calibri, sans-serif" style="font-family:'Aptos', Calibri, sans-serif;">Aptos ★ (Word baru)</option>
+                            <option value="'Times New Roman', Times, serif" style="font-family:'Times New Roman', serif;">Times New Roman</option>
+                            <option value="Arial, Helvetica, sans-serif" style="font-family:Arial, sans-serif;">Arial</option>
+                            <option value="Calibri, sans-serif" style="font-family:Calibri, sans-serif;">Calibri</option>
+                            <option value="Cambria, serif" style="font-family:Cambria, serif;">Cambria</option>
+                            <option value="'Courier New', monospace" style="font-family:'Courier New', monospace;">Courier New</option>
+                            <option value="Georgia, serif" style="font-family:Georgia, serif;">Georgia</option>
+                            <option value="Tahoma, sans-serif" style="font-family:Tahoma, sans-serif;">Tahoma</option>
+                            <option value="Verdana, sans-serif" style="font-family:Verdana, sans-serif;">Verdana</option>
                         </select>
                         <select class="form-select" style="width:86px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontSize(this.value)" title="Ukuran font">
                             <option value="">Ukuran</option>
@@ -604,6 +664,9 @@ const TemplatesPage = {
             const ed = document.getElementById('tpl-editor');
             if (ed) {
                 this._initHistory();
+                this._enhanceTables();
+                // re-enhance on paste/input
+                ed.addEventListener('input', () => setTimeout(()=>this._enhanceTables(),200));
                 // context menu for table delete (right click)
                 ed.addEventListener('contextmenu', (e) => {
                     const tbl = e.target.closest ? e.target.closest('table') : null;
