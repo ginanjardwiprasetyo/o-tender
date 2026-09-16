@@ -1,9 +1,12 @@
 /**
- * TenderBuild — Document Templates Page — WYSIWYG Word-like
- * ponytail: execCommand + native span styling, no deps, Word-style toolbar
+ * TenderBuild — Document Templates Page — WYSIWYG Word-like (Aptos, Tabel Fleksibel, Undo/Redo)
+ * ponytail: execCommand + history stack native, no deps
  */
 const TemplatesPage = {
     templates: [],
+    _editorHistory: [],
+    _historyIdx: -1,
+    _historyTimer: null,
 
     async render() {
         return `
@@ -120,6 +123,41 @@ const TemplatesPage = {
         { key: '{{ttd_personil}}', label: 'TTD Personil', cat: 'Tanda Tangan' },
     ],
 
+    // ─── HISTORY (undo/redo yang benar) ───────────────
+    _pushHistory() {
+        const ed = document.getElementById('tpl-editor');
+        if (!ed) return;
+        const html = ed.innerHTML;
+        if (this._editorHistory[this._historyIdx] === html) return;
+        this._editorHistory = this._editorHistory.slice(0, this._historyIdx + 1);
+        this._editorHistory.push(html);
+        this._historyIdx++;
+        if (this._editorHistory.length > 80) { this._editorHistory.shift(); this._historyIdx--; }
+    },
+    _schedulePush() {
+        clearTimeout(this._historyTimer);
+        this._historyTimer = setTimeout(() => this._pushHistory(), 400);
+    },
+    _undo() {
+        if (this._historyIdx > 0) {
+            this._historyIdx--;
+            const ed = document.getElementById('tpl-editor');
+            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; this.updateLiveEditorPreview(); }
+        } else Toast.info('Tidak ada lagi untuk undo');
+    },
+    _redo() {
+        if (this._historyIdx < this._editorHistory.length - 1) {
+            this._historyIdx++;
+            const ed = document.getElementById('tpl-editor');
+            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; this.updateLiveEditorPreview(); }
+        } else Toast.info('Tidak ada lagi untuk redo');
+    },
+    _initHistory() {
+        this._editorHistory = [];
+        this._historyIdx = -1;
+        this._pushHistory();
+    },
+
     // ─── WYSIWYG helpers ──────────────────────────────
     _htmlToEditor(html) {
         if (!html) return '<p><br></p>';
@@ -140,33 +178,42 @@ const TemplatesPage = {
         const editor = document.getElementById('tpl-editor');
         if (!editor) return;
         editor.focus();
-        const sel = window.getSelection();
+        // pakai insertHTML agar masuk undo stack native (fallback ke range jika tidak support)
         const tokenHtml = `<span class="wysiwyg-var" contenteditable="false" data-var="${varKey}">${varKey}</span>&nbsp;`;
-        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-            const range = sel.getRangeAt(0);
-            range.deleteContents();
-            const frag = range.createContextualFragment(tokenHtml);
-            const lastNode = frag.lastChild;
-            range.insertNode(frag);
-            range.setStartAfter(lastNode);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
+        if (document.queryCommandSupported('insertHTML')) {
+            document.execCommand('insertHTML', false, tokenHtml);
         } else {
-            editor.innerHTML += tokenHtml;
-            const range = document.createRange();
-            range.selectNodeContents(editor);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                const frag = range.createContextualFragment(tokenHtml);
+                const lastNode = frag.lastChild;
+                range.insertNode(frag);
+                range.setStartAfter(lastNode);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else {
+                editor.innerHTML += tokenHtml;
+                const range = document.createRange();
+                range.selectNodeContents(editor);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
         }
+        this._pushHistory();
         this.updateLiveEditorPreview();
     },
     _fmt(cmd, val = null) {
+        if (cmd === 'undo') { this._undo(); return; }
+        if (cmd === 'redo') { this._redo(); return; }
         const ed = document.getElementById('tpl-editor');
         if (ed) ed.focus();
         document.execCommand(cmd, false, val);
         if (ed) ed.focus();
+        this._pushHistory();
         this.updateLiveEditorPreview();
     },
     _wrapSpan(styleProp, value) {
@@ -175,29 +222,24 @@ const TemplatesPage = {
         ed.focus();
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-            // no selection: set style for next typing by inserting zero-width span behavior
-            // fallback: execCommand styleWithCSS
             document.execCommand('styleWithCSS', false, true);
-            // try to set via execCommand for fontSize/color where possible
             return;
         }
         const range = sel.getRangeAt(0);
         if (!ed.contains(range.commonAncestorContainer)) return;
         const span = document.createElement('span');
         span.style[styleProp] = value;
-        try {
-            range.surroundContents(span);
-        } catch(e) {
-            // fallback: extract and wrap
+        try { range.surroundContents(span); }
+        catch(e) {
             const frag = range.extractContents();
             span.appendChild(frag);
             range.insertNode(span);
         }
-        // reselect wrapped content
         sel.removeAllRanges();
         const nr = document.createRange();
         nr.selectNodeContents(span);
         sel.addRange(nr);
+        this._pushHistory();
         this.updateLiveEditorPreview();
     },
     _setFontFamily(fam) {
@@ -206,17 +248,12 @@ const TemplatesPage = {
         if (!ed) return;
         ed.focus();
         const sel = window.getSelection();
-        if (!sel || sel.isCollapsed) {
-            document.execCommand('fontName', false, fam);
-        } else {
-            this._wrapSpan('fontFamily', fam);
-        }
+        if (!sel || sel.isCollapsed) document.execCommand('fontName', false, fam);
+        else this._wrapSpan('fontFamily', fam);
+        if (!sel || sel.isCollapsed) this._pushHistory();
         this.updateLiveEditorPreview();
     },
-    _setFontSize(pt) {
-        if (!pt) return;
-        this._wrapSpan('fontSize', pt);
-    },
+    _setFontSize(pt) { if (!pt) return; this._wrapSpan('fontSize', pt); },
     _setLineHeight(val) {
         const ed = document.getElementById('tpl-editor');
         if (!ed) return;
@@ -225,15 +262,11 @@ const TemplatesPage = {
         let nodes = [];
         if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
             const range = sel.getRangeAt(0);
-            // collect block parents
             let common = range.commonAncestorContainer;
             if (common.nodeType === 3) common = common.parentElement;
             const blocks = ed.querySelectorAll('p, h1, h2, h3, h4, li, div, td, th');
-            blocks.forEach(b => {
-                if (range.intersectsNode(b)) nodes.push(b);
-            });
+            blocks.forEach(b => { if (range.intersectsNode(b)) nodes.push(b); });
             if (!nodes.length && common && ed.contains(common)) {
-                // walk up to block
                 let cur = common;
                 while (cur && cur !== ed) {
                     if (/^(P|H1|H2|H3|H4|LI|DIV)$/.test(cur.tagName)) { nodes.push(cur); break; }
@@ -242,26 +275,106 @@ const TemplatesPage = {
             }
         }
         if (!nodes.length) {
-            // apply to all paragraphs or editor itself
             const paras = ed.querySelectorAll('p');
             if (paras.length) paras.forEach(p => p.style.lineHeight = val);
             else ed.style.lineHeight = val;
-        } else {
-            nodes.forEach(n => n.style.lineHeight = val);
-        }
-        // also set editor default for future text
+        } else { nodes.forEach(n => n.style.lineHeight = val); }
         ed.style.lineHeight = val;
+        this._pushHistory();
         this.updateLiveEditorPreview();
     },
-    _setColor(color) { document.execCommand('foreColor', false, color); this.updateLiveEditorPreview(); },
+    _setColor(color) { document.execCommand('foreColor', false, color); this._pushHistory(); this.updateLiveEditorPreview(); },
     _setHilite(color) {
-        // hiliteColor for FF, backColor for others
         if (document.queryCommandSupported('hiliteColor')) document.execCommand('hiliteColor', false, color);
         else document.execCommand('backColor', false, color);
-        this.updateLiveEditorPreview();
+        this._pushHistory(); this.updateLiveEditorPreview();
     },
-    _setBlock(tag) {
-        this._fmt('formatBlock', tag);
+    _setBlock(tag) { this._fmt('formatBlock', tag); },
+    _findTable() {
+        const ed = document.getElementById('tpl-editor');
+        if (!ed) return null;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+            // fallback: last table in editor
+            const tables = ed.querySelectorAll('table');
+            return tables.length ? tables[tables.length-1] : null;
+        }
+        let node = sel.anchorNode;
+        if (node && node.nodeType === 3) node = node.parentElement;
+        while (node && node !== ed) {
+            if (node.tagName === 'TABLE') return node;
+            if (node.tagName === 'TD' || node.tagName === 'TH') return node.closest('table');
+            node = node.parentElement;
+        }
+        // if no table at caret, pick table under range
+        try {
+            const range = sel.getRangeAt(0);
+            const tables = ed.querySelectorAll('table');
+            for (const t of tables) if (range.intersectsNode(t)) return t;
+        } catch(e) {}
+        return null;
+    },
+    _deleteTable() {
+        const t = this._findTable();
+        if (!t) { Toast.warning('Letakkan kursor di dalam tabel dulu'); return; }
+        t.remove();
+        this._pushHistory(); this.updateLiveEditorPreview();
+        Toast.success('Tabel dihapus');
+    },
+    _addRow() {
+        const t = this._findTable();
+        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
+        const sel = window.getSelection();
+        let row = null;
+        if (sel && sel.anchorNode) {
+            let n = sel.anchorNode; if (n.nodeType===3) n=n.parentElement;
+            row = n ? n.closest('tr') : null;
+        }
+        const cols = (row ? row.cells.length : (t.rows[0]?.cells.length || 3));
+        const isHeader = row && row.parentElement.tagName==='THEAD';
+        const newRow = t.insertRow(row ? row.rowIndex + 1 : t.rows.length);
+        for (let i=0;i<cols;i++) {
+            const c = newRow.insertCell();
+            c.style.cssText='border:1px solid #000; padding:6px;';
+            if (isHeader) { c.style.background='#f2f2f2'; c.style.fontWeight='600'; }
+            c.innerHTML='&nbsp;';
+        }
+        this._pushHistory(); this.updateLiveEditorPreview();
+    },
+    _delRow() {
+        const t = this._findTable();
+        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
+        const sel = window.getSelection();
+        let row = null;
+        if (sel && sel.anchorNode) { let n=sel.anchorNode; if(n.nodeType===3) n=n.parentElement; row=n?n.closest('tr'):null; }
+        if (!row) { Toast.warning('Letakkan kursor di baris yang ingin dihapus'); return; }
+        if (t.rows.length <= 1) { Toast.warning('Tabel minimal 1 baris'); return; }
+        row.remove();
+        this._pushHistory(); this.updateLiveEditorPreview();
+    },
+    _addCol() {
+        const t = this._findTable();
+        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
+        for (const row of t.rows) {
+            const c = row.insertCell(-1);
+            const isHead = row.parentElement.tagName==='THEAD' || row.cells[0]?.tagName==='TH';
+            c.style.cssText='border:1px solid #000; padding:6px;';
+            if (isHead) { c.style.background='#f2f2f2'; c.style.fontWeight='600'; c.innerHTML='Kolom'; }
+            else c.innerHTML='&nbsp;';
+        }
+        this._pushHistory(); this.updateLiveEditorPreview();
+    },
+    _delCol() {
+        const t = this._findTable();
+        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
+        const sel = window.getSelection();
+        let cell = null;
+        if (sel && sel.anchorNode) { let n=sel.anchorNode; if(n.nodeType===3) n=n.parentElement; cell=n?n.closest('td,th'):null; }
+        if (!cell) { Toast.warning('Letakkan kursor di kolom yang ingin dihapus'); return; }
+        const idx = cell.cellIndex;
+        if (t.rows[0].cells.length <= 1) { Toast.warning('Tabel minimal 1 kolom'); return; }
+        for (const row of t.rows) { if (row.cells[idx]) row.deleteCell(idx); }
+        this._pushHistory(); this.updateLiveEditorPreview();
     },
     _insertTable(cols) {
         const editor = document.getElementById('tpl-editor');
@@ -275,18 +388,21 @@ const TemplatesPage = {
         } else {
             html = `<table style="width:100%; border-collapse:collapse; margin:10px 0;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2;">Keterangan</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
         }
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-            const range = sel.getRangeAt(0);
-            range.deleteContents();
-            const frag = range.createContextualFragment(html);
-            range.insertNode(frag);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
+        if (document.queryCommandSupported('insertHTML')) {
+            document.execCommand('insertHTML', false, html);
         } else {
-            editor.innerHTML += html;
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                const frag = range.createContextualFragment(html);
+                range.insertNode(frag);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else editor.innerHTML += html;
         }
+        this._pushHistory();
         this.updateLiveEditorPreview();
         editor.focus();
     },
@@ -296,6 +412,14 @@ const TemplatesPage = {
         let t = {};
         if (id) {
             try { const res = await API.request(`/templates/${id}`); t = res.data; } catch (e) { Toast.error(e.message); return; }
+        }
+        // inject Aptos font (cdnfonts) once
+        if (!document.getElementById('aptos-font-link')) {
+            const l = document.createElement('link');
+            l.id = 'aptos-font-link';
+            l.rel = 'stylesheet';
+            l.href = 'https://fonts.cdnfonts.com/css/aptos';
+            document.head.appendChild(l);
         }
         const title = id ? 'Edit Template' : 'Buat Template Baru';
         const cats = {};
@@ -323,87 +447,103 @@ const TemplatesPage = {
             </div>
 
             <!-- WORD-LIKE WYSIWYG -->
-            <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; margin-bottom:12px; background:white;">
-                <!-- ribbon header -->
-                <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f1f5f9; border-bottom:1px solid var(--border-color);">
-                    <span style="font-weight:700; font-size:0.82rem; display:flex; align-items:center; gap:8px; color:#334155;"><i data-lucide="file-pen-line" style="width:16px; height:16px; color:var(--accent);"></i> Editor Dokumen — mirip MS Word</span>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._fmt('undo')" title="Undo">↶</button>
-                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._fmt('redo')" title="Redo">↷</button>
+            <div style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; margin-bottom:12px; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <!-- ribbon tabs (Word familiar) -->
+                <div style="display:flex; align-items:center; gap:4px; padding:6px 10px 0 10px; background:#f1f5f9; border-bottom:1px solid #e2e8f0;">
+                    <span class="ribbon-tab active" data-tab="home" onclick="TemplatesPage._switchTab('home')">Beranda</span>
+                    <span class="ribbon-tab" data-tab="insert" onclick="TemplatesPage._switchTab('insert')">Sisipkan</span>
+                    <span class="ribbon-tab" data-tab="layout" onclick="TemplatesPage._switchTab('layout')">Tata Letak</span>
+                    <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._undo()" title="Undo (Ctrl+Z)">↶ Undo</button>
+                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._redo()" title="Redo (Ctrl+Y)">↷ Redo</button>
                         <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; cursor:pointer; margin-left:8px;"><input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan</label>
                     </div>
                 </div>
 
-                <!-- toolbar row 1: font -->
-                <div class="wysiwyg-toolbar" style="display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px; background:#ffffff; border-bottom:1px solid #e2e8f0; align-items:center;">
-                    <select class="form-select" style="width:150px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontFamily(this.value)" title="Jenis font">
-                        <option value="">Font</option>
-                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                        <option value="Arial, Helvetica, sans-serif">Arial</option>
-                        <option value="Calibri, sans-serif">Calibri</option>
-                        <option value="Cambria, serif">Cambria</option>
-                        <option value="'Courier New', monospace">Courier New</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="Tahoma, sans-serif">Tahoma</option>
-                        <option value="Verdana, sans-serif">Verdana</option>
-                    </select>
-                    <select class="form-select" style="width:90px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontSize(this.value)" title="Ukuran font">
-                        <option value="">Ukuran</option>
-                        <option value="8pt">8</option><option value="9pt">9</option><option value="10pt">10</option><option value="11pt">11</option><option value="12pt">12</option><option value="14pt">14</option><option value="16pt">16</option><option value="18pt">18</option><option value="20pt">20</option><option value="24pt">24</option><option value="28pt">28</option>
-                    </select>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('bold')" title="Tebal (Ctrl+B)"><b>B</b></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('italic')" title="Miring (Ctrl+I)"><i>I</i></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('underline')" title="Garis bawah (Ctrl+U)"><u>U</u></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('strikeThrough')" title="Coret"><span style="text-decoration:line-through;">S</span></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('superscript')" title="Superscript">x<sup>2</sup></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('subscript')" title="Subscript">x<sub>2</sub></button>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <label class="word-btn" style="display:flex; align-items:center; gap:4px; cursor:pointer; padding:2px 6px;" title="Warna teks">
-                        <span style="font-size:0.7rem; font-weight:700;">A</span><input type="color" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setColor(this.value)">
-                    </label>
-                    <label class="word-btn" style="display:flex; align-items:center; gap:4px; cursor:pointer; padding:2px 6px; background:#fef08a;" title="Stabilo">
-                        <i data-lucide="highlighter" style="width:14px; height:14px;"></i><input type="color" value="#fef08a" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setHilite(this.value)">
-                    </label>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('removeFormat')" title="Hapus format">✕</button>
+                <!-- HOME tab -->
+                <div class="ribbon-panel" data-panel="home" style="display:flex; flex-wrap:wrap; gap:0; background:white;">
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; padding:10px; align-items:center; border-right:1px solid #e2e8f0; flex:1;">
+                        <select class="form-select" style="width:150px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontFamily(this.value)" title="Jenis font">
+                            <option value="">Font</option>
+                            <option value="'Aptos', Calibri, sans-serif">Aptos ★</option>
+                            <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                            <option value="Arial, Helvetica, sans-serif">Arial</option>
+                            <option value="Calibri, sans-serif">Calibri</option>
+                            <option value="Cambria, serif">Cambria</option>
+                            <option value="'Courier New', monospace">Courier New</option>
+                            <option value="Georgia, serif">Georgia</option>
+                            <option value="Tahoma, sans-serif">Tahoma</option>
+                            <option value="Verdana, sans-serif">Verdana</option>
+                        </select>
+                        <select class="form-select" style="width:86px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontSize(this.value)" title="Ukuran font">
+                            <option value="">Ukuran</option>
+                            <option value="8pt">8</option><option value="9pt">9</option><option value="10pt">10</option><option value="11pt">11</option><option value="12pt">12</option><option value="14pt">14</option><option value="16pt">16</option><option value="18pt">18</option><option value="20pt">20</option><option value="24pt">24</option><option value="28pt">28</option>
+                        </select>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('bold')" title="Tebal (Ctrl+B)"><b>B</b></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('italic')" title="Miring (Ctrl+I)"><i>I</i></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('underline')" title="Garis bawah (Ctrl+U)"><u>U</u></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('strikeThrough')" title="Coret"><span style="text-decoration:line-through;">S</span></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('superscript')" title="Superscript">x<sup>2</sup></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('subscript')" title="Subscript">x<sub>2</sub></button>
+                        <label class="word-btn" style="gap:4px; cursor:pointer;" title="Warna teks">
+                            <span style="font-size:0.7rem; font-weight:700;">A</span><input type="color" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setColor(this.value)">
+                        </label>
+                        <label class="word-btn" style="gap:4px; cursor:pointer; background:#fef08a;" title="Stabilo">
+                            <i data-lucide="highlighter" style="width:14px; height:14px;"></i><input type="color" value="#fef08a" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setHilite(this.value)">
+                        </label>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('removeFormat')" title="Hapus format">✕</button>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px; padding:10px; align-items:center; background:#f8fafc; border-right:1px solid #e2e8f0;">
+                        <select class="form-select" style="width:120px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setBlock(this.value); this.selectedIndex=0" title="Gaya paragraf">
+                            <option value="">Gaya</option><option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="blockquote">Kutipan</option>
+                        </select>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyLeft')" title="Rata kiri"><i data-lucide="align-left" style="width:15px;height:15px;"></i></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyCenter')" title="Tengah"><i data-lucide="align-center" style="width:15px;height:15px;"></i></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyRight')" title="Kanan"><i data-lucide="align-right" style="width:15px;height:15px;"></i></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyFull')" title="Justify"><i data-lucide="align-justify" style="width:15px;height:15px;"></i></button>
+                        <select class="form-select" style="width:90px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setLineHeight(this.value)" title="Spasi baris">
+                            <option value="">Spasi</option><option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="2.5">2.5</option>
+                        </select>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('indent')" title="Indent">→</button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('outdent')" title="Outdent">←</button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertUnorderedList')" title="Bullet"><i data-lucide="list" style="width:15px;height:15px;"></i></button>
+                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertOrderedList')" title="Numbering"><i data-lucide="list-ordered" style="width:15px;height:15px;"></i></button>
+                    </div>
                 </div>
 
-                <!-- toolbar row 2: paragraph & insert -->
-                <div class="wysiwyg-toolbar" style="display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px; background:#f8fafc; border-bottom:1px solid #e2e8f0; align-items:center;">
-                    <select class="form-select" style="width:130px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setBlock(this.value); this.selectedIndex=0" title="Gaya paragraf">
-                        <option value="">Gaya</option>
-                        <option value="p">Normal</option>
-                        <option value="h1">Heading 1</option>
-                        <option value="h2">Heading 2</option>
-                        <option value="h3">Heading 3</option>
-                        <option value="blockquote">Kutipan</option>
-                    </select>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyLeft')" title="Rata kiri"><i data-lucide="align-left" style="width:15px;height:15px;"></i></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyCenter')" title="Tengah"><i data-lucide="align-center" style="width:15px;height:15px;"></i></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyRight')" title="Kanan"><i data-lucide="align-right" style="width:15px;height:15px;"></i></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyFull')" title="Justify"><i data-lucide="align-justify" style="width:15px;height:15px;"></i></button>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <select class="form-select" style="width:110px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setLineHeight(this.value)" title="Spasi baris">
-                        <option value="">Spasi</option>
-                        <option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="2.5">2.5</option>
-                    </select>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('indent')" title="Tingkatkan indent">→</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('outdent')" title="Kurangi indent">←</button>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertUnorderedList')" title="Bullet"><i data-lucide="list" style="width:15px;height:15px;"></i></button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertOrderedList')" title="Numbering"><i data-lucide="list-ordered" style="width:15px;height:15px;"></i></button>
-                    <span style="width:1px; height:22px; background:#e2e8f0; margin:0 2px;"></span>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(2)" title="Tabel 2 kolom">⊞ 2</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(3)" title="Tabel 3 kolom">⊞ 3</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(4)" title="Tabel 4 kolom">⊞ 4</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertHorizontalRule')" title="Garis horizontal">―</button>
+                <!-- INSERT tab -->
+                <div class="ribbon-panel" data-panel="insert" style="display:none; flex-wrap:wrap; gap:6px; padding:10px; background:white; align-items:center; border-bottom:1px solid #e2e8f0;">
+                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(2)" title="Tabel 2 kolom">⊞ 2 kol</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(3)" title="Tabel 3 kolom">⊞ 3 kol</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(4)" title="Tabel 4 kolom">⊞ 4 kol</button>
+                    <span style="width:1px; height:28px; background:#e2e8f0; margin:0 4px;"></span>
+                    <button type="button" class="word-btn" style="background:#fef2f2; border-color:#fecaca;" onclick="TemplatesPage._deleteTable()" title="Hapus tabel terpilih">🗑 Tabel</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._addRow()" title="Tambah baris">+ Baris</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._delRow()" title="Hapus baris">− Baris</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._addCol()" title="Tambah kolom">+ Kolom</button>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._delCol()" title="Hapus kolom">− Kolom</button>
+                    <span style="width:1px; height:28px; background:#e2e8f0; margin:0 4px;"></span>
+                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertHorizontalRule')" title="Garis horizontal">― Garis</button>
+                    <span style="font-size:0.72rem; color:#64748b; margin-left:8px;">Tip: klik di dalam tabel lalu pakai tombol baris/kolom. Undo/redo berfungsi untuk semua aksi tabel.</span>
                 </div>
 
-                <div id="tpl-editor" contenteditable="true" class="wysiwyg-editor" style="min-height:320px; max-height:520px; overflow-y:auto; padding:20px 24px; background:white; color:#000; font-family:'Times New Roman', Times, serif; font-size:12pt; line-height:1.5; outline:none; text-align:justify;" oninput="TemplatesPage.updateLiveEditorPreview()" onkeyup="TemplatesPage.updateLiveEditorPreview()">${editorHtml}</div>
+                <!-- LAYOUT tab -->
+                <div class="ribbon-panel" data-panel="layout" style="display:none; flex-wrap:wrap; gap:6px; padding:10px; background:#f8fafc; align-items:center;">
+                    <span style="font-size:0.78rem; color:#475569;">Margin & ukuran kertas diatur di panel <b>Layout Halaman</b> di bawah editor.</span>
+                    <span style="font-size:0.72rem; color:#64748b; margin-left:8px;">Ruler & bayangan kertas aktif — tampilan seperti MS Word Online.</span>
+                </div>
+
+                <!-- ruler Word-like -->
+                <div class="word-ruler" style="height:16px; background:#f1f5f9; border-bottom:1px solid #cbd5e1; position:relative; overflow:hidden; display:flex; align-items:flex-end; padding:0 24px; gap:0; font-size:0.6rem; color:#94a3b8;">
+                    <div style="flex:1; display:flex; justify-content:space-between; border-top:1px solid #cbd5e1; padding-top:2px;">
+                        <span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span><span>12</span><span>14</span><span>16</span><span>18</span><span>20</span><span>21 cm</span>
+                    </div>
+                </div>
+
+                <div id="tpl-editor" contenteditable="true" class="wysiwyg-editor" style="min-height:340px; max-height:560px; overflow-y:auto; padding:24px 28px; background:white; color:#000; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:12pt; line-height:1.5; outline:none; text-align:justify;" oninput="TemplatesPage._schedulePush(); TemplatesPage.updateLiveEditorPreview()" onkeyup="TemplatesPage.updateLiveEditorPreview()">${editorHtml}</div>
                 <div style="padding:6px 12px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:0.70rem; color:#64748b; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-                    <span>Tip: blok variabel biru — klik variabel di bawah untuk sisipkan. Tabel bisa diketik langsung. Gunakan Ctrl+B/I/U untuk format cepat.</span>
-                    <span style="opacity:0.7;">Word-like • font, warna, spasi, tabel didukung</span>
+                    <span>Word Online versimu — font Aptos, tabel fleksibel (Sisipkan → baris/kolom), hapus tabel 1 klik, undo/redo untuk semua aksi.</span>
+                    <span style="opacity:0.7;">Ctrl+Z / Ctrl+Y berfungsi • Klik kanan tabel untuk edit manual</span>
                 </div>
             </div>
 
@@ -445,7 +585,7 @@ const TemplatesPage = {
 
             <div style="margin-top:12px;">
                 <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Live Preview (dengan data dummy):</div>
-                <div id="tpl-live-preview" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:120px; max-height:220px; overflow-y:auto; font-family:'Times New Roman', serif; font-size:11pt; line-height:1.4; text-align:justify;"></div>
+                <div id="tpl-live-preview" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:120px; max-height:220px; overflow-y:auto; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:11pt; line-height:1.4; text-align:justify;"></div>
             </div>
         </div>`;
 
@@ -456,10 +596,45 @@ const TemplatesPage = {
 
         Modal.open(title, body, footer);
         const modalEl = document.getElementById('modal');
-        if (modalEl) modalEl.style.maxWidth = '980px';
+        if (modalEl) modalEl.style.maxWidth = '1020px';
         lucide.createIcons();
-        setTimeout(() => this.updateLiveEditorPreview(), 100);
+        // init history & shortcuts
+        this._editorHistory = []; this._historyIdx = -1;
+        setTimeout(() => {
+            const ed = document.getElementById('tpl-editor');
+            if (ed) {
+                this._initHistory();
+                // context menu for table delete (right click)
+                ed.addEventListener('contextmenu', (e) => {
+                    const tbl = e.target.closest ? e.target.closest('table') : null;
+                    if (tbl) {
+                        e.preventDefault();
+                        if (confirm('Hapus tabel ini?')) { tbl.remove(); this._pushHistory(); this.updateLiveEditorPreview(); }
+                    }
+                });
+                ed.addEventListener('keydown', (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='z') { e.preventDefault(); this._undo(); }
+                    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase()==='y' || (e.shiftKey && e.key.toLowerCase()==='z'))) { e.preventDefault(); this._redo(); }
+                });
+                // click on table shows hint? add outline
+                ed.addEventListener('click', (e) => {
+                    const tbl = e.target.closest ? e.target.closest('table') : null;
+                    ed.querySelectorAll('table').forEach(t=> t.style.outline='');
+                    if (tbl) tbl.style.outline='2px solid #3b82f6';
+                });
+            }
+            this.updateLiveEditorPreview();
+        }, 100);
         setTimeout(() => { const ed = document.getElementById('tpl-editor'); if (ed && !id) ed.focus(); }, 200);
+    },
+
+    _switchTab(tab) {
+        document.querySelectorAll('.ribbon-tab').forEach(el => el.classList.toggle('active', el.dataset.tab===tab));
+        document.querySelectorAll('.ribbon-panel').forEach(el => {
+            const show = el.dataset.panel===tab;
+            el.style.display = show ? 'flex' : 'none';
+        });
+        lucide.createIcons();
     },
 
     updateLiveEditorPreview() {
@@ -576,7 +751,7 @@ const TemplatesPage = {
             .replace(/\{\{tabel_peralatan\}\}/g, '<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;"><th style="border:1px solid #000; padding:4px;">No</th><th style="border:1px solid #000; padding:4px;">Jenis</th><th style="border:1px solid #000; padding:4px;">Kapasitas</th><th style="border:1px solid #000; padding:4px;">Jumlah</th></tr><tr><td style="border:1px solid #000; padding:4px; text-align:center;">1</td><td style="border:1px solid #000; padding:4px;">Scaffolding</td><td style="border:1px solid #000; padding:4px;">-</td><td style="border:1px solid #000; padding:4px; text-align:center;">250 Unit</td></tr></table>')
             .replace(/\{\{tabel_personil\}\}/g, '<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;"><th style="border:1px solid #000; padding:4px;">No</th><th style="border:1px solid #000; padding:4px;">Nama</th><th style="border:1px solid #000; padding:4px;">Jabatan</th></tr><tr><td style="border:1px solid #000; padding:4px; text-align:center;">1</td><td style="border:1px solid #000; padding:4px;">Budi Santoso</td><td style="border:1px solid #000; padding:4px;">Pelaksana</td></tr></table>')
             .replace(/\{\{struktur_organisasi\}\}/g, '<div style="text-align:center; border:1px solid #000; padding:8px; margin:10px 0;">Bagan Struktur Organisasi</div>');
-        const html = `<div style="background:#e2e8f0; padding:24px; border-radius:var(--radius-md); overflow:auto; max-height:70vh;"><div style="width:${paperW}; max-width:100%; margin:0 auto; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.12); padding:${t.margin_top||25}mm ${t.margin_right||25}mm ${t.margin_bottom||25}mm ${t.margin_left||30}mm; font-family:'Times New Roman', serif; font-size:${t.fit_layout ? '11pt' : '12pt'}; color:#000; line-height:${t.fit_layout ? '1.3' : '1.5'}; min-height:400px;"><div style="text-align:center; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:20px; color:#94a3b8; border-color:#cbd5e1; font-style:italic;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">[KOP SURAT PERUSAHAAN]</div><div style="font-size:10pt;">Alamat Perusahaan akan tampil otomatis di sini</div></div><div style="text-align:justify;">${narasi || '<span style="color:#999;">— Narasi belum diisi —</span>'}</div></div></div>`;
+        const html = `<div style="background:#e2e8f0; padding:24px; border-radius:var(--radius-md); overflow:auto; max-height:70vh;"><div style="width:${paperW}; max-width:100%; margin:0 auto; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.12); padding:${t.margin_top||25}mm ${t.margin_right||25}mm ${t.margin_bottom||25}mm ${t.margin_left||30}mm; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:${t.fit_layout ? '11pt' : '12pt'}; color:#000; line-height:${t.fit_layout ? '1.3' : '1.5'}; min-height:400px;"><div style="text-align:center; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:20px; color:#94a3b8; border-color:#cbd5e1; font-style:italic;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">[KOP SURAT PERUSAHAAN]</div><div style="font-size:10pt;">Alamat Perusahaan akan tampil otomatis di sini</div></div><div style="text-align:justify;">${narasi || '<span style="color:#999;">— Narasi belum diisi —</span>'}</div></div></div>`;
         let finalHtml = html
             .replace(/\{\{ttd_gabungan\}\}/g, '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;">[Tanda Tangan Pihak 1 & Pihak 2 Akan Muncul Disini]</div>')
             .replace(/\{\{ttd_direktur\}\}/g, '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;margin-left:auto;">[Tanda Tangan Direktur Akan Muncul Disini]</div>')
