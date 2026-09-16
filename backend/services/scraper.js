@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
 const path = require('path');
+const { resolveSbu, resolveSbuString } = require('../utils/kbli-sbu-map');
 
 const PLAYWRIGHT_SCRIPT = path.join(__dirname, 'playwright_scraper.js');
 
@@ -92,8 +93,11 @@ async function scrapeMultiple(slug, kodes) {
                 return isNaN(plain) ? 0 : Math.round(plain);
             }
 
+            // SBU via direct + KBLI mapping (covers "KBLI 41012" without explicit BG002)
+            const sbuText = [rawData.sbu, rawData.details?.['Syarat Kualifikasi'], rawData.qualText].filter(Boolean).join(' ');
+            const resolved = sbuText ? resolveSbuString(sbuText) : '-';
             results[kode] = {
-                sbu: extractSbuCodes(rawData.sbu) || rawData.sbu || '-',
+                sbu: resolved !== '-' ? resolved : (extractSbuCodes(rawData.sbu) || rawData.sbu || '-'),
                 deadline: rawData.batas_upload || rawData.deadline || '-',
                 pagu: typeof rawData.pagu === 'string' ? parseInBrowser(rawData.pagu) : (rawData.pagu || 0),
                 hps: typeof rawData.hps === 'string' ? parseInBrowser(rawData.hps) : (rawData.hps || 0)
@@ -106,22 +110,19 @@ async function scrapeMultiple(slug, kodes) {
     return results;
 }
 
+// re-export for backward compat — now KBLI-aware via kbli-sbu-map
 function extractSbuCodes(text) {
     if (!text) return '';
-    const regex = /\b(BG|BS|PL|PB|GT|ST|KP|KK|RK|RE|EL|ME|SP|TI|MK|PR|EE|SE)[\s-]*0*(\d{1,3})\b/gi;
-    const matches = [];
-    let m;
-    while ((m = regex.exec(text)) !== null) {
-        matches.push(`${m[1].toUpperCase()}${m[2].padStart(3, '0')}`);
-    }
-    return matches.length > 0 ? [...new Set(matches)].join(', ') : '';
+    const { extractSbuCodes: ex } = require('../utils/kbli-sbu-map');
+    const arr = ex(text);
+    return arr.length ? arr.join(', ') : '';
 }
 
 function extractKbliCodes(text) {
     if (!text) return '';
-    const regex = /\b\d{5}\b/g;
-    const matches = text.match(regex) || [];
-    return [...new Set(matches)].join(', ');
+    const { extractKbliCodes: ex } = require('../utils/kbli-sbu-map');
+    const arr = ex(text);
+    return arr.length ? arr.join(', ') : '';
 }
 
-module.exports = { scrapeTender, scrapeTenderList, scrapeMultiple, extractSbuCodes, extractKbliCodes };
+module.exports = { scrapeTender, scrapeTenderList, scrapeMultiple, extractSbuCodes, extractKbliCodes, resolveSbu };

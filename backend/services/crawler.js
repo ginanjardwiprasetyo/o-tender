@@ -4,12 +4,14 @@
  */
 const axios = require('axios');
 const db = require('../config/db');
-const { getSlug, getBaseUrl } = require('../utils/lpse-mapper');
+const { getSlug, getBaseUrl, getLPSEList } = require('../utils/lpse-mapper');
 const { exec } = require('child_process');
 const util = require('util');
 const os = require('os');
 const execPromise = util.promisify(exec);
 const { normalizeDate } = require('../utils/date-formatter');
+const cheerio = require('cheerio');
+const { extractSbuCodes, resolveSbu, resolveSbuString } = require('../utils/kbli-sbu-map');
 
 function isDeadlineFuture(dateStr) {
     if (!dateStr || dateStr === '-') return false;
@@ -32,15 +34,25 @@ function extractAanwizingDate(schedules) {
     return null;
 }
 
+async function tryFreeMemory() {
+    if (typeof global.gc === 'function') {
+        global.gc();
+        await new Promise(r => setTimeout(r, 500));
+        global.gc();
+    }
+}
+
 async function runScraper(type, url, yearStr) {
-    // Skip Playwright if memory is critically low (avoids OOM on Render free tier)
+    // Try to free memory first
+    await tryFreeMemory();
+
     const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
-    if (freeMemMb < 200) {
+    if (freeMemMb < 70) {
         const warnMsg = `Memory too low (${freeMemMb}MB free), skipping Playwright ${type}`;
         console.warn(`[Crawler] ${warnMsg}`);
         return type === 'list' ? [] : null;
     }
-    const cmd = `node --max-old-space-size=256 /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
+    const cmd = `node --max-old-space-size=192 --expose-gc /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
     const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
     try {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
@@ -64,6 +76,168 @@ const parseCurrency = (val) => {
     clean = clean.split(',')[0];
     return parseInt(clean, 10) || 0;
 };
+
+function extractSbu(text) {
+    if (!text || text === '-') return '-';
+    const arr = resolveSbu(text);
+    return arr.length ? arr.join(', ') : '-';
+}
+// keep legacy name for callers that used extractSbuCodes in this file
+function extractSbuCodesLocal(text) {
+    const arr = extractSbuCodes(text);
+    return arr.length ? arr.join(', ') : '-';
+}
+
+async function httpDetailScraper(pengumumanUrl) {
+    const urlObj = new URL(pengumumanUrl);
+    const homeUrl = urlObj.origin + '/' + urlObj.pathname.split('/')[1] + '/lelang';
+
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"macOS"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+    };
+
+    let cookies = {};
+
+    function extractCookies(setCookieHeaders) {
+        if (!setCookieHeaders) return;
+        const arr = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+        for (const c of arr) {
+            const pair = c.split(';')[0].trim();
+            const eq = pair.indexOf('=');
+            if (eq > 0) {
+                cookies[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim();
+            }
+        }
+    }
+
+    function cookieHeader() {
+        return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
+    }
+
+    // Visit homepage first to get session cookies
+    try {
+        const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
+        extractCookies(homeResp.headers['set-cookie']);
+    } catch {}
+
+    await new Promise(r => setTimeout(r, 500));
+
+    // Fetch pengumuman page
+    const resp = await axios.get(pengumumanUrl, {
+        timeout: 20000,
+        headers: { ...headers, 'Cookie': cookieHeader(), 'Referer': homeUrl },
+    });
+    extractCookies(resp.headers['set-cookie']);
+    const html = resp.data;
+    const $ = cheerio.load(html);
+
+    // Check for WAF block
+    const bodyText = $('body').text().toLowerCase();
+    if (bodyText.includes('akses ditolak') || bodyText.includes('anda tidak diizinkan membuka')) {
+        return null;
+    }
+
+    // Extract table data
+    let sbu = '-';
+    let pagu = '';
+    let hps = '';
+    let nama_paket = '';
+    let instansi = '';
+
+    $('table tr').each((i, row) => {
+        const cells = $(row).find('th, td');
+        const texts = cells.map((j, c) => $(c).text().trim()).get();
+        for (let j = 0; j < texts.length; j++) {
+            const label = texts[j].toLowerCase();
+            const value = j + 1 < texts.length ? texts[j + 1] : '';
+            if (!value) continue;
+            if (label.includes('sbu') || label.includes('sertifikat badan usaha')) sbu = extractSbu(value);
+            else if (label.includes('nilai pagu') || label === 'pagu') pagu = value;
+            else if (label.includes('nilai hps') || label === 'hps') hps = value;
+            else if (label.includes('nama paket') || label.includes('nama tender')) nama_paket = value;
+            else if (label.includes('instansi') || label.includes('k/l/pd')) instansi = value;
+        }
+    });
+
+    // Extract Syarat Kualifikasi for SBU (include KBLI→SBU fallback)
+    const fullText = $('body').text();
+    const kualifIdx = fullText.indexOf('Syarat Kualifikasi');
+    let qualSection = '';
+    if (kualifIdx >= 0) {
+        qualSection = fullText.substring(kualifIdx + 'Syarat Kualifikasi'.length, kualifIdx + 4000);
+        // merge SBU dari tabel + qualSection + fullText via KBLI mapping ("KBLI 41012" -> BG002)
+        const combined = [sbu !== '-' ? sbu : '', qualSection, fullText.substring(0, 8000)].join(' ');
+        const resolved = resolveSbu(combined);
+        if (resolved.length) sbu = resolved.join(', ');
+        else if (sbu === '-') sbu = extractSbu(qualSection);
+    } else if (sbu === '-') {
+        // tidak ada header Syarat Kualifikasi, tetap coba KBLI di body
+        const resolved = resolveSbu(fullText.substring(0, 8000));
+        if (resolved.length) sbu = resolved.join(', ');
+    }
+
+    // Fetch jadwal page for schedule info (batas upload & aanwijzing)
+    const jadwalUrl = pengumumanUrl.replace('/pengumumanlelang', '/jadwal');
+    let batas_upload = '';
+    let schedules = [];
+    let jadwalHtml = '';
+    try {
+        const jadwalResp = await axios.get(jadwalUrl, {
+            timeout: 20000,
+            headers: { ...headers, 'Cookie': cookieHeader(), 'Referer': pengumumanUrl },
+        });
+        extractCookies(jadwalResp.headers['set-cookie']);
+        jadwalHtml = jadwalResp.data;
+        const $$ = cheerio.load(jadwalHtml);
+        $$('table tr').each((i, row) => {
+            const cells = $$(row).find('td');
+            if (cells.length >= 4) {
+                const stage = $$(cells[1]).text().trim();
+                const start = $$(cells[2]).text().trim();
+                const end = $$(cells[3]).text().trim();
+                const perubahan = cells[4] ? $$(cells[4]).text().trim() : '';
+                const stageLower = stage.toLowerCase();
+                if (stageLower.includes('upload') && stageLower.includes('penawaran')) {
+                    batas_upload = end || start;
+                }
+                schedules.push({ stage, start, end, perubahan });
+            } else if (cells.length >= 2) {
+                const label = $$(cells[0]).text().trim();
+                const value = $$(cells[1]).text().trim();
+                const combined = (label + ' ' + value).toLowerCase();
+                if (combined.includes('upload') && combined.includes('penawaran')) {
+                    batas_upload = value;
+                }
+                schedules.push({ stage: label, start: value, end: value, perubahan: '' });
+            }
+        });
+        if (!batas_upload) {
+            const jBody = $$('body').text();
+            const m = jBody.match(/(?:Batas\s*(?:Akhir\s+)?Upload|Upload\s+Dokumen\s+Penawaran|Pemasukan\s+Penawaran)[\s:]*([^\n]+)/i);
+            if (m) batas_upload = m[1].trim();
+        }
+    } catch (e) {}
+
+    let aanwijzing_date = extractAanwizingDate(schedules);
+    if (!aanwijzing_date && schedules.length === 0) {
+        const jBody = typeof jadwalHtml === 'string' ? jadwalHtml : '';
+        const m = jBody.match(/(?:Pemberian\s+Penjelasan|Anwijzing|Aanwijzing)[\s\S]{0,50}?(\d{1,2}\s+\w+\s+\d{4}\s+\d{1,2}:\d{2})/i);
+        if (m) aanwijzing_date = m[1].trim();
+    }
+
+    return { sbu, pagu, hps, nama_paket, instansi, batas_upload, aanwijzing_date, schedules };
+}
 
 class CrawlerService {
     constructor() {
@@ -149,7 +323,7 @@ class CrawlerService {
 
             // 2. Fetch Master LPSE
             this.log('Mengambil daftar Master LPSE dari LKPP ISB...');
-            const { data: allLpse } = await axios.get('https://isb.lkpp.go.id/isb-2/api/satudata/MasterLPSE', { timeout: 30000 });
+            const rawLpse = await getLPSEList();
             
             // Read targets from settings
             const { rows: settings } = await db.query("SELECT key, value FROM settings WHERE key IN ('crawl_lpse_targets', 'wa_target_sbu', 'wa_target_max_hps')");
@@ -170,11 +344,13 @@ class CrawlerService {
                 }
             }
             
-            let lpseList = allLpse;
+            let lpseList = rawLpse;
             if (targets && targets.length > 0) {
                 const targetKds = targets.map(t => String(t.kd_lpse));
-                lpseList = allLpse.filter(l => targetKds.includes(String(l.kd_lpse)));
+                lpseList = rawLpse.filter(l => targetKds.includes(String(l.kd_lpse)));
             }
+            // Free the full LPSE list from memory
+            if (lpseList !== rawLpse) rawLpse.length = 0;
             
             this.status.totalLpse = lpseList.length;
             this.log(`Ditemukan ${lpseList.length} LPSE target. Mulai batch crawl tahun ${year}...`);
@@ -192,12 +368,14 @@ class CrawlerService {
                 } finally {
                     this.status.processedLpse++;
                 }
-                // Short delay between LPSE crawls to let garbage collection run
-                await new Promise(r => setTimeout(r, 800));
+                // Force GC between LPSE crawls
+                await tryFreeMemory();
+                await new Promise(r => setTimeout(r, 2000));
             }
 
             // 4. Run deep scan for missing SBU & deadlines
             this.log('Menjalankan Deep Scan untuk melengkapi data SBU & Batas Upload...');
+            await tryFreeMemory();
             const targetKds = (targets && targets.length > 0) ? targets.map(t => String(t.kd_lpse)) : null;
             await this.deepScanMissingData(year, targetKds);
 
@@ -227,16 +405,8 @@ class CrawlerService {
     }
 
     async fetchFromAPI(year, kd_lpse) {
-        const url = `https://isb.lkpp.go.id/isb-2/api/satudata/TenderUmumPublik/${year}/${kd_lpse}`;
-        try {
-            const resp = await axios.get(url, { timeout: 15000 });
-            let data = resp.data;
-            if (typeof data === 'string' && data.includes('<invalid_response>')) return [];
-            return Array.isArray(data) ? data : [];
-        } catch (err) {
-            console.warn(`[Crawler] API failed for ${kd_lpse}:`, err.message);
-            return [];
-        }
+        // ponytail: ISB decommissioned 31 Dec 2025, always 403. Skip straight to scraper.
+        return [];
     }
 
     async crawlSingleLPSE(kd_lpse, nama_lpse, year) {
@@ -440,6 +610,11 @@ class CrawlerService {
                     }
                 }
             }
+            // Free large arrays from memory
+            apiTenders = null;
+            scrapedTenders = null;
+            combined.clear();
+            tenders.length = 0;
             return tenders.length;
         } catch (err) {
             console.error(`[Crawler] Failed for ${kd_lpse}:`, err.message);
@@ -450,7 +625,7 @@ class CrawlerService {
     async deepScanMissingData(year, targetKds = null) {
         // Find all tenders from this year that are missing SBU or batas_upload
         let query = `
-            SELECT kode_tender, slug FROM crawled_tenders 
+            SELECT kode_tender, slug, batas_upload FROM crawled_tenders 
             WHERE tahun_anggaran = $1 AND (sbu IS NULL OR sbu = '-' OR batas_upload IS NULL OR batas_upload = '-')
         `;
         const params = [year];
@@ -471,11 +646,27 @@ class CrawlerService {
             this.log('Semua data tender sudah lengkap. Deep Scan dilewati.');
             return;
         }
-        this.log(`Ditemukan ${rows.length} tender tanpa SBU/Deadline. Melengkapi data via Ekstensi Chrome...`);
+
+        // Skip tenders whose deadline is already past — no need to complete them
+        const filteredRows = rows.filter(r => {
+            if (!r.batas_upload || r.batas_upload === '-') return true;
+            return isDeadlineFuture(r.batas_upload);
+        });
+        const skipped = rows.length - filteredRows.length;
+        if (skipped > 0) {
+            this.log(`Melewati ${skipped} tender: batas upload sudah lewat.`);
+        }
+
+        if (filteredRows.length === 0) {
+            this.log('Tidak ada tender dengan batas upload masih aktif. Deep Scan dilewati.');
+            return;
+        }
+
+        this.log(`Ditemukan ${filteredRows.length} tender tanpa SBU/Deadline yang masih aktif. Melengkapi data dari halaman detail...`);
 
         // Group by slug to batch requests
         const bySlug = {};
-        for (const r of rows) {
+        for (const r of filteredRows) {
             if (!r.slug) continue;
             if (!bySlug[r.slug]) bySlug[r.slug] = [];
             bySlug[r.slug].push(r.kode_tender);
@@ -494,7 +685,6 @@ class CrawlerService {
             this.log(`[${processed}/${totalSlugs}] Melengkapi ${kodes.length} paket di ${slug}...`);
             
             const baseUrl = getBaseUrl(slug);
-            const listUrl = `${baseUrl}/lelang?kategoriId=2&tahun=${year}&instansiId=&rekanan=&kontrak_status=&kontrak_tipe=`;
 
             for (const kode of kodes) {
                 if (this.shouldStop) break;
@@ -504,11 +694,27 @@ class CrawlerService {
 
                     try {
                         const pengumumanUrl = `${baseUrl}/lelang/${kode}/pengumumanlelang`;
-                        this.log(`Detail ${kode} (via list)...`);
+                        this.log(`Detail ${kode} (HTTP)...`);
 
-                        // viaList: navigate to list page → click tender link → scrape detail
-                        // This bypasses both Cloudflare and SPSE WAF by using real browser CSRF token
-                        const res = await runScraper('detail', pengumumanUrl, String(year));
+                        // Try HTTP scraper first (axios+cheerio, near-zero memory)
+                        let res = null;
+                        try {
+                            res = await httpDetailScraper(pengumumanUrl);
+                        } catch (httpErr) {
+                            this.log(`HTTP ${kode}: ${httpErr.message}`);
+                        }
+
+                        // Fall back to Playwright if HTTP failed and memory permits
+                        if (!res) {
+                            const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
+                            if (freeMemMb >= 100) {
+                                this.log(`Playwright fallback for ${kode} (${freeMemMb}MB free)...`);
+                                await tryFreeMemory();
+                                res = await runScraper('detail', pengumumanUrl, String(year));
+                            } else {
+                                this.log(`Skip ${kode}: HTTP failed, memory too low (${freeMemMb}MB) for Playwright`);
+                            }
+                        }
 
                         if (res) {
                             const parsedPagu = parseCurrency(res.pagu);
@@ -518,15 +724,19 @@ class CrawlerService {
 
                             if (hasSbu || hasPagu || res.batas_upload) {
                                 const normDeadline = res.batas_upload ? res.batas_upload.replace(/\s+/g, ' ').trim() : null;
-                                await db.query(`
+                                const result = await db.query(`
                                     UPDATE crawled_tenders 
                                     SET sbu = CASE WHEN $1::text IS NOT NULL AND $1::text != '-' THEN $1::text ELSE sbu END,
                                         pagu = CASE WHEN $2::bigint > 0 THEN $2::bigint ELSE pagu END,
                                         hps  = CASE WHEN $3::bigint > 0 THEN $3::bigint ELSE hps  END,
                                         batas_upload = CASE WHEN $4::text IS NOT NULL AND $4::text != '-' THEN $4::text ELSE batas_upload END
                                     WHERE kode_tender = $5 AND slug = $6
-                                `, [res.sbu || null, parsedPagu, parsedHps, normDeadline, kode, slug]);
-                                this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} Deadline=${normDeadline || '-'}`);
+                                `, [res.sbu || null, parsedPagu, parsedHps, normDeadline, kode.trim(), slug]);
+                                if (result.rowCount === 0) {
+                                    this.log(`WARN: UPDATE matched 0 rows for kode=${kode.trim()} slug=${slug}`);
+                                } else {
+                                    this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} Deadline=${normDeadline || '-'}`);
+                                }
                             } else {
                                 this.log(`Data empty ${kode}: SBU="${res.sbu}" Pagu="${res.pagu}"`);
                             }
@@ -548,7 +758,7 @@ class CrawlerService {
                                         } else {
                                             const { sendWhatsAppMessage } = require('../utils/whatsapp');
                                             const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
-                                            const aanwizingDate = extractAanwizingDate(res.schedules) || '-';
+                                            const aanwizingDate = res.aanwijzing_date || extractAanwizingDate(res.schedules) || '-';
                                             const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(parsedPagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(parsedHps || tenderInfo.hps)}\n*Batas Upload:* ${normDeadline}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
                                             sendWhatsAppMessage(null, msg).catch(() => {});
                                         }
@@ -557,7 +767,7 @@ class CrawlerService {
                                 delete this.status.newTendersMap[kode];
                             }
                         } else {
-                            this.log(`No result ${kode}: extension returned null`);
+                            this.log(`No result ${kode}: all scrapers failed`);
                         }
 
                         lastError = null;
@@ -577,6 +787,7 @@ class CrawlerService {
                     console.error(`[DeepScan] Error ${slug} ${kode}:`, lastError.message);
                 }
             }
+            await tryFreeMemory();
         }
         this.log('Deep Scan selesai.');
     }

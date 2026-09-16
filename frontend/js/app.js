@@ -14,6 +14,7 @@ const App = {
         'company-detail': { page: CompanyDetailPage,title: 'Detail Perusahaan' },
         'documents':      { page: DocumentsPage,    title: 'Surat' },
         'templates':      { page: TemplatesPage,    title: 'Template' },
+        'dokpil':         { page: DokpilPage,       title: 'Dokumen Pemilihan (Dokpil)' },
         'settings':       { page: SettingsPage,     title: 'Pengaturan' },
     },
 

@@ -34,14 +34,20 @@ function parseCurrency(val) {
 
 function extractSbu(text) {
     if (!text || text === '-') return '-';
-    const regex = /\b(BG|BS|PL|PB|GT|ST|KP|KK|RK|RE|EL|ME|SP|TI|MK|PR|EE|SE)[\s-]*0*(\d{1,3})\b/gi;
-    const codes = [];
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-        const code = match[1].toUpperCase() + match[2].padStart(3, '0');
-        if (!codes.includes(code)) codes.push(code);
+    try {
+        const { resolveSbu } = require('../utils/kbli-sbu-map');
+        const arr = resolveSbu(text);
+        return arr.length ? arr.join(', ') : '-';
+    } catch {
+        const regex = /\b(BG|BS|PL|PB|GT|ST|KP|KK|RK|RE|EL|ME|SP|TI|MK|PR|EE|SE|AR|AL|AT|IT|IN|PA)[\s-]*0*(\d{1,3})\b/gi;
+        const codes = [];
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const code = match[1].toUpperCase() + match[2].padStart(3, '0');
+            if (!codes.includes(code)) codes.push(code);
+        }
+        return codes.length > 0 ? codes.join(', ') : '-';
     }
-    return codes.length > 0 ? codes.join(', ') : '-';
 }
 
 async function scrape() {
@@ -51,7 +57,6 @@ async function scrape() {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--single-process',
             '--no-zygote',
             '--disable-gpu',
             '--disable-software-rasterizer',
@@ -60,7 +65,11 @@ async function scrape() {
             '--disable-background-networking',
             '--disable-background-timer-throttling',
             '--disable-breakpad',
-            '--js-flags=--max-old-space-size=256'
+            '--disable-features=site-per-process',
+            '--disable-features=TranslateUI',
+            '--disable-default-apps',
+            '--disable-component-update',
+            '--js-flags=--max-old-space-size=192 --expose-gc --always-compact'
         ]
     });
     
@@ -248,7 +257,10 @@ async function scrape() {
             
             data.batas_upload = jadwalData.batas_upload || '';
             data.schedules = jadwalData.schedules || [];
-            data.sbu = extractSbu(data.sbuRaw);
+            // KBLI fallback: gabungkan sbuRaw + qualText agar "KBLI 41012" ter-mapping ke BG002
+            const sbuSource = [data.sbuRaw, data.details && data.details['Syarat Kualifikasi']].filter(Boolean).join(' ');
+            data.sbu = extractSbu(sbuSource || data.sbuRaw);
+            data.qualText = data.details && data.details['Syarat Kualifikasi'] ? data.details['Syarat Kualifikasi'] : '';
             delete data.sbuRaw;
             
             console.log(JSON.stringify(data));

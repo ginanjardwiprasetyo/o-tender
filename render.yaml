@@ -1,0 +1,15 @@
+# Render Blueprint — TenderBuild Backend
+# autoDeploy: false → agar tidak otomatis deploy setiap git push
+# (hemat build minutes free tier: 450 menit/bulan)
+
+services:
+  - type: web
+    name: tenderbuild-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    autoDeploy: false
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production

@@ -7,15 +7,14 @@ const axios = require('axios');
 const db = require('../config/db');
 
 const ISB_BASE = 'https://isb.lkpp.go.id/isb-2/api/satudata';
-const { getSlug } = require('../utils/lpse-mapper');
+const { getSlug, getLPSEList } = require('../utils/lpse-mapper');
 const { parsePaguString } = require('../utils/parser');
 const { scrapeTender, scrapeTenderList, scrapeMultiple } = require('../services/scraper');
 
 // GET /api/lkpp/lpse — Get list of all LPSE
 router.get('/lpse', async (req, res) => {
     try {
-        const response = await axios.get(`${ISB_BASE}/MasterLPSE`, { timeout: 15000 });
-        const data = Array.isArray(response.data) ? response.data : [];
+        const data = await getLPSEList();
         res.json({ success: true, data });
     } catch (err) {
         res.status(500).json({ success: false, error: 'Gagal mengambil data LPSE: ' + err.message });
@@ -41,48 +40,9 @@ router.get('/tenders', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Parameter tahun dan kd_lpse wajib diisi' });
         }
         
+        // ponytail: ISB decommissioned 31 Dec 2025, always 403. Skip API, go straight to scraper below.
         const url = `${ISB_BASE}/TenderUmumPublik/${tahun}/${kd_lpse}`;
         let data = [];
-        try {
-            const response = await axios.get(url, { timeout: 15000 });
-            data = response.data;
-            
-            if (typeof data === 'string') {
-                // Try to parse as JSON first (some endpoints return JSON as text)
-                try {
-                    data = JSON.parse(data);
-                } catch {
-                    // If it's CSV, parse it
-                    data = parseCSV(data);
-                }
-            }
-            
-            // Handle case where API returns HTML error page or specific LKPP error tags
-            if (typeof data === 'string' && (
-                data.includes('<!DOCTYPE') || 
-                data.includes('<html') || 
-                data.includes('<invalid_response>') ||
-                data.trim().startsWith('<')
-            )) {
-                console.warn(`[LKPP] API for LPSE ${kd_lpse} returned invalid/empty tag: ${data.substring(0, 50)}`);
-                data = [];
-            }
-            
-            // Ensure it's an array
-            if (!Array.isArray(data)) {
-                // Some endpoints return a single object instead of array
-                if (data && typeof data === 'object' && !data.data) {
-                    data = [data];
-                } else if (data && data.data && Array.isArray(data.data)) {
-                    data = data.data;
-                } else {
-                    data = [];
-                }
-            }
-        } catch (apiErr) {
-            console.warn(`[LKPP] API Call failed for ${kd_lpse}:`, apiErr.message);
-            data = []; // Fallback to scraper below
-        }
 
         // Detailed logging for debugging
         console.log(`[LKPP] Tahun: ${tahun}, LPSE: ${kd_lpse}, Count Raw: ${data.length}`);

@@ -5,6 +5,24 @@ const express = require('express');
 const router = express.Router();
 const crawler = require('../services/crawler');
 const db = require('../config/db');
+const crawlerQueue = require('../services/crawler-queue');
+
+// Extension task queue: pop next task
+router.get('/task', (req, res) => {
+    const task = crawlerQueue.popTask();
+    if (task) {
+        res.json({ success: true, data: task });
+    } else {
+        res.json({ success: false, data: null });
+    }
+});
+
+// Extension task queue: submit result
+router.post('/task-result', (req, res) => {
+    const { taskId, data } = req.body;
+    const found = crawlerQueue.submitResult(taskId, data);
+    res.json({ success: found });
+});
 
 // Start crawl manually
 router.post('/start', async (req, res) => {

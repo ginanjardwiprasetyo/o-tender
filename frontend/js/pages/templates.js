@@ -8,7 +8,10 @@ const TemplatesPage = {
         return `
         <div class="page-header">
             <div><h2>Template Dokumen</h2><p>Kelola format kop surat, narasi, tanda tangan, dan layout dokumen</p></div>
-            <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template</button>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary" onclick="TemplatesPage.seedDefaultTemplates()"><i data-lucide="sparkles"></i> Muat Template Standar Tender</button>
+                <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template</button>
+            </div>
         </div>
         <div id="tpl-list"><div class="page-loading"><div class="spinner"></div></div></div>`;
     },
@@ -28,6 +31,18 @@ const TemplatesPage = {
         }
     },
 
+    async seedDefaultTemplates() {
+        Modal.confirm('Muat Template Standar', 'Apakah Anda ingin menambahkan 7 template standar dokumen penawaran tender (Surat Penawaran, Pakta Integritas, K3/RKK, Kebenaran Dokumen, SKP, Personil, Peralatan)?', async () => {
+            try {
+                const res = await API.seedTemplates();
+                Toast.success(res.message || 'Template standar berhasil ditambahkan!');
+                this.loadData();
+            } catch (e) {
+                Toast.error('Gagal memuat template standar: ' + e.message);
+            }
+        });
+    },
+
     renderList() {
         const el = document.getElementById('tpl-list');
         if (!el) return;
@@ -37,8 +52,11 @@ const TemplatesPage = {
                     <i data-lucide="layout-template" style="width:32px;height:32px;"></i>
                 </div>
                 <h3>Belum Ada Template</h3>
-                <p style="max-width:400px;margin:8px auto 20px auto;">Buat template untuk mengatur kop surat, narasi, tanda tangan, dan cap perusahaan.</p>
-                <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template Pertama</button>
+                <p style="max-width:440px;margin:8px auto 20px auto;">Buat template baru atau gunakan tombol di bawah untuk memuat 7 template standar tender konstruksi (Penawaran, Pakta Integritas, RKK, Kebenaran Dokumen, SKP, Personil, Peralatan).</p>
+                <div style="display:flex; gap:12px; justify-content:center;">
+                    <button class="btn btn-secondary" onclick="TemplatesPage.seedDefaultTemplates()"><i data-lucide="sparkles"></i> Muat Template Standar Tender</button>
+                    <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template Manual</button>
+                </div>
             </div>`;
             lucide.createIcons(); return;
         }
@@ -52,9 +70,9 @@ const TemplatesPage = {
                     </div>
                     <div style="min-width:0;">
                         <div style="font-weight:600; font-size:0.95rem;">${Fmt.escape(t.nama_template)}</div>
-                        <div style="font-size:0.78rem; color:var(--text-muted);">
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">
                             ${t.kategori ? '<span class="badge badge-info">' + Fmt.escape(t.kategori) + '</span> • ' : ''}
-                            Kertas: ${t.paper_size || 'A4'} • Kop: ${t.kop_nama ? '✓' : '—'} • TTD: ${t.ttd_nama ? '✓' : '—'}
+                            Ukuran Kertas: ${t.paper_size || 'A4'} • Margin: ${t.margin_top || 25}mm
                         </div>
                     </div>
                 </div>
@@ -71,26 +89,30 @@ const TemplatesPage = {
     // ─── VARIABLES ────────────────────────────────────
     VARS: [
         { key: '{{nama_perusahaan}}', label: 'Nama Perusahaan' },
-        { key: '{{singkatan}}', label: 'Singkatan' },
-        { key: '{{direktur}}', label: 'Direktur' },
+        { key: '{{singkatan}}', label: 'Singkatan Perusahaan' },
+        { key: '{{direktur}}', label: 'Direktur Perusahaan' },
         { key: '{{kota_perusahaan}}', label: 'Kota/Kab Perusahaan' },
-        { key: '{{alamat}}', label: 'Alamat' },
-        { key: '{{npwp}}', label: 'NPWP' },
+        { key: '{{alamat}}', label: 'Alamat Perusahaan' },
+        { key: '{{npwp}}', label: 'NPWP Perusahaan' },
         { key: '{{nama_paket}}', label: 'Nama Paket Tender' },
         { key: '{{kode_tender}}', label: 'Kode Tender' },
         { key: '{{nilai_pagu}}', label: 'Nilai Pagu' },
         { key: '{{nilai_hps}}', label: 'Nilai HPS' },
         { key: '{{terbilang}}', label: 'Terbilang (Rupiah)' },
         { key: '{{instansi}}', label: 'Instansi/KLPD' },
+        { key: '{{pokja}}', label: 'Nama Pokja Pemilihan' },
         { key: '{{lokasi}}', label: 'Lokasi Pekerjaan' },
-        { key: '{{header_surat}}', label: 'Header (No, Lamp, Hal)' },
+        { key: '{{jangka_waktu}}', label: 'Jangka Waktu (hari)' },
+        { key: '{{header_surat}}', label: 'Header Surat (No, Lamp, Hal)' },
         { key: '{{nomor_surat}}', label: 'Nomor Surat' },
-        { key: '{{tanggal_surat}}', label: 'Tanggal Surat (Lengkap dgn Kota)' },
+        { key: '{{tanggal_surat}}', label: 'Tanggal Surat (Kota, tgl)' },
         { key: '{{perihal}}', label: 'Perihal' },
         { key: '{{lampiran}}', label: 'Lampiran' },
+        { key: '{{nama_personil}}', label: 'Nama Personil Pelaksana' },
+        { key: '{{jabatan_personil}}', label: 'Jabatan Personil' },
         { key: '{{ttd_gabungan}}', label: 'TTD Pihak 1 & 2 (Bersampingan)' },
         { key: '{{ttd_direktur}}', label: 'TTD Direktur Saja' },
-        { key: '{{ttd_personil}}', label: 'TTD Personil Pelaksana Saja' },
+        { key: '{{ttd_personil}}', label: 'TTD Personil Saja' },
     ],
 
     // ─── EDITOR ───────────────────────────────────────
@@ -109,7 +131,7 @@ const TemplatesPage = {
         ).join('');
 
         const body = `
-        <div style="max-height:70vh; overflow-y:auto; padding-right:8px;">
+        <div style="max-height:75vh; overflow-y:auto; padding-right:8px;">
             <!-- Info Dasar -->
             <div class="form-row">
                 <div class="form-group"><label class="form-label">Nama Template <span style="color:var(--danger)">*</span></label>
@@ -124,26 +146,35 @@ const TemplatesPage = {
             </div>
 
             <!-- NARASI -->
-            <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px; margin-bottom:16px;">
+            <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px; margin-bottom:16px; background:var(--bg-secondary);">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <i data-lucide="align-left" style="width:16px; height:16px; color:var(--accent);"></i>
-                        <span style="font-weight:700; font-size:0.9rem;">Narasi / Isi Surat</span>
+                        <span style="font-weight:700; font-size:0.9rem;">Narasi / Isi Surat (HTML / Teks)</span>
                     </div>
                     <label style="display:flex; align-items:center; gap:6px; font-size:0.8rem; cursor:pointer;" title="Mengecilkan font agar muat dalam satu halaman">
                         <input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan Narasi (Fit to Layout)
                     </label>
                 </div>
-                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">Klik variabel di bawah untuk menyisipkan ke narasi:</p>
-                <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:2px;">${varChips}</div>
-                <textarea class="form-textarea" id="tpl-narasi" rows="10" placeholder="Ketik isi surat di sini...&#10;&#10;Contoh:&#10;Dengan hormat,&#10;Bersama surat ini kami {{nama_perusahaan}} bermaksud menyampaikan penawaran untuk paket pekerjaan {{nama_paket}} dengan nilai pagu {{nilai_pagu}}.">${Fmt.escape(t.html_content || '')}</textarea>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">Klik tag variabel di bawah untuk menyisipkan ke dalam isi surat:</p>
+                <div style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:3px;">${varChips}</div>
+                
+                <div style="display:grid; grid-template-columns:1fr; gap:12px;">
+                    <div>
+                        <textarea class="form-textarea" id="tpl-narasi" rows="12" style="font-family:monospace; font-size:0.85rem;" oninput="TemplatesPage.updateLiveEditorPreview()" placeholder="Ketik isi surat di sini...">${Fmt.escape(t.html_content || '')}</textarea>
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Live Preview Tampilan:</div>
+                        <div id="tpl-live-preview" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:150px; max-height:250px; overflow-y:auto; font-family:'Times New Roman', serif; font-size:11pt; line-height:1.4; text-align:justify;"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- LAYOUT -->
             <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px;">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
                     <i data-lucide="ruler" style="width:16px; height:16px; color:var(--accent);"></i>
-                    <span style="font-weight:700; font-size:0.9rem;">Layout Halaman</span>
+                    <span style="font-weight:700; font-size:0.9rem;">Layout Halaman & Margin Paper</span>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Ukuran Kertas</label>
@@ -171,14 +202,23 @@ const TemplatesPage = {
         </div>`;
 
         const footer = `
-            <button class="btn btn-secondary" onclick="TemplatesPage.preview(null, true)"><i data-lucide="eye"></i> Preview</button>
+            <button class="btn btn-secondary" onclick="TemplatesPage.preview(null, true)"><i data-lucide="eye"></i> Preview Layar Penuh</button>
             <button class="btn btn-secondary" onclick="Modal.close()">Batal</button>
             <button class="btn btn-primary" onclick="TemplatesPage.save('${id || ''}')">Simpan Template</button>`;
 
         Modal.open(title, body, footer);
         const modalEl = document.getElementById('modal');
-        if (modalEl) modalEl.style.maxWidth = '800px';
+        if (modalEl) modalEl.style.maxWidth = '900px';
         lucide.createIcons();
+        setTimeout(() => this.updateLiveEditorPreview(), 100);
+    },
+
+    updateLiveEditorPreview() {
+        const ta = document.getElementById('tpl-narasi');
+        const prev = document.getElementById('tpl-live-preview');
+        if (!ta || !prev) return;
+        let txt = ta.value || '<em style="color:#999;">Belum ada isi surat...</em>';
+        prev.innerHTML = txt;
     },
 
     insertVar(varKey) {
@@ -190,6 +230,7 @@ const TemplatesPage = {
         ta.value = text.substring(0, start) + varKey + text.substring(end);
         ta.selectionStart = ta.selectionEnd = start + varKey.length;
         ta.focus();
+        this.updateLiveEditorPreview();
     },
 
     _collectFormData() {

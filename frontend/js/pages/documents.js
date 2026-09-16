@@ -7,13 +7,15 @@ const DocumentsPage = {
     templates: [],
     personnel: [],
     equipments: [],
+    tenders: [],
+    _genData: null,
 
     async render() {
         return `
         <div class="page-header">
             <div>
                 <h2>Surat & Dokumen</h2>
-                <p>Generator nomor surat otomatis dan manajemen dokumen perusahaan</p>
+                <p>Generator nomor surat otomatis dan manajemen dokumen penawaran tender</p>
             </div>
             <button class="btn btn-primary" onclick="DocumentsPage.openForm()"><i data-lucide="plus"></i> Buat Surat Baru</button>
         </div>
@@ -38,19 +40,20 @@ const DocumentsPage = {
     },
 
     async afterRender() {
-        // Load companies, templates, and personnel for select
         try {
-            const [compRes, tplRes, persRes, eqRes] = await Promise.all([
+            const [compRes, tplRes, persRes, eqRes, tendRes] = await Promise.all([
                 API.getCompanies(),
                 API.getTemplates(),
                 API.getPersonnel(),
-                API.getEquipments()
+                API.getEquipments(),
+                API.getFollowedTenders().catch(() => ({ data: [] }))
             ]);
             
             this.companies = compRes.data || [];
             this.templates = tplRes.data || [];
             this.personnel = persRes.data || [];
             this.equipments = eqRes.data || [];
+            this.tenders = tendRes.data || [];
             
             const filterSelect = document.getElementById('doc-filter-comp');
             const opts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
@@ -60,6 +63,16 @@ const DocumentsPage = {
         }
 
         this.loadData();
+
+        // Check if navigated from Dokpil page with extracted data
+        const dokpilDataStr = sessionStorage.getItem('dokpil_extracted_data');
+        if (dokpilDataStr) {
+            sessionStorage.removeItem('dokpil_extracted_data');
+            try {
+                const dokpilData = JSON.parse(dokpilDataStr);
+                setTimeout(() => this.openFormWithDokpil(dokpilData), 300);
+            } catch(e) {}
+        }
     },
 
     debounceTimer: null,
@@ -107,8 +120,9 @@ const DocumentsPage = {
             </td>
             <td>${l.tanggal ? Fmt.date(l.tanggal) : '-'}</td>
             <td>${Fmt.escape(l.perihal || '-')}</td>
-            <td style="text-align:center;">
-                <button class="btn btn-danger btn-sm btn-icon" onclick="DocumentsPage.remove('${l.id}')"><i data-lucide="trash-2"></i></button>
+            <td style="text-align:center; white-space:nowrap;">
+                <button class="btn btn-secondary btn-sm" onclick="DocumentsPage.viewOrPrint('${l.id}')" title="Preview / Cetak"><i data-lucide="printer"></i> Cetak</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="DocumentsPage.remove('${l.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
             </td>
         </tr>
         `).join('');
@@ -122,7 +136,7 @@ const DocumentsPage = {
                         <th width="280">Nomor Surat</th>
                         <th width="150">Tanggal</th>
                         <th>Perihal</th>
-                        <th width="60" style="text-align:center;">Aksi</th>
+                        <th width="120" style="text-align:center;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -131,11 +145,78 @@ const DocumentsPage = {
         lucide.createIcons();
     },
 
+    async checkNumber() {
+        const compId = document.getElementById('f-doc-comp')?.value;
+        const kode = document.getElementById('f-doc-kode')?.value?.toUpperCase().trim();
+        const tgl = document.getElementById('f-doc-tgl')?.value;
+
+        if (!compId || !kode) {
+            Toast.warning('Pilih Perusahaan dan isi Kode Surat terlebih dahulu');
+            return;
+        }
+
+        const dateObj = tgl ? new Date(tgl) : new Date();
+        const thn = dateObj.getFullYear();
+        const bln = dateObj.getMonth() + 1;
+
+        try {
+            const res = await API.getNextLetterNumber(compId, kode, thn, bln);
+            this._genData = res.data;
+            const pNum = document.getElementById('doc-preview-num');
+            const pBox = document.getElementById('doc-preview-box');
+            if (pNum && pBox) {
+                pNum.textContent = res.data.nomor_surat;
+                pBox.classList.remove('hidden');
+            }
+            Toast.success('Nomor surat berhasil digenerate');
+        } catch(e) {
+            Toast.error('Gagal generate nomor: ' + e.message);
+        }
+    },
+
+    openFormWithDokpil(dokpilData) {
+        this.openForm();
+        setTimeout(() => {
+            const perihalInput = document.getElementById('f-doc-perihal');
+            if (perihalInput && dokpilData.nama_paket) {
+                perihalInput.value = 'Penawaran Pekerjaan ' + dokpilData.nama_paket;
+            }
+            // Auto fill dynamic vars if section is active or store for dynamic var creation
+            this._dokpilPreset = dokpilData;
+            Toast.info('Data dari Dokpil berhasil dimuat. Pilih template surat di bawah.');
+        }, 100);
+    },
+
+    onTenderChange() {
+        const tId = document.getElementById('f-doc-tender')?.value;
+        if (!tId) return;
+        const t = this.tenders.find(x => x.id === tId);
+        if (!t) return;
+
+        const perihalInput = document.getElementById('f-doc-perihal');
+        if (perihalInput && (t.nama_paket || t.title)) {
+            perihalInput.value = 'Penawaran Pekerjaan ' + (t.nama_paket || t.title);
+        }
+
+        // Fill dynamic variables if available
+        document.querySelectorAll('.doc-dynamic-var').forEach(input => {
+            const vName = input.getAttribute('data-var');
+            if (vName === 'nama_paket' && (t.nama_paket || t.title)) input.value = t.nama_paket || t.title;
+            if (vName === 'kode_tender' && (t.kode_tender || t.kd_pkt)) input.value = t.kode_tender || t.kd_pkt;
+            if (vName === 'nilai_pagu' && t.pagu) input.value = Fmt.currency(t.pagu);
+            if (vName === 'nilai_hps' && t.hps) input.value = Fmt.currency(t.hps);
+            if (vName === 'instansi' && (t.instansi || t.lpse_name)) input.value = t.instansi || t.lpse_name;
+            if (vName === 'lokasi' && t.lokasi) input.value = t.lokasi;
+        });
+    },
+
     openForm() {
+        this._genData = null;
         const compOpts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
         const tplOpts = this.templates.map(t => `<option value="${t.id}">${Fmt.escape(t.nama_template)}</option>`).join('');
         const persOpts = this.personnel.map(p => `<option value="${p.id}">${Fmt.escape(p.nama)}</option>`).join('');
         const eqOpts = this.equipments.map(e => `<option value="${e.id}">${Fmt.escape(e.jenis)} - ${Fmt.escape(e.merk_type || '')}</option>`).join('');
+        const tendOpts = this.tenders.map(t => `<option value="${t.id}">${Fmt.escape(t.nama_paket || t.title || 'Tender')}</option>`).join('');
         const today = new Date().toISOString().split('T')[0];
         
         const body = `
@@ -146,13 +227,23 @@ const DocumentsPage = {
                     ${compOpts}
                 </select>
             </div>
-            <div class="form-group"><label class="form-label">Pilih Template (Bisa >1)</label>
+            <div class="form-group"><label class="form-label">Paket Tender / Dokpil (Opsional Auto-fill)</label>
+                <select class="form-select" id="f-doc-tender" onchange="DocumentsPage.onTenderChange()">
+                    <option value="">-- Pilih Paket Tender --</option>
+                    ${tendOpts}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;"><label class="form-label">Pilih Template Surat (Bisa >1)</label>
                 <select class="form-select" id="f-doc-templates" multiple size="4" onchange="DocumentsPage.onTemplatesChange()" style="height:auto;">
                     ${tplOpts}
                 </select>
-                <small style="color:var(--text-muted);">Tahan Ctrl/Cmd untuk pilih banyak</small>
+                <small style="color:var(--text-muted);">Tahan Ctrl/Cmd untuk memilih beberapa template sekaligus</small>
             </div>
         </div>
+
         <div class="form-group">
             <label class="form-label">Pilih Peralatan Pendukung (Bisa >1)</label>
             <select class="form-select" id="f-doc-equipments" multiple size="3" onchange="DocumentsPage.renderAttachments()" style="height:auto;">
@@ -161,26 +252,26 @@ const DocumentsPage = {
         </div>
 
         <div style="border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Data Surat</div>
+            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Data Surat & Penomoran</div>
             <div class="form-row">
                 <div class="form-group"><label class="form-label">Kode Surat <span style="color:var(--danger);">*</span></label>
                     <div style="display:flex; gap:8px;">
-                        <input type="text" class="form-input" id="f-doc-kode" placeholder="SK, SP, ST" style="text-transform:uppercase; flex:1;">
+                        <input type="text" class="form-input" id="f-doc-kode" placeholder="SP, ST, SK" style="text-transform:uppercase; flex:1;" onchange="DocumentsPage.checkNumber()">
                         <button type="button" class="btn btn-secondary" id="doc-cek-btn" onclick="DocumentsPage.checkNumber()"><i data-lucide="hash"></i> Gen No.</button>
                     </div>
                 </div>
                 <div class="form-group"><label class="form-label">Tanggal Surat <span style="color:var(--danger);">*</span></label>
-                    <input type="date" class="form-input" id="f-doc-tgl" value="${today}">
+                    <input type="date" class="form-input" id="f-doc-tgl" value="${today}" onchange="DocumentsPage.checkNumber()">
                 </div>
             </div>
             
-            <div id="doc-preview-box" class="hidden" style="margin-bottom:12px; padding:12px; background:rgba(14, 165, 233, 0.05); border:1px solid rgba(14, 165, 233, 0.2); border-radius:var(--radius-md);">
+            <div id="doc-preview-box" class="hidden" style="margin-bottom:12px; padding:12px; background:rgba(14, 165, 233, 0.08); border:1px solid rgba(14, 165, 233, 0.3); border-radius:var(--radius-md);">
                 <span style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Nomor Surat Tergenerate:</span>
                 <span id="doc-preview-num" style="font-weight:700; font-size:1rem; color:var(--accent); margin-left:8px;"></span>
             </div>
 
-            <div class="form-group"><label class="form-label">Perihal <span style="color:var(--danger);">*</span></label>
-                <input type="text" class="form-input" id="f-doc-perihal" placeholder="Perihal surat...">
+            <div class="form-group"><label class="form-label">Perihal Surat <span style="color:var(--danger);">*</span></label>
+                <input type="text" class="form-input" id="f-doc-perihal" placeholder="Perihal surat (misal: Penawaran Pekerjaan...)">
             </div>
             <div class="form-group"><label class="form-label">Lampiran</label>
                 <input type="text" class="form-input" id="f-doc-lampiran" value="-" placeholder="1 (Satu) Berkas">
@@ -190,12 +281,12 @@ const DocumentsPage = {
         <div style="border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
             <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Penandatangan & Personil</div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Penandatangan 1 (Pihak 1/Direktur) <span style="color:var(--danger);">*</span></label>
+                <div class="form-group"><label class="form-label">Penandatangan 1 (Direktur) <span style="color:var(--danger);">*</span></label>
                     <select class="form-select" id="f-doc-ttd1-type">
-                        <option value="direktur">Direktur Perusahaan (dari Data Perusahaan)</option>
+                        <option value="direktur">Direktur Perusahaan (Otomatis dari Data Perusahaan)</option>
                     </select>
                 </div>
-                <div class="form-group"><label class="form-label">Penandatangan 2 (Pihak 2/Personil)</label>
+                <div class="form-group"><label class="form-label">Penandatangan 2 (Personil Pelaksana)</label>
                     <select class="form-select" id="f-doc-ttd2" onchange="DocumentsPage.renderAttachments()">
                         <option value="">-- Tidak Ada / Kosong --</option>
                         ${persOpts}
@@ -217,21 +308,19 @@ const DocumentsPage = {
         
         const footer = `
             <button class="btn btn-secondary" onclick="Modal.close()">Batal</button>
-            <button class="btn btn-primary" id="doc-save-btn" onclick="DocumentsPage.generateDocument()">Generate & Simpan Surat</button>`;
+            <button class="btn btn-primary" id="doc-save-btn" onclick="DocumentsPage.generateDocument()">Generate & Cetak Surat</button>`;
         
-        Modal.open('Buat Dokumen Surat', body, footer);
+        Modal.open('Buat Dokumen Surat Baru', body, footer);
         
-        // Large modal style
         const modalEl = document.querySelector('.modal');
-        if(modalEl) { modalEl.style.maxWidth = '800px'; modalEl.style.width = '90%'; }
+        if(modalEl) { modalEl.style.maxWidth = '850px'; modalEl.style.width = '90%'; }
         
         lucide.createIcons();
     },
 
-    _genData: null,
-
     onCompanyChange() {
         this.renderAttachments();
+        this.checkNumber();
     },
 
     renderAttachments() {
@@ -246,7 +335,11 @@ const DocumentsPage = {
         let allAtts = [];
         
         if (comp && comp.attachments) {
-            allAtts = allAtts.concat(comp.attachments.map(a => ({ ...a, group: 'Perusahaan' })));
+            let atts = comp.attachments;
+            if (typeof atts === 'string') { try { atts = JSON.parse(atts); } catch(e) { atts = []; } }
+            if (Array.isArray(atts)) {
+                allAtts = allAtts.concat(atts.map(a => ({ ...a, group: 'Perusahaan' })));
+            }
         }
         
         if (pers) {
@@ -265,6 +358,8 @@ const DocumentsPage = {
         const attContainer = document.getElementById('doc-attachments-container');
         const attSection = document.getElementById('doc-attachments-section');
         
+        if (!attContainer || !attSection) return;
+
         if (allAtts.length === 0) {
             attSection.style.display = 'none';
             attContainer.innerHTML = '';
@@ -287,19 +382,18 @@ const DocumentsPage = {
 
     onTemplatesChange() {
         const select = document.getElementById('f-doc-templates');
+        if (!select) return;
         const selectedIds = Array.from(select.selectedOptions).map(opt => opt.value);
         
         let allVars = new Set();
         selectedIds.forEach(id => {
             const t = this.templates.find(x => x.id === id);
             if (t && t.html_content) {
-                // Extract all {{variable}}
                 const matches = t.html_content.match(/\{\{([^}]+)\}\}/g);
                 if (matches) {
                     matches.forEach(m => {
                         const vName = m.replace(/[{}]/g, '').trim();
-                        // Filter out standard variables that we fill automatically
-                        const standardVars = ['header_surat', 'nomor_surat', 'perihal', 'lampiran', 'tanggal_surat', 'kota_perusahaan', 'nama_perusahaan', 'direktur', 'ttd_direktur', 'ttd_personil', 'cap_perusahaan'];
+                        const standardVars = ['header_surat', 'nomor_surat', 'perihal', 'lampiran', 'tanggal_surat', 'kota_perusahaan', 'nama_perusahaan', 'direktur', 'ttd_direktur', 'ttd_personil', 'ttd_gabungan', 'cap_perusahaan', 'alamat'];
                         if (!standardVars.includes(vName)) {
                             allVars.add(vName);
                         }
@@ -311,6 +405,8 @@ const DocumentsPage = {
         const varSection = document.getElementById('doc-dynamic-vars-section');
         const varContainer = document.getElementById('doc-dynamic-vars-container');
         
+        if (!varSection || !varContainer) return;
+
         if (allVars.size === 0) {
             varSection.style.display = 'none';
             varContainer.innerHTML = '';
@@ -318,12 +414,22 @@ const DocumentsPage = {
         }
 
         varSection.style.display = 'block';
-        varContainer.innerHTML = Array.from(allVars).map(vName => `
+        const dokpil = this._dokpilPreset || {};
+
+        varContainer.innerHTML = Array.from(allVars).map(vName => {
+            let defaultVal = '';
+            if (vName === 'nama_paket') defaultVal = dokpil.nama_paket || '';
+            if (vName === 'pagu_anggaran' || vName === 'nilai_pagu') defaultVal = dokpil.pagu_anggaran || '';
+            if (vName === 'jangka_waktu') defaultVal = dokpil.jangka_waktu || '';
+            if (vName === 'lokasi') defaultVal = dokpil.lokasi || '';
+            if (vName === 'pokja') defaultVal = dokpil.pokja || '';
+
+            return `
             <div class="form-group" style="margin-bottom:0;">
                 <label class="form-label" style="text-transform:capitalize;">${Fmt.escape(vName.replace(/_/g, ' '))}</label>
-                <input type="text" class="form-input doc-dynamic-var" data-var="${Fmt.escape(vName)}" placeholder="Isi ${Fmt.escape(vName)}...">
-            </div>
-        `).join('');
+                <input type="text" class="form-input doc-dynamic-var" data-var="${Fmt.escape(vName)}" value="${Fmt.escape(defaultVal)}" placeholder="Isi ${Fmt.escape(vName)}...">
+            </div>`;
+        }).join('');
     },
 
     async generateDocument() {
@@ -333,15 +439,14 @@ const DocumentsPage = {
         const perihal = document.getElementById('f-doc-perihal')?.value?.trim();
         const lampiran = document.getElementById('f-doc-lampiran')?.value?.trim() || '-';
         
-        const templateIds = Array.from(document.getElementById('f-doc-templates').selectedOptions).map(o => o.value);
+        const templateIds = Array.from(document.getElementById('f-doc-templates')?.selectedOptions || []).map(o => o.value);
         const persId = document.getElementById('f-doc-ttd2')?.value;
         
         if (!compId || templateIds.length === 0 || !perihal) {
-            Toast.warning('Pilih Perusahaan, Template, dan isi Perihal');
+            Toast.warning('Pilih Perusahaan, minimal 1 Template, dan isi Perihal');
             return;
         }
 
-        // If no generated number yet, we can't save the letter properly, or we can just gen one if Kode is filled
         let generatedNo = this._genData ? this._genData.nomor_surat : null;
         let nomorUrut = this._genData ? this._genData.nomor_urut : 0;
         let bln = this._genData ? this._genData.bulan : new Date(tgl).getMonth() + 1;
@@ -349,7 +454,7 @@ const DocumentsPage = {
 
         if (!generatedNo && kode) {
             try {
-                const res = await API.getNextLetterNumber(compId, kode, thn);
+                const res = await API.getNextLetterNumber(compId, kode, thn, bln);
                 generatedNo = res.data.nomor_surat;
                 nomorUrut = res.data.nomor_urut;
                 bln = res.data.bulan;
@@ -364,13 +469,11 @@ const DocumentsPage = {
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Generate...'; }
 
         try {
-            // Collect dynamic vars
             const dynamicVars = {};
             document.querySelectorAll('.doc-dynamic-var').forEach(input => {
                 dynamicVars[input.getAttribute('data-var')] = input.value;
             });
 
-            // Save letter record
             const letterData = {
                 company_id: compId,
                 nomor_urut: nomorUrut,
@@ -380,11 +483,10 @@ const DocumentsPage = {
                 nomor_surat: generatedNo || '-',
                 tanggal: tgl,
                 perihal: perihal,
-                konten: JSON.stringify({ templates: templateIds, variables: dynamicVars, personnel: persId })
+                konten: JSON.stringify({ templates: templateIds, variables: dynamicVars, personnel: persId, lampiran })
             };
             await API.createLetter(letterData);
             
-            // Build the HTML for printing
             this.buildAndPrint(compId, templateIds, persId, {
                 nomor_surat: generatedNo || '-',
                 perihal,
@@ -393,62 +495,97 @@ const DocumentsPage = {
                 ...dynamicVars
             });
 
-            Toast.success('Dokumen berhasil digenerate dan disimpan!');
+            Toast.success('Dokumen surat berhasil digenerate dan disimpan!');
             this._genData = null;
             Modal.close();
             this.loadData();
         } catch(err) {
             Toast.error(err.message);
-            if (btn) { btn.disabled = false; btn.innerHTML = 'Generate & Simpan Surat'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = 'Generate & Cetak Surat'; }
+        }
+    },
+
+    async viewOrPrint(id) {
+        try {
+            const res = await API.getLetterById(id);
+            const l = res.data;
+            let konten = {};
+            if (l.konten) {
+                try { konten = typeof l.konten === 'string' ? JSON.parse(l.konten) : l.konten; } catch(e) {}
+            }
+            const tplIds = konten.templates || (l.template_id ? [l.template_id] : []);
+            const persId = konten.personnel || null;
+            const vars = konten.variables || {};
+
+            if (tplIds.length === 0) {
+                Toast.warning('Surat ini tidak memiliki template tersimpan.');
+                return;
+            }
+
+            this.buildAndPrint(l.company_id, tplIds, persId, {
+                nomor_surat: l.nomor_surat,
+                perihal: l.perihal,
+                lampiran: konten.lampiran || '-',
+                tanggal: l.tanggal,
+                ...vars
+            });
+        } catch(e) {
+            Toast.error('Gagal memuat detail surat: ' + e.message);
         }
     },
 
     buildAndPrint(compId, templateIds, persId, vars) {
         const comp = this.companies.find(c => c.id === compId);
         const pers = this.personnel.find(p => p.id === persId);
+        const mainTpl = templateIds.length > 0 ? this.templates.find(x => x.id === templateIds[0]) : null;
         
-        // Prepare standard variables
+        const paperSizeStr = mainTpl?.paper_size === 'F4' ? '215mm 330mm' : 'A4';
+        const mt = mainTpl?.margin_top ?? 25;
+        const mb = mainTpl?.margin_bottom ?? 25;
+        const ml = mainTpl?.margin_left ?? 30;
+        const mr = mainTpl?.margin_right ?? 25;
+
         const kota = comp?.kota || '';
         const tglFormat = vars.tanggal ? Fmt.date(vars.tanggal) : '';
         const tglSurat = kota ? `${kota}, ${tglFormat}` : tglFormat;
         
         const headerSurat = `
-            <table style="width:100%; max-width:500px; margin-bottom:20px;">
-                <tr><td style="width:80px; vertical-align:top;">Nomor</td><td style="width:10px; vertical-align:top;">:</td><td>${Fmt.escape(vars.nomor_surat)}</td></tr>
-                <tr><td style="vertical-align:top;">Lampiran</td><td style="vertical-align:top;">:</td><td>${Fmt.escape(vars.lampiran)}</td></tr>
-                <tr><td style="vertical-align:top;">Perihal</td><td style="vertical-align:top;">:</td><td><strong>${Fmt.escape(vars.perihal)}</strong></td></tr>
+            <table style="width:100%; max-width:550px; margin-bottom:20px; border-collapse:collapse; font-size:inherit; font-family:inherit;">
+                <tr><td style="width:90px; vertical-align:top; padding:2px 0;">Nomor</td><td style="width:12px; vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${Fmt.escape(vars.nomor_surat)}</td></tr>
+                <tr><td style="vertical-align:top; padding:2px 0;">Lampiran</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${Fmt.escape(vars.lampiran || '-')}</td></tr>
+                <tr><td style="vertical-align:top; padding:2px 0;">Perihal</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;"><strong>${Fmt.escape(vars.perihal)}</strong></td></tr>
             </table>
         `;
 
-        // TTD blocks
-        const imgCap = comp?.cap_image_url ? `<img src="${Fmt.url(comp.cap_image_url)}" style="position:absolute; left:-20px; top:20px; max-width:100px; opacity:0.8; z-index:-1;">` : '';
-        const imgTtdDir = comp?.ttd_image_url ? `<img src="${Fmt.url(comp.ttd_image_url)}" style="max-height:80px; position:relative; z-index:1;">` : '<br><br><br>';
+        // Stamp and Signature Blocks
+        const imgCap = comp?.cap_image_url ? `<img src="${Fmt.url(comp.cap_image_url)}" style="position:absolute; left:-15px; top:10px; max-width:110px; opacity:0.85; z-index:-1;">` : '';
+        const imgTtdDir = comp?.ttd_image_url ? `<img src="${Fmt.url(comp.ttd_image_url)}" style="max-height:85px; position:relative; z-index:1;">` : '<br><br><br>';
         
         const ttdDirektur = `
-            <div style="text-align:center; position:relative; display:inline-block;">
+            <div style="text-align:center; position:relative; display:inline-block; min-width:220px;">
                 ${imgCap}
-                <div style="margin-bottom:10px;"><strong>${Fmt.escape(comp?.nama_perusahaan || 'Perusahaan')}</strong></div>
+                <div style="margin-bottom:8px;"><strong>${Fmt.escape(comp?.nama_perusahaan || 'Perusahaan')}</strong></div>
                 ${imgTtdDir}
-                <div style="margin-top:10px; font-weight:bold; text-decoration:underline;">${Fmt.escape(comp?.direktur || 'Nama Direktur')}</div>
+                <div style="margin-top:8px; font-weight:bold; text-decoration:underline;">${Fmt.escape(comp?.direktur || 'Nama Direktur')}</div>
                 <div>Direktur</div>
             </div>
         `;
         
         let ttdPersonil = '';
         if (pers) {
+            const imgTtdPers = pers.ttd_image_url ? `<img src="${Fmt.url(pers.ttd_image_url)}" style="max-height:85px;">` : '<br><br><br>';
             ttdPersonil = `
-                <div style="text-align:center; display:inline-block;">
-                    <div style="margin-bottom:10px;"><strong>Pelaksana</strong></div>
-                    <br><br><br>
-                    <div style="margin-top:10px; font-weight:bold; text-decoration:underline;">${Fmt.escape(pers.nama)}</div>
-                    <div>${Fmt.escape(pers.jabatan || 'Personil')}</div>
+                <div style="text-align:center; display:inline-block; min-width:220px;">
+                    <div style="margin-bottom:8px;"><strong>Personil Pelaksana</strong></div>
+                    ${imgTtdPers}
+                    <div style="margin-top:8px; font-weight:bold; text-decoration:underline;">${Fmt.escape(pers.nama)}</div>
+                    <div>${Fmt.escape(pers.jabatan || 'Pelaksana')}</div>
                 </div>
             `;
         }
         
-        // Gabungan
         const ttdGabungan = `
-            <table style="width:100%; margin-top:40px;">
+            <table style="width:100%; margin-top:35px; border-collapse:collapse;">
                 <tr>
                     <td style="width:50%; text-align:center; vertical-align:bottom;">${ttdPersonil}</td>
                     <td style="width:50%; text-align:center; vertical-align:bottom;">${ttdDirektur}</td>
@@ -460,34 +597,33 @@ const DocumentsPage = {
         let kopHtml = '';
         if (comp) {
             if (comp.kop_is_image && comp.kop_image_url) {
-                kopHtml = `<img src="${Fmt.url(comp.kop_image_url)}" style="width:100%; max-height:150px; object-fit:contain; margin-bottom:20px; border-bottom:3px solid black; padding-bottom:10px;">`;
+                kopHtml = `<img src="${Fmt.url(comp.kop_image_url)}" style="width:100%; max-height:140px; object-fit:contain; margin-bottom:20px; border-bottom:3px double black; padding-bottom:8px;">`;
             } else {
                 kopHtml = `
-                    <div style="text-align:center; margin-bottom:20px; border-bottom:3px solid black; padding-bottom:10px;">
-                        <h2 style="margin:0; font-size:24px;">${Fmt.escape(comp.kop_nama || comp.nama_perusahaan)}</h2>
-                        <p style="margin:5px 0;">${Fmt.escape(comp.kop_alamat || comp.alamat || '')}</p>
-                        <p style="margin:0; font-size:12px;">${Fmt.escape(comp.kop_kontak || '')}</p>
+                    <div style="text-align:center; margin-bottom:20px; border-bottom:3px double black; padding-bottom:10px;">
+                        <h2 style="margin:0; font-size:22px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${Fmt.escape(comp.kop_nama || comp.nama_perusahaan)}</h2>
+                        <p style="margin:4px 0 2px 0; font-size:11pt;">${Fmt.escape(comp.kop_alamat || comp.alamat || '')}</p>
+                        <p style="margin:0; font-size:10pt; color:#333;">${Fmt.escape(comp.kop_kontak || '')}</p>
                     </div>
                 `;
             }
         }
 
-        // Selected Attachments
         const selectedAtts = Array.from(document.querySelectorAll('.doc-attachment-cb:checked')).map(cb => JSON.parse(cb.value));
 
-        // Compile full HTML
         let fullHtml = `
         <!DOCTYPE html>
         <html>
         <head>
             <title>${Fmt.escape(vars.nomor_surat)}</title>
             <style>
-                @page { size: A4; margin: 20mm; }
-                body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: black; }
+                @page { size: ${paperSizeStr}; margin: ${mt}mm ${mr}mm ${mb}mm ${ml}mm; }
+                body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }
                 .page-break { page-break-after: always; }
-                .doc-page { position: relative; min-height: 250mm; }
+                .doc-page { position: relative; min-height: 250mm; box-sizing: border-box; }
                 .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; }
                 .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                table { border-collapse: collapse; }
                 * { box-sizing: border-box; }
             </style>
         </head>
@@ -500,57 +636,58 @@ const DocumentsPage = {
             
             let content = t.html_content || '';
             
-            // Replace vars
             content = content.replace(/\{\{header_surat\}\}/g, headerSurat);
             content = content.replace(/\{\{tanggal_surat\}\}/g, tglSurat);
             content = content.replace(/\{\{kota_perusahaan\}\}/g, Fmt.escape(kota));
             content = content.replace(/\{\{nama_perusahaan\}\}/g, Fmt.escape(comp?.nama_perusahaan || ''));
+            content = content.replace(/\{\{singkatan\}\}/g, Fmt.escape(comp?.singkatan || comp?.nama_perusahaan || ''));
             content = content.replace(/\{\{direktur\}\}/g, Fmt.escape(comp?.direktur || ''));
+            content = content.replace(/\{\{alamat\}\}/g, Fmt.escape(comp?.alamat || ''));
+            content = content.replace(/\{\{npwp\}\}/g, Fmt.escape(comp?.npwp_usaha || ''));
+            content = content.replace(/\{\{nama_personil\}\}/g, Fmt.escape(pers?.nama || ''));
+            content = content.replace(/\{\{jabatan_personil\}\}/g, Fmt.escape(pers?.jabatan || 'Pelaksana'));
             content = content.replace(/\{\{ttd_direktur\}\}/g, ttdDirektur);
             content = content.replace(/\{\{ttd_personil\}\}/g, ttdPersonil);
             content = content.replace(/\{\{ttd_gabungan\}\}/g, ttdGabungan);
             
-            // Custom vars
             Object.keys(vars).forEach(k => {
                 content = content.replace(new RegExp(`\\\\{\\\\{ ?${k} ?\\\\}\\\\}`, 'g'), Fmt.escape(vars[k]));
             });
 
-            // Replace any un-filled vars with empty space
             content = content.replace(/\{\{[^}]+\}\}/g, '.........');
 
             fullHtml += `<div class="doc-page">${kopHtml}${content}</div>`;
             
-            // Page break except for last item if no attachments
             if (idx < templateIds.length - 1 || selectedAtts.length > 0) {
                 fullHtml += '<div class="page-break"></div>';
             }
         });
 
-        // Add attachments
         selectedAtts.forEach((att, idx) => {
-            // We can only reliably print images in the browser
-            if (att.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+            if (att.url && att.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
                 fullHtml += `<div class="attachment-page"><img src="${Fmt.url(att.url)}" class="attachment-img"></div>`;
                 if (idx < selectedAtts.length - 1) fullHtml += '<div class="page-break"></div>';
             } else {
-                fullHtml += `<div class="attachment-page"><h3>Lampiran Dokumen PDF: ${Fmt.escape(att.name)}</h3><p><em>(Harap gabungkan file PDF ini secara manual: ${Fmt.url(att.url)})</em></p></div>`;
+                fullHtml += `<div class="attachment-page"><h3>Lampiran Dokumen: ${Fmt.escape(att.name)}</h3><p><em>(Harap sertakan file ini: ${Fmt.url(att.url)})</em></p></div>`;
                 if (idx < selectedAtts.length - 1) fullHtml += '<div class="page-break"></div>';
             }
         });
 
         fullHtml += '</body></html>';
 
-        // Open in new window to print
         const printWin = window.open('', '_blank');
+        if (!printWin) {
+            Toast.error('Popup diblokir browser. Izinkan popup untuk mencetak dokumen.');
+            return;
+        }
         printWin.document.open();
         printWin.document.write(fullHtml);
         printWin.document.close();
         
-        // Wait for images to load before printing
         setTimeout(() => {
             printWin.focus();
             printWin.print();
-        }, 500);
+        }, 600);
     },
 
     remove(id) {

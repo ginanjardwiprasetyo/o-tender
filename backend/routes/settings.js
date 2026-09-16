@@ -156,6 +156,31 @@ router.post('/test-wa', async (req, res) => {
     }
 });
 
+// POST /api/settings/wa-resend — Kirim ulang pesan WA yang gagal dari log
+router.post('/wa-resend', async (req, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ success: false, error: 'ID log diperlukan' });
+
+        const { rows } = await db.query('SELECT target, message FROM wa_logs WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ success: false, error: 'Log tidak ditemukan' });
+
+        const { sendWhatsAppMessage } = require('../utils/whatsapp');
+        const result = await sendWhatsAppMessage(rows[0].target, rows[0].message);
+
+        if (result.success) {
+            await db.query(
+                "UPDATE wa_logs SET status = 'success', error_message = NULL WHERE id = $1", [id]
+            ).catch(err => console.error('[WA Resend Update Error]', err.message));
+            res.json({ success: true, message: 'Pesan berhasil dikirim ulang!' });
+        } else {
+            res.status(500).json({ success: false, error: `Gagal kirim ulang. Detail: ${result.error}` });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET /api/settings/wa-logs — Ambil riwayat pengiriman notifikasi WA (paginated)
 router.get('/wa-logs', async (req, res) => {
     try {

@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@opendataloader/pdf": "^2.4.7",
     "pg": "^8.20.0"
   }
 }

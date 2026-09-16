@@ -524,3 +524,156 @@ tbody tr:last-child td { border-bottom: none; }
     cursor: pointer; padding: 2px; border-radius: 4px; transition: all var(--transition);
 }
 .lpse-chip button:hover { background: var(--danger); color: white; }
+
+/* Dokpil */
+.dokpil-upload-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--bg-primary);
+}
+.dokpil-upload-zone:hover {
+  border-color: var(--accent);
+  background: rgba(59,130,246,0.03);
+}
+.dokpil-field-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.dokpil-field-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg-card-hover);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.dokpil-field-status {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.dokpil-field-status.found {
+  background: rgba(16,185,129,0.15);
+  color: #10b981;
+  border: 1px solid rgba(16,185,129,0.2);
+}
+.dokpil-field-status.missing {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.2);
+}
+.dokpil-field-body {
+  padding: 12px 16px;
+}
+.dokpil-field-body textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+/* Tabel hasil ekstraksi */
+.dokpil-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.dokpil-result-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.dokpil-result-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+.dokpil-td-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  width: 32%;
+}
+.dokpil-td-value textarea {
+  width: 100%;
+}
+.dokpil-field-status {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-left: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+.dokpil-field-status.found {
+  background: rgba(16,185,129,0.15);
+  color: #10b981;
+}
+.dokpil-field-status.missing {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+
+/* Tabel terstruktur (peralatan/personel/rkk) */
+.dokpil-subtable {
+  margin-bottom: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.dokpil-subtable-title {
+  padding: 10px 14px;
+  background: var(--bg-card-hover);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.structured-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.structured-table th,
+.structured-table td {
+  border: 1px solid var(--border-subtle);
+  padding: 7px 10px;
+  text-align: left;
+  color: var(--text-primary);
+  white-space: normal;
+  word-break: break-word;
+}
+.structured-table td:first-child {
+  text-align: center;
+  padding: 7px 4px;
+  min-width: 20px;
+}
+.structured-table th {
+  background: var(--bg-input);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.structured-table tbody tr:nth-child(even) {
+  background: rgba(0,0,0,0.02);
+}

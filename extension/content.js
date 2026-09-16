@@ -522,14 +522,37 @@ function clickJadwalTab() {
   return false;
 }
 
+// KBLI -> SBU map (subset, synced with backend/data/kbli-sbu.json)
+const KBLI_TO_SBU_EXT = {"41011":["BG001","GT001"],"41012":["BG002","GT002"],"41013":["BG003","GT003"],"41014":["BG004","GT004"],"41015":["BG005","GT005"],"41016":["BG006","GT006"],"41017":["BG007","GT007"],"41018":["BG008","GT008"],"41019":["BG009"],"42101":["BS001"],"42102":["BS002","ST001"],"42103":["BS003"],"42201":["BS004"],"42202":["BS005","ST002"],"42203":["BS006"],"42204":["BS007","ST003"],"42205":["BS008"],"42206":["BS009"],"42911":["BS010","ST004"],"42912":["BS011","ST005"],"42913":["BS012"],"42915":["BS013","ST006"],"42916":["BS014","ST007"],"42917":["BS015","ST008"],"42918":["BS016","ST009"],"42919":["BS017"],"42923":["BS018","ST010"],"42924":["BS019","ST011"],"42209":["BS020"],"43110":["PL001"],"42914":["PL002"],"43120":["PL003","PL004","PL006","PL007"],"42207":["PL005"],"43902":["PL008"]};
+
 function extractSbuCodes(text) {
   if (!text || text === '-') return '-';
-  const regex = /\b(BG|BS|PL|PB|GT|ST|KP|KK|RK|RE|EL|ME|SP|TI|MK|PR|EE|SE)[\s-]*0*(\d{1,3})\b/gi;
+  // normalize "BG002KBLI" -> "BG002 KBLI"
+  const norm = String(text).replace(/([A-Z]{2}\d{1,3})(KBLI|NIB|SBU)/gi, '$1 $2');
+  const regex = /\b(BG|BS|PL|PB|GT|ST|KP|KK|RK|RE|EL|ME|SP|TI|MK|PR|EE|SE|AR|AL|AT|IT|IN|PA)[\s-]*0*(\d{1,3})\b/gi;
   const codes = [];
   let m;
-  while ((m = regex.exec(text.toUpperCase())) !== null) {
+  while ((m = regex.exec(norm.toUpperCase())) !== null) {
     const code = m[1] + m[2].padStart(3, '0');
     if (!codes.includes(code)) codes.push(code);
+  }
+  // KBLI fallback: if no SBU found but KBLI present, map via KBLI_TO_SBU_EXT
+  if (codes.length === 0 || /KBLI|NIB/i.test(text)) {
+    const kbliAnchored = /KBLI[^\d]{0,10}(\d{5})/gi;
+    let km;
+    const extra = [];
+    while ((km = kbliAnchored.exec(text)) !== null) {
+      const sbus = KBLI_TO_SBU_EXT[km[1]];
+      if (sbus) for (const s of sbus) if (!codes.includes(s) && !extra.includes(s)) extra.push(s);
+    }
+    if (/KBLI|NIB/i.test(text)) {
+      const all5 = text.match(/\b\d{5}\b/g) || [];
+      for (const n of all5) {
+        const sbus = KBLI_TO_SBU_EXT[n];
+        if (sbus) for (const s of sbus) if (!codes.includes(s) && !extra.includes(s)) extra.push(s);
+      }
+    }
+    for (const s of extra) codes.push(s);
   }
   return codes.length > 0 ? codes.join(', ') : '-';
 }
@@ -595,7 +618,18 @@ function extractTableData() {
 
   if (qualText) {
       details['Syarat Kualifikasi'] = qualText;
+      // merge SBU dari sbuRaw + qualText (KBLI fallback, typo BG002KBLI)
+      const combined = [sbu, qualText].filter(Boolean).join(' ');
+      const merged = extractSbuCodes(combined);
+      if (merged !== '-') sbu = merged;
   }
+
+  // final fallback: if still empty, try whole body (handles NIB/KBLI only cases)
+  if (!sbu || sbu === '-') {
+      const fallback = extractSbuCodes(bodyText.substring(0, 8000));
+      if (fallback !== '-') sbu = fallback;
+  }
+  if (!sbu) sbu = '-';
 
   console.log(`[Detail] Extracted: sbu="${sbu}" pagu="${pagu}" hps="${hps}" deadline="${batas_upload}"`);
   return { sbu, pagu, hps, nama_paket, instansi, batas_upload, details, qualText };

@@ -120,6 +120,7 @@ const API = {
     createTemplate(data) { return this.request('/templates', { method: 'POST', body: data }); },
     updateTemplate(id, data) { return this.request(`/templates/${id}`, { method: 'PUT', body: data }); },
     deleteTemplate(id) { return this.request(`/templates/${id}`, { method: 'DELETE' }); },
+    seedTemplates() { return this.request('/templates/seed', { method: 'POST' }); },
 
     // ─── Letters ──────────────────────────────────────
     getLetters(params) {
@@ -128,10 +129,15 @@ const API = {
         const q = new URLSearchParams(clean).toString();
         return this.request(`/letters${q ? '?' + q : ''}`);
     },
+    getLetterById(id) { return this.request(`/letters/${id}`); },
     createLetter(data) { return this.request('/letters', { method: 'POST', body: data }); },
     updateLetter(id, data) { return this.request(`/letters/${id}`, { method: 'PUT', body: data }); },
     deleteLetter(id) { return this.request(`/letters/${id}`, { method: 'DELETE' }); },
-    getNextLetterNumber(company_id, kode_surat, tahun) { return this.request(`/letters/next-number?company_id=${company_id}&kode_surat=${kode_surat}&tahun=${tahun}`); },
+    getNextLetterNumber(company_id, kode_surat, tahun, bulan) {
+        let url = `/letters/next-number?company_id=${company_id}&kode_surat=${encodeURIComponent(kode_surat)}&tahun=${tahun}`;
+        if (bulan) url += `&bulan=${bulan}`;
+        return this.request(url);
+    },
 
     // ─── Settings ─────────────────────────────────────
     getSettings() { return this.request('/settings'); },
@@ -139,6 +145,7 @@ const API = {
     testWA(data) { return this.request('/settings/test-wa', { method: 'POST', body: data }); },
     getWAGroups(apiKey) { return this.request(`/settings/wa-groups?apiKey=${encodeURIComponent(apiKey)}`); },
     getWALogs(page = 1, limit = 20) { return this.request(`/settings/wa-logs?page=${page}&limit=${limit}`); },
+    resendWALog(id) { return this.request('/settings/wa-resend', { method: 'POST', body: { id } }); },
 
     // ─── Health ───────────────────────────────────────
     health() { return this.request('/health'); },

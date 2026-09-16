@@ -15,13 +15,15 @@ function toRoman(num) {
 }
 
 // GET next letter number
-// /api/letters/next-number?company_id=123&kode_surat=SK&tahun=2026
+// /api/letters/next-number?company_id=123&kode_surat=SK&tahun=2026&bulan=5
 router.get('/next-number', async (req, res) => {
     try {
-        const { company_id, kode_surat, tahun } = req.query;
+        const { company_id, kode_surat, tahun, bulan } = req.query;
         if (!company_id || !kode_surat || !tahun) {
             return res.status(400).json({ success: false, error: 'company_id, kode_surat, and tahun are required' });
         }
+
+        const blnNum = bulan ? parseInt(bulan) : (new Date().getMonth() + 1);
 
         // Get max nomor_urut for the given year, company, and kode_surat
         const { rows: maxRow } = await db.query(
@@ -32,13 +34,13 @@ router.get('/next-number', async (req, res) => {
         const nextUrut = parseInt(maxRow[0].max_urut) + 1;
         
         // Fetch company singkatan
-        const { rows: compRow } = await db.query('SELECT singkatan FROM companies WHERE id = $1', [company_id]);
+        const { rows: compRow } = await db.query('SELECT singkatan, nama_perusahaan FROM companies WHERE id = $1', [company_id]);
         if (compRow.length === 0) {
             return res.status(404).json({ success: false, error: 'Company not found' });
         }
         
-        const singkatan = compRow[0].singkatan || 'PERUSAHAAN';
-        const romawiBulan = toRoman(new Date().getMonth() + 1); // Current month
+        const singkatan = compRow[0].singkatan || compRow[0].nama_perusahaan || 'PERUSAHAAN';
+        const romawiBulan = toRoman(blnNum);
         
         // Format: 005/SK/CV.GM/V/2026
         const padUrut = String(nextUrut).padStart(3, '0');
@@ -48,7 +50,7 @@ router.get('/next-number', async (req, res) => {
             success: true, 
             data: { 
                 nomor_urut: nextUrut, 
-                bulan: new Date().getMonth() + 1,
+                bulan: blnNum,
                 tahun: parseInt(tahun),
                 nomor_surat: generatedFormat 
             } 
@@ -63,7 +65,7 @@ router.get('/', async (req, res) => {
     try {
         const { company_id, search, tahun } = req.query;
         let query = `
-            SELECT l.*, c.nama_perusahaan, c.singkatan 
+            SELECT l.*, c.nama_perusahaan, c.singkatan, c.direktur, c.alamat, c.kota, c.provinsi, c.npwp_usaha, c.kop_nama, c.kop_alamat, c.kop_kontak, c.kop_is_image, c.kop_image_url, c.ttd_image_url, c.cap_image_url 
             FROM letters l
             LEFT JOIN companies c ON l.company_id = c.id
             WHERE 1=1
@@ -88,6 +90,23 @@ router.get('/', async (req, res) => {
         query += ' ORDER BY l.created_at DESC';
         const { rows } = await db.query(query, params);
         res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET one letter by ID
+router.get('/:id', async (req, res) => {
+    try {
+        const { rows } = await db.query(`
+            SELECT l.*, c.nama_perusahaan, c.singkatan, c.direktur, c.alamat, c.kota, c.provinsi, c.npwp_usaha, c.kop_nama, c.kop_alamat, c.kop_kontak, c.kop_is_image, c.kop_image_url, c.ttd_image_url, c.cap_image_url
+            FROM letters l
+            LEFT JOIN companies c ON l.company_id = c.id
+            WHERE l.id = $1
+        `, [req.params.id]);
+
+        if (!rows[0]) return res.status(404).json({ success: false, error: 'Surat tidak ditemukan' });
+        res.json({ success: true, data: rows[0] });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

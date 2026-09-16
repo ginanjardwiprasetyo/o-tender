@@ -3,6 +3,30 @@
  * Maps LPSE codes to their URL slugs based on spse.inaproc.id sitemap
  */
 
+
+
+/**
+ * Get LPSE list (kd_lpse + nama_lpse).
+ * ISB decommissioned 31 Dec 2025 — use hardcoded mapping as primary source.
+ */
+async function getLPSEList() {
+    // ponytail: ISB dead, skip API call entirely. Use hardcoded mapping.
+    const list = Object.entries(mapping).map(([kd_lpse, slug]) => ({
+        kd_lpse: Number(kd_lpse),
+        nama_lpse: slugToName(slug)
+    }));
+    return list;
+}
+
+function slugToName(slug) {
+    return slug
+        .replace(/kab$/, 'Kabupaten')
+        .replace(/kota$/, 'Kota')
+        .replace(/prov$/, 'Provinsi')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const mapping = {
   "10": "surabaya",
   "11": "kemenkeu",
@@ -13,21 +37,21 @@ const mapping = {
   "16": "sumbarprov",
   "17": "denpasarkota",
   "18": "gorontaloprov",
-  "19": "pekanbarukota",
+  "19": "pekanbaru",
   "20": "bandaacehkota",
   "21": "jogjakota",
   "22": "kepulauanriauprov",
   "23": "banjarbarukota",
   "24": "banjarmasinkota",
   "25": "kemendikbud",
-  "26": "batamkota",
+  "26": "batam",
   "27": "sumutprov",
   "28": "ptkawasanberikatnusantara",
   "29": "universitasdiponegoro",
   "31": "bangkakab",
   "32": "semarangkab",
   "33": "baliprov",
-  "34": "depokkota",
+  "34": "depok",
   "35": "kaltimprov",
   "36": "sulselprov",
   "37": "nusatenggarabaratprov",
@@ -51,7 +75,7 @@ const mapping = {
   "58": "pacitankab",
   "59": "tabalongkab",
   "60": "banyumaskab",
-  "62": "pontianakkota",
+  "62": "pontianak",
   "64": "pu",
   "65": "kementerianagrariadantataruangbpn",
   "66": "tangerangkota",
@@ -64,7 +88,7 @@ const mapping = {
   "85": "hulusungaiutarakab",
   "86": "kepulauanbangkabelitungprov",
   "87": "dewanperwakilanrakyatrepublikindonesia",
-  "88": "salatigakota",
+  "88": "salatiga",
   "90": "pemalangkab",
   "91": "pekalongankota",
   "92": "ptpelayarannasionalindonesia",
@@ -75,9 +99,9 @@ const mapping = {
   "97": "kalbarprov",
   "98": "lebakkab",
   "99": "bantenprov",
-  "102": "prabumulihkota",
+  "102": "prabumulih",
   "103": "sumselprov",
-  "104": "surakartakota",
+  "104": "surakarta",
   "105": "kementeriandalamnegeri",
   "106": "acehprov",
   "107": "muaraenimkab",
@@ -95,7 +119,7 @@ const mapping = {
   "121": "lampungprov",
   "122": "gresikkab",
   "126": "kementerianperindustrian",
-  "127": "daerahkhususibukotajakartakota",
+  "127": "jakarta",
   "128": "universitasbrawijaya",
   "129": "banjarnegarakab",
   "130": "bkkbn",
@@ -126,7 +150,7 @@ const mapping = {
   "160": "sukoharjokab",
   "161": "bengkaliskab",
   "162": "universitasnegerisurabaya",
-  "163": "bogorkota",
+  "163": "bogor",
   "164": "madiunkota",
   "165": "indragirihilirkab",
   "167": "jembranakab",
@@ -141,7 +165,7 @@ const mapping = {
   "176": "kotawaringinbaratkab",
   "177": "tapinkab",
   "179": "belitungtimurkab",
-  "180": "kotamobagukota",
+  "180": "kotamobagu",
   "181": "kalselprov",
   "182": "jeparakab",
   "183": "kotawaringintimurkab",
@@ -191,7 +215,7 @@ const mapping = {
   "231": "enrekangkab",
   "232": "kamparkab",
   "233": "halmaherautarakab",
-  "234": "makassarkota",
+  "234": "makassar",
   "235": "pareparekota",
   "236": "televisirepublikindonesia",
   "237": "lampungtengahkab",
@@ -207,7 +231,7 @@ const mapping = {
   "248": "sumenepkab",
   "249": "kutaibaratkab",
   "250": "maroskab",
-  "251": "palembangkota",
+  "251": "palembang",
   "252": "kementerianhukumdanhamri",
   "253": "majalengkakab",
   "254": "pelalawankab",
@@ -253,7 +277,7 @@ const mapping = {
   "296": "acehtengahkab",
   "297": "bukittinggikota",
   "298": "sanggaukab",
-  "299": "cimahikota",
+  "299": "cimahi",
   "300": "mojokertokab",
   "301": "pasamanbaratkab",
   "302": "universitasandalas",
@@ -267,12 +291,12 @@ const mapping = {
   "310": "ngadakab",
   "311": "musirawaskab",
   "312": "bontangkota",
-  "313": "dumaikota",
+  "313": "dumai",
   "314": "wonogirikab",
   "315": "hulusungaitengahkab",
   "316": "balikpapankota",
   "317": "tanahbumbukab",
-  "318": "cilegonkota",
+  "318": "cilegon",
   "319": "probolinggokab",
   "320": "bengkuluselatankab",
   "321": "malinaukab",
@@ -394,7 +418,7 @@ const mapping = {
   "447": "ogankomeringulutimurkab",
   "448": "wakatobikab",
   "449": "tulungagungkab",
-  "450": "sungaipenuhkota",
+  "450": "sungaipenuh",
   "451": "butonkab",
   "452": "gorontaloutarakab",
   "453": "pamekasankab",
@@ -444,7 +468,7 @@ const mapping = {
   "500": "bangkalankab",
   "501": "kendalkab",
   "502": "luwukab",
-  "503": "cirebonkota",
+  "503": "cirebon",
   "504": "tabanankab",
   "505": "acehtamiangkab",
   "506": "kepulauansangihekab",
@@ -556,7 +580,7 @@ const mapping = {
   "621": "gunungkidulkab",
   "622": "tanatorajakab",
   "623": "butonutarakab",
-  "624": "padangkota",
+  "624": "padang",
   "625": "acehbaratdayakab",
   "626": "banggaikepulauankab",
   "628": "acehjayakab",
@@ -584,7 +608,7 @@ const mapping = {
   "651": "jasamarga",
   "652": "tapanulitengahkab",
   "653": "lapan",
-  "654": "ambonkota",
+  "654": "ambon",
   "655": "poldamaluku",
   "656": "sawahluntokota",
   "658": "konawekepulauankab",
@@ -736,4 +760,4 @@ function getBaseUrl(slug) {
     return `https://spse.inaproc.id/${slug}`;
 }
 
-module.exports = { getSlug, mapping, getBaseUrl };
+module.exports = { getSlug, mapping, getBaseUrl, getLPSEList };

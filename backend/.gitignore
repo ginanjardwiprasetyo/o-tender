@@ -6,3 +6,6 @@ uploads/attachments/*
 !uploads/attachments/.gitkeep
 services/drission_data/
 services/drission_test_profile/
+services/drission_test_profile2/
+server.log
+nohup.out

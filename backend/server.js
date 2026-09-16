@@ -38,6 +38,7 @@ app.use('/api/documents',  require('./routes/documents'));
 app.use('/api/letters',    require('./routes/letters'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/cron',       require('./routes/cron'));
+app.use('/api/dokpil',     require('./routes/dokpil'));
 
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -135,6 +136,19 @@ app.listen(PORT, async () => {
             console.log('✅ Kolom notifikasi followed_tenders OK');
         } catch (colErr) {
             console.warn('⚠️ Gagal menambahkan kolom notifikasi followed_tenders:', colErr.message);
+        }
+
+        // Self-healing: Disable RLS (backend uses service role, bypasses RLS anyway)
+        try {
+            const rlsPath = path.join(__dirname, 'migrations', '010_disable_rls.sql');
+            if (fs.existsSync(rlsPath)) {
+                const rlsSql = fs.readFileSync(rlsPath, 'utf8');
+                await db.runMigration(rlsSql);
+                console.log('✅ RLS disabled on all tables');
+            }
+        } catch (rlsErr) {
+            // Ignore if policies don't exist or RLS already disabled
+            console.warn('⚠️ RLS migration skipped:', rlsErr.message);
         }
     }
 
