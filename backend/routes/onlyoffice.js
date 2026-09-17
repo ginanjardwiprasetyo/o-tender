@@ -14,11 +14,14 @@ function onlyofficeUrl() {
   return (process.env.ONLYOFFICE_URL || 'http://localhost:8000').replace(/\/$/, '');
 }
 function appPublicUrl(req) {
-  // URL yang bisa diakses DocumentServer (dalam docker: http://app:3000, di host: http://localhost:3000)
+  // untuk colima/docker: DocumentServer di VM butuh host.docker.internal/host.lima.internal, bukan localhost
+  if (process.env.APP_PUBLIC_URL) return process.env.APP_PUBLIC_URL.replace(/\/$/, '');
   const host = req.get('host');
   const proto = req.protocol;
-  // jika request dari host.docker.internal atau onlyoffice container, gunakan app service name
-  // untuk dev local tanpa docker, pakai host yang sama
+  // jika host adalah localhost, DocumentServer di container tidak bisa akses localhost → pakai host.docker.internal
+  if (host && host.includes('localhost')) {
+    return `${proto}://host.docker.internal:3000`;
+  }
   return `${proto}://${host}`;
 }
 function docxPathFor(id) {
