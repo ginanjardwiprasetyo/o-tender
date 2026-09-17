@@ -95,7 +95,12 @@ const OnlyOfficePage = {
         height: '100%',
         events: {
           onReady: () => { this._showStatus('✅ Word Online siap — edit seperti MS Word asli. Drag kolom tabel, ganti font Aptos di Home → Font.', 'info'); },
-          onError: (e) => { console.error('OnlyOffice error', e); this._showStatus('❌ OnlyOffice error: '+(e.data||e.message||JSON.stringify(e)), 'error'); },
+          onError: (e) => {
+            console.error('OnlyOffice error', e);
+            let msg='Unknown error';
+            try { msg = JSON.stringify(e, null, 2); if (e && e.data) msg = typeof e.data==='string'? e.data : JSON.stringify(e.data, null,2); } catch(_){ msg = String(e); }
+            this._showStatus('❌ OnlyOffice error:<br><pre style="white-space:pre-wrap; font-size:0.75rem; margin-top:6px; background:#fef2f2; padding:8px; border-radius:4px; overflow:auto;">'+Fmt.escape(msg)+'</pre>', 'error');
+          },
           onDocumentStateChange: (e) => { if (e.data) document.title = '● Word Online — OnlyOffice'; else document.title = 'Word Online — OnlyOffice'; }
         }
       };

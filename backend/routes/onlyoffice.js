@@ -80,6 +80,7 @@ router.get('/config/:id', async (req, res) => {
       data: {
         documentServerUrl: ooUrl,
         config: {
+          documentType: 'word',
           document: {
             fileType: 'docx',
             key,
