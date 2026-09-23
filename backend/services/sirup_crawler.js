@@ -29,13 +29,16 @@ const MONTH_NAMES = {
 
 /**
  * Parse "Agustus 2026" → { bulan: 8, tahun: 2026 }
+ * Also handles ranges "Mulai Akhir Oktober 2026 Desember 2026" → last month (end).
  */
 function parseMonthYear(str) {
     if (!str) return null;
-    const match = str.match(/(\w+)\s+(\d{4})/);
-    if (!match) return null;
-    const bulan = MONTH_NAMES[match[1].toLowerCase()];
-    const tahun = parseInt(match[2]);
+    const re = /(\w+)\s+(\d{4})/g;
+    let m, last = null;
+    while ((m = re.exec(str)) !== null) last = m;
+    if (!last) return null;
+    const bulan = MONTH_NAMES[last[1].toLowerCase()];
+    const tahun = parseInt(last[2]);
     if (!bulan || !tahun) return null;
     return { bulan, tahun };
 }
@@ -362,12 +365,15 @@ async function crawlAll(config = {}) {
         ? new Set(config.akhirBulan.map(Number))
         : null;
     const fetchDetails = !!akhirBulanSet;
+    const excludeList = (config.excludeWords || [])
+        .map(w => String(w).trim().toLowerCase())
+        .filter(Boolean);
     const provinsiList = config.provinsi && config.provinsi.length > 0
         ? config.provinsi
         : ['DKI Jakarta']; // default
 
     const lokasiIds = resolveProvinceIds(provinsiList);
-    log(`Starting crawl: tahun=${tahun}, bulan=[${bulanList}], akhirBulan=[${config.akhirBulan || 'none'}], provinsi=[${provinsiList.join(', ')}] (${lokasiIds.length} lokasi, detail=${fetchDetails})`);
+    log(`Starting crawl: tahun=${tahun}, bulan=[${bulanList}], akhirBulan=[${config.akhirBulan || 'none'}], exclude=[${excludeList.join(', ') || 'none'}], provinsi=[${provinsiList.join(', ')}] (${lokasiIds.length} lokasi, detail=${fetchDetails})`);
 
     let totalFetched = 0;
     let totalSkipped = 0;
@@ -420,6 +426,12 @@ async function crawlAll(config = {}) {
                             if (_stopRequested) break;
 
                             try {
+                                const paketName = String(row.paket || row.nama || '').toLowerCase();
+                                if (excludeList.some(w => paketName.includes(w))) {
+                                    totalSkipped++;
+                                    continue; // excluded by user keyword
+                                }
+
                                 let detailData = null;
 
                                 if (fetchDetails) {
@@ -427,18 +439,18 @@ async function crawlAll(config = {}) {
                                     const html = await fetchDetail(jar, row.id);
                                     detailData = parseDetailHtml(html);
 
+                                    let akhirVal = null;
                                     if (detailData) {
                                         const akhirKey = Object.keys(detailData).find(k => k.endsWith('Akhir') && k.startsWith('Jadwal Pemilihan'));
-                                        const akhirVal = akhirKey ? detailData[akhirKey] : null;
-                                        const parsed = parseMonthYear(akhirVal);
+                                        akhirVal = akhirKey ? detailData[akhirKey] : null;
+                                    }
+                                    // Fallback: list column "pemilihan" (e.g. "Mulai Akhir Oktober 2026 Desember 2026")
+                                    if (!akhirVal) akhirVal = row.pemilihan;
+                                    const parsed = parseMonthYear(akhirVal);
 
-                                        if (!parsed || !akhirBulanSet.has(parsed.bulan)) {
-                                            totalSkipped++;
-                                            continue; // skip: end month doesn't match
-                                        }
-                                    } else if (akhirBulanSet.size > 0) {
+                                    if (!parsed || !akhirBulanSet.has(parsed.bulan)) {
                                         totalSkipped++;
-                                        continue; // skip: couldn't parse detail
+                                        continue; // skip: end month doesn't match
                                     }
 
                                     await sleep(300); // rate limit between detail fetches
@@ -473,6 +485,7 @@ async function crawlAll(config = {}) {
         const historyEntry = {
             finishedAt: new Date().toISOString(),
             tahun, bulan: bulanList, akhirBulan: config.akhirBulan, provinsi: provinsiList,
+            excludeWords: excludeList,
             total: totalFetched, skipped: totalSkipped, failed: totalFailed,
         };
         _status.history.push(historyEntry);

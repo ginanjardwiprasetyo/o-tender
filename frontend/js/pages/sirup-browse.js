@@ -293,6 +293,7 @@ const SirupBrowsePage = {
                 provinsi: [...this.selectedProvinces],
                 akhirBulan: [...this.selectedAkhirBulan],
                 tahun: parseInt(document.getElementById('sirup-tahun').value),
+                excludeWords: [...this.filterExcludeWords],
             });
             Toast.success('Proses crawl dimulai');
             document.getElementById('btn-start-sirup').style.display = 'none';
@@ -465,6 +466,7 @@ const SirupBrowsePage = {
         this.filterProvinsi = '';
         this.filterCari = '';
         this.filterExcludeWords = [];
+        this.saveToStorage();
         const cm = new Date().getMonth() + 1;
         this.filterBulanMulti = new Set();
         for (let m = cm; m <= 12; m++) this.filterBulanMulti.add(m);
@@ -491,7 +493,7 @@ const SirupBrowsePage = {
             const params = { page: this.page, limit: 20, tahun: this.filterTahun };
             if (this.selectedProvinces.size) params.provinsi = [...this.selectedProvinces].join(',');
             if (this.filterCari) params.search = this.filterCari;
-            if (this.filterExcludeWords.length) params.exclude = this.filterExcludeWords.join(' ');
+            if (this.filterExcludeWords.length) params.exclude = this.filterExcludeWords.join('|');
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;
@@ -896,7 +898,7 @@ const SirupBrowsePage = {
             const params = { limit: 100, tahun: this.filterTahun };
             if (this.selectedProvinces.size) params.provinsi = [...this.selectedProvinces].join(',');
             if (this.filterCari) params.search = this.filterCari;
-            if (this.filterExcludeWords.length) params.exclude = this.filterExcludeWords.join(' ');
+            if (this.filterExcludeWords.length) params.exclude = this.filterExcludeWords.join('|');
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;

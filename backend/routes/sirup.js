@@ -104,14 +104,22 @@ router.get('/', async (req, res) => {
         }
 
         if (exclude) {
-            const exWords = exclude.trim().split(/\s+/).filter(Boolean);
-            if (exWords.length) {
-                exWords.forEach(w => {
-                    where.push(`nama_paket NOT ILIKE $${paramIdx}`);
-                    params.push(`%${w}%`);
-                    paramIdx++;
-                });
+            // Support multi-word phrases via | separator (legacy: space-separated single words)
+            let exWords;
+            try {
+                const parsed = JSON.parse(exclude);
+                exWords = Array.isArray(parsed) ? parsed : [exclude];
+            } catch {
+                exWords = exclude.includes('|')
+                    ? exclude.split('|')
+                    : exclude.trim().split(/\s+/);
             }
+            exWords = exWords.map(w => String(w).trim()).filter(Boolean);
+            exWords.forEach(w => {
+                where.push(`nama_paket NOT ILIKE $${paramIdx}`);
+                params.push(`%${w}%`);
+                paramIdx++;
+            });
         }
 
         if (filter_lokasi) {
@@ -194,8 +202,11 @@ router.get('/status', (req, res) => {
 // POST /api/sirup/crawl — Trigger crawl
 router.post('/crawl', async (req, res) => {
     try {
-        const { provinsi = [], bulan, tahun, akhirBulan } = req.body;
+        const { provinsi = [], bulan, tahun, akhirBulan, excludeWords } = req.body;
         const akhirBulanArr = akhirBulan ? (Array.isArray(akhirBulan) ? akhirBulan.map(Number) : [Number(akhirBulan)]) : null;
+        const excludeArr = Array.isArray(excludeWords)
+            ? excludeWords
+            : (excludeWords ? String(excludeWords).split('|') : []);
         // If bulan not provided, auto-derive from akhirBulan: crawl all 1-12, filter by end month
         const bulanArr = bulan
             ? (Array.isArray(bulan) ? bulan.map(Number) : [Number(bulan)])
@@ -205,6 +216,7 @@ router.post('/crawl', async (req, res) => {
             bulan: bulanArr,
             tahun: tahun || new Date().getFullYear(),
             akhirBulan: akhirBulanArr,
+            excludeWords: excludeArr,
         }).catch(e => console.error('[SIRUP] Crawl error:', e));
         res.json({ success: true, message: 'SIRUP crawl started' });
     } catch (err) {
