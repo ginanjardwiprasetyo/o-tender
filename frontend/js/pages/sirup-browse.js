@@ -18,7 +18,7 @@ const SirupBrowsePage = {
     filterTahun: new Date().getFullYear(),
     filterMetode: '',
     filterRead: '', // '' = semua, 'read' = dibaca, 'unread' = belum dibaca
-    filterUmk: '', // '' = semua, 'umk', 'non-umk'
+    filterUmk: 'umk', // default UMK; '' = semua, 'umk', 'non-umk'
     crawledProvinces: [],
     metodeList: [],
     readSet: new Set(),
@@ -220,6 +220,7 @@ const SirupBrowsePage = {
         for (let m = cm; m <= 12; m++) this.filterBulanMulti.add(m);
         this.filterTahun = new Date().getFullYear();
         this.filterMetode = 'Penunjukan Langsung';
+        this.filterUmk = 'umk';
     },
 
     saveToStorage() {
@@ -530,7 +531,7 @@ const SirupBrowsePage = {
         this.filterTahun = new Date().getFullYear();
         this.filterMetode = 'Penunjukan Langsung';
         this.filterRead = '';
-        this.filterUmk = '';
+        this.filterUmk = 'umk';
         this.page = 1;
         const input = document.getElementById('sirup-filter-cari');
         if (input) input.value = '';
@@ -543,7 +544,7 @@ const SirupBrowsePage = {
         const readSelect = document.getElementById('sirup-filter-read-select');
         if (readSelect) readSelect.value = '';
         const umkSelect = document.getElementById('sirup-filter-umk-select');
-        if (umkSelect) umkSelect.value = '';
+        if (umkSelect) umkSelect.value = 'umk';
         this.loadResults();
     },
 
@@ -575,7 +576,8 @@ const SirupBrowsePage = {
             const defaultBulan = new Set(); for (let m = new Date().getMonth()+1; m<=12; m++) defaultBulan.add(m);
             const isDefaultBulan = this.filterBulanMulti.size === defaultBulan.size && [...this.filterBulanMulti].every(m => defaultBulan.has(m));
             const isDefaultMetode = this.filterMetode === 'Penunjukan Langsung';
-            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear() || !!this.filterRead || !!this.filterUmk;
+            const isDefaultUmk = this.filterUmk === 'umk';
+            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear() || !!this.filterRead || (this.filterUmk && !isDefaultUmk);
 
             if (!this.results.length) {
                 container.innerHTML = `
@@ -684,9 +686,9 @@ const SirupBrowsePage = {
                                 style="height:32px;font-size:0.82rem;min-width:88px;max-width:110px;padding:0 16px 0 6px;"
                                 onchange="SirupBrowsePage.setFilterUmk(this.value)"
                                 title="Filter UMK / Non-UMK">
-                                <option value="" ${this.filterUmk===''?'selected':''}>Semua UMK</option>
                                 <option value="umk" ${this.filterUmk==='umk'?'selected':''}>UMK</option>
                                 <option value="non-umk" ${this.filterUmk==='non-umk'?'selected':''}>Non-UMK</option>
+                                <option value="" ${this.filterUmk===''?'selected':''}>Semua</option>
                             </select>
 
                             <!-- Filter Dibaca: dropdown -->
