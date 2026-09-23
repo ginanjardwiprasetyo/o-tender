@@ -739,13 +739,13 @@ tbody tr:last-child td { border-bottom: none; }
   inset: 0;
   background:
     radial-gradient(ellipse 70% 45% at 68% 10%, rgba(251, 191, 36, 0.22), transparent 65%),
-    radial-gradient(ellipse 90% 55% at 30% 100%, rgba(148, 163, 184, 0.28), transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, transparent 40%, rgba(203, 213, 225, 0.45) 100%);
+    radial-gradient(ellipse 90% 40% at 30% 100%, rgba(148, 163, 184, 0.18), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, transparent 45%, rgba(203, 213, 225, 0.35) 100%);
 }
 .site-haze {
   position: absolute;
-  left: 0; right: 0; bottom: 18%;
-  height: 35%;
+  left: 0; right: 0; bottom: 0;
+  height: 30%;
   background: linear-gradient(180deg, transparent, rgba(148, 163, 184, 0.18) 50%, transparent);
   animation: haze-shift 14s ease-in-out infinite alternate;
   pointer-events: none;
@@ -754,49 +754,12 @@ tbody tr:last-child td { border-bottom: none; }
   from { opacity: 0.55; transform: translateY(0); }
   to { opacity: 1; transform: translateY(-8px); }
 }
-.site-ground {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 22%;
-  background:
-    linear-gradient(180deg, #94a3b8 0%, #64748b 38%, #475569 100%);
-  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.18);
-}
-.site-ground::before {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 4px;
-  background: repeating-linear-gradient(
-    90deg,
-    #f59e0b 0 18px,
-    #e2e8f0 18px 36px
-  );
-  opacity: 0.85;
-}
-.site-ground::after {
-  content: '';
-  position: absolute;
-  inset: 12px 0 0;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      transparent 0 60px,
-      rgba(226, 232, 240, 0.14) 60px 62px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 40px,
-      rgba(226, 232, 240, 0.12) 40px 42px
-    );
-  opacity: 0.8;
-}
 
 /* Tower crane */
 .site-crane {
   position: absolute;
   left: 18%;
-  bottom: 22%;
+  bottom: 0;
   width: 4px;
   height: 58%;
   z-index: 2;
@@ -919,7 +882,7 @@ tbody tr:last-child td { border-bottom: none; }
 .site-scaffold {
   position: absolute;
   left: 4%;
-  bottom: 22%;
+  bottom: 0;
   width: 140px;
   height: 42%;
   z-index: 3;
@@ -956,7 +919,7 @@ tbody tr:last-child td { border-bottom: none; }
 /* Buildings — solid, industrial */
 .site-bldg {
   position: absolute;
-  bottom: 22%;
+  bottom: 0;
   background:
     linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
   border-top: 3px solid #cbd5e1;
@@ -1027,7 +990,7 @@ tbody tr:last-child td { border-bottom: none; }
 .site-equipment {
   position: absolute;
   left: 22%;
-  bottom: 22%;
+  bottom: 0;
   width: 160px;
   height: 90px;
   z-index: 4;
@@ -1129,7 +1092,7 @@ tbody tr:last-child td { border-bottom: none; }
 .site-cone {
   position: absolute;
   left: 42%;
-  bottom: 22%;
+  bottom: 0;
   width: 0; height: 0;
   border-left: 12px solid transparent;
   border-right: 12px solid transparent;
@@ -1148,7 +1111,7 @@ tbody tr:last-child td { border-bottom: none; }
 .site-barrier {
   position: absolute;
   left: 62%;
-  bottom: 24%;
+  bottom: 0;
   width: 70px;
   height: 18px;
   background: repeating-linear-gradient(
@@ -1182,14 +1145,14 @@ tbody tr:last-child td { border-bottom: none; }
   animation: mote-float linear infinite;
   pointer-events: none;
 }
-.site-particles i:nth-child(1) { left: 12%; bottom: 25%; animation-duration: 16s; }
-.site-particles i:nth-child(2) { left: 25%; bottom: 30%; width: 2px; height: 2px; animation-duration: 19s; animation-delay: -5s; }
-.site-particles i:nth-child(3) { left: 38%; bottom: 22%; animation-duration: 14s; animation-delay: -8s; }
-.site-particles i:nth-child(4) { left: 50%; bottom: 28%; width: 2px; height: 2px; animation-duration: 21s; animation-delay: -3s; }
-.site-particles i:nth-child(5) { left: 64%; bottom: 24%; animation-duration: 17s; animation-delay: -11s; }
-.site-particles i:nth-child(6) { left: 78%; bottom: 32%; width: 2px; height: 2px; animation-duration: 20s; animation-delay: -7s; }
-.site-particles i:nth-child(7) { left: 88%; bottom: 26%; animation-duration: 15s; animation-delay: -13s; }
-.site-particles i:nth-child(8) { left: 33%; bottom: 40%; width: 2px; height: 2px; animation-duration: 22s; animation-delay: -2s; }
+.site-particles i:nth-child(1) { left: 12%; bottom: 4%; animation-duration: 16s; }
+.site-particles i:nth-child(2) { left: 25%; bottom: 9%; width: 2px; height: 2px; animation-duration: 19s; animation-delay: -5s; }
+.site-particles i:nth-child(3) { left: 38%; bottom: 3%; animation-duration: 14s; animation-delay: -8s; }
+.site-particles i:nth-child(4) { left: 50%; bottom: 7%; width: 2px; height: 2px; animation-duration: 21s; animation-delay: -3s; }
+.site-particles i:nth-child(5) { left: 64%; bottom: 5%; animation-duration: 17s; animation-delay: -11s; }
+.site-particles i:nth-child(6) { left: 78%; bottom: 11%; width: 2px; height: 2px; animation-duration: 20s; animation-delay: -7s; }
+.site-particles i:nth-child(7) { left: 88%; bottom: 6%; animation-duration: 15s; animation-delay: -13s; }
+.site-particles i:nth-child(8) { left: 33%; bottom: 18%; width: 2px; height: 2px; animation-duration: 22s; animation-delay: -2s; }
 @keyframes mote-float {
   0% { transform: translateY(0) translateX(0); opacity: 0; }
   15% { opacity: 0.7; }
