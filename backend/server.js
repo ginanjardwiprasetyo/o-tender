@@ -109,17 +109,19 @@ app.use((req, res, next) => {
 
 // ─── SPA Fallback ─────────────────────────────────────────────
 app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-        const indexPath = path.join(__dirname, '..', 'frontend', 'index.html');
-        if (fs.existsSync(indexPath)) {
-            res.sendFile(indexPath);
-        } else {
-            res.json({
-                success: true,
-                message: "TenderBuild API Server is running successfully.",
-                timestamp: new Date().toISOString()
-            });
-        }
+    if (req.path.startsWith('/api')) {
+        // path API tak dikenal → 404 (jangan diam / hang)
+        return res.status(404).json({ success: false, error: 'Not Found' });
+    }
+    const indexPath = path.join(__dirname, '..', 'frontend', 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.json({
+            success: true,
+            message: "TenderBuild API Server is running successfully.",
+            timestamp: new Date().toISOString()
+        });
     }
 });
 

@@ -22,11 +22,9 @@ function sha256(s) {
 function verifyCredentials(username, password) {
     const u = String(username || '');
     const p = String(password || '');
-    const userOk = crypto.timingSafeEqual(Buffer.from(u), Buffer.from(APP_USER.length === u.length ? u : 'xxxxxxxx'));
-    const passOk = crypto.timingSafeEqual(
-        Buffer.from(sha256(p), 'hex'),
-        Buffer.from(APP_PASS_HASH, 'hex')
-    );
+    // compare via hex hash agar panjang buffer selalu sama (timingSafeEqual wajib equal length)
+    const userOk = sha256Hex(u) === sha256Hex(APP_USER);
+    const passOk = sha256Hex(p) === APP_PASS_HASH;
     return userOk && passOk;
 }
 
