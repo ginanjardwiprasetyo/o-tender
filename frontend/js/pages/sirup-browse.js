@@ -972,7 +972,8 @@ const SirupBrowsePage = {
             const fd = new FormData();
             fd.append('file', blob, filename);
             fd.append('message', `RUP SIRUP — Tahun ${this.filterTahun} (${filename})`);
-            const res = await fetch('/api/sirup/send-pdf', { method: 'POST', body: fd });
+            const res = await fetch('/api/sirup/send-pdf', { method: 'POST', body: fd, credentials: 'same-origin' });
+            if (res.status === 401) { App.showLogin(); throw new Error('Belum login'); }
             const json = await res.json();
             if (!json.success) throw new Error(json.error || 'Gagal mengirim');
             Toast.success('PDF terkirim ke WhatsApp');

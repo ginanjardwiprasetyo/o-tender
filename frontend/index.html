@@ -48,7 +48,7 @@
     <link rel="stylesheet" href="/css/main.css">
 </head>
 
-<body class="light-theme" >
+<body class="light-theme">
     <!-- ─── App Shell ──────────────────────────────────────── -->
     <div id="app" class="app-layout">
 
@@ -175,6 +175,28 @@
     <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <img src="/img/logo.svg" alt="oTender" width="52" height="52">
+            </div>
+            <h1 class="login-title">Masuk ke oTender</h1>
+            <p class="login-sub">Akses project — silakan login dulu</p>
+            <form id="login-form" autocomplete="on" onsubmit="return false;">
+                <label class="login-label" for="login-user">Username</label>
+                <input class="login-input" id="login-user" name="username" type="text" autocomplete="username" required placeholder="Username">
+                <label class="login-label" for="login-pass">Password</label>
+                <input class="login-input" id="login-pass" name="password" type="password" autocomplete="current-password" required placeholder="Password">
+                <div id="login-error" class="login-error hidden"></div>
+                <button type="button" class="login-btn" id="login-btn" onclick="App.submitLogin()">
+                    <span id="login-btn-text">Masuk</span>
+                </button>
+            </form>
+            <p class="login-foot">tender.rekayasa-sipil.my.id</p>
+        </div>
+    </div>
+
     <!-- Modal Container -->
     <div id="modal-overlay" class="modal-overlay hidden">
         <div class="modal" id="modal">
@@ -214,7 +236,7 @@
     <script src="/js/pages/tender-manage.js"></script>
     <script src="/js/pages/tender-detail.js"></script>
     <script src="/js/pages/settings.js"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=2"></script>
 </body>
 
 </html>

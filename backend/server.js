@@ -23,6 +23,11 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/migrations', express.static(path.join(__dirname, 'migrations')));
 
+// ─── API Auth (cookie session) ───────────────────────────────
+const { requireAuth } = require('./utils/auth');
+app.use('/api', requireAuth);
+app.use('/api/auth', require('./routes/auth'));
+
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/equipments', require('./routes/equipments'));
 app.use('/api/personnel',  require('./routes/personnel'));

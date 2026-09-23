@@ -15,7 +15,11 @@ const API = {
             config.body = JSON.stringify(config.body);
         }
         try {
-            const res = await fetch(url, config);
+            const res = await fetch(url, { credentials: 'same-origin', ...config });
+            if (res.status === 401) {
+                if (typeof App !== 'undefined' && App.showLogin) App.showLogin();
+                throw new Error('Belum login');
+            }
             const json = await res.json();
             if (!json.success) throw new Error(json.error || 'Terjadi kesalahan');
             return json;

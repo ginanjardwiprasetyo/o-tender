@@ -21,8 +21,9 @@ const App = {
     },
 
     currentPage: null,
+    _authed: false,
 
-    init() {
+    async init() {
         Toast.init();
         Modal.init();
 
@@ -41,15 +42,12 @@ const App = {
         setInterval(() => this.updateClock(), 30000);
 
         // Theme - default to light
-        // Force light theme on first load regardless of saved preference
         document.body.classList.add('light-theme');
-        // Set default in localStorage if not present
         let savedTheme = localStorage.getItem('tenderbuild-theme');
         if (!savedTheme) {
           savedTheme = 'light';
           localStorage.setItem('tenderbuild-theme', 'light');
         }
-        // Apply saved theme for future toggles (will be overridden on first load)
         if (savedTheme === 'dark') {
           document.body.classList.remove('light-theme');
         }
@@ -61,14 +59,87 @@ const App = {
             this.updateThemeIcon();
         });
 
-        // Hash router
-        window.addEventListener('hashchange', () => this.navigate());
-        this.navigate();
+        document.getElementById('login-pass')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.submitLogin();
+        });
+        document.getElementById('login-user')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.submitLogin();
+        });
 
-        // Init icons
+        // Auth gate — cek session dulu
+        try {
+            const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+            if (res.ok) {
+                this.enterApp();
+            } else {
+                this.showLogin();
+            }
+        } catch {
+            this.showLogin();
+        }
+
         lucide.createIcons();
+    },
 
-        // Check DB status (non-blocking)
+    showLogin() {
+        this._authed = false;
+        document.body.classList.remove('is-authed');
+        const el = document.getElementById('login-screen');
+        if (el) el.classList.remove('hidden');
+        const err = document.getElementById('login-error');
+        if (err) err.classList.add('hidden');
+        setTimeout(() => document.getElementById('login-user')?.focus(), 50);
+    },
+
+    hideLogin() {
+        const el = document.getElementById('login-screen');
+        if (el) el.classList.add('hidden');
+    },
+
+    async submitLogin() {
+        const user = document.getElementById('login-user')?.value || '';
+        const pass = document.getElementById('login-pass')?.value || '';
+        const errEl = document.getElementById('login-error');
+        const btn = document.getElementById('login-btn');
+        const btnText = document.getElementById('login-btn-text');
+        if (errEl) errEl.classList.add('hidden');
+        if (!user || !pass) {
+            if (errEl) { errEl.textContent = 'Isi username dan password'; errEl.classList.remove('hidden'); }
+            return;
+        }
+        if (btn) btn.disabled = true;
+        if (btnText) btnText.textContent = 'Memeriksa...';
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.error || 'Login gagal');
+            const passInput = document.getElementById('login-pass');
+            if (passInput) passInput.value = '';
+            this.enterApp();
+        } catch (e) {
+            if (errEl) { errEl.textContent = e.message || 'Login gagal'; errEl.classList.remove('hidden'); }
+        } finally {
+            if (btn) btn.disabled = false;
+            if (btnText) btnText.textContent = 'Masuk';
+        }
+    },
+
+    enterApp() {
+        this._authed = true;
+        document.body.classList.add('is-authed');
+        this.hideLogin();
+
+        // Hash router (sekali)
+        if (!this._routerBound) {
+            this._routerBound = true;
+            window.addEventListener('hashchange', () => this.navigate());
+        }
+        this.navigate();
         this.checkDbStatus();
     },
 
@@ -105,6 +176,7 @@ const App = {
     },
 
     async navigate() {
+        if (!this._authed) return;
         const hash = location.hash.slice(1) || 'dashboard';
         const [pageKeyWithQuery] = hash.split('?');
         const pageKey = pageKeyWithQuery.split('/')[0];
