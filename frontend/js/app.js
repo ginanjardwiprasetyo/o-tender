@@ -68,7 +68,7 @@ const App = {
             if (e.key === 'Enter') this.submitLogin();
         });
 
-        // Auth gate — cek session dulu
+        // Auth gate — login mulai tersembunyi; hanya tampil bila session invalid
         try {
             const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
             if (res.ok) {

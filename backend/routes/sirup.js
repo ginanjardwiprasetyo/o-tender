@@ -56,7 +56,7 @@ router.get('/crawled-provinces', async (req, res) => {
 // GET /api/sirup — List crawled RUP data with filters
 router.get('/', async (req, res) => {
     try {
-        const { provinsi, bulan, tahun, metode, search, filter_lokasi, exclude, read_status, read_codes, page = 1, limit = 20 } = req.query;
+        const { provinsi, bulan, tahun, metode, search, filter_lokasi, exclude, read_status, read_codes, umk, page = 1, limit = 20 } = req.query;
         const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
         const lim = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
@@ -92,6 +92,13 @@ router.get('/', async (req, res) => {
             where.push(`metode ILIKE $${paramIdx}`);
             params.push(`%${metode}%`);
             paramIdx++;
+        }
+
+        // UMK / Non-UMK — is_umk may be null for old rows (treat as non-UMK)
+        if (umk === 'umk') {
+            where.push(`is_umk IS TRUE`);
+        } else if (umk === 'non-umk') {
+            where.push(`is_umk IS NOT TRUE`);
         }
 
         if (search) {

@@ -18,6 +18,7 @@ const SirupBrowsePage = {
     filterTahun: new Date().getFullYear(),
     filterMetode: '',
     filterRead: '', // '' = semua, 'read' = dibaca, 'unread' = belum dibaca
+    filterUmk: '', // '' = semua, 'umk', 'non-umk'
     crawledProvinces: [],
     metodeList: [],
     readSet: new Set(),
@@ -489,6 +490,12 @@ const SirupBrowsePage = {
         this.loadResults();
     },
 
+    setFilterUmk(val) {
+        this.filterUmk = val || '';
+        this.page = 1;
+        this.loadResults();
+    },
+
     applyFilterCari() {
         this.filterCari = document.getElementById('sirup-filter-cari').value.trim();
         this.page = 1;
@@ -523,6 +530,7 @@ const SirupBrowsePage = {
         this.filterTahun = new Date().getFullYear();
         this.filterMetode = 'Penunjukan Langsung';
         this.filterRead = '';
+        this.filterUmk = '';
         this.page = 1;
         const input = document.getElementById('sirup-filter-cari');
         if (input) input.value = '';
@@ -534,6 +542,8 @@ const SirupBrowsePage = {
         if (metodeSelect) metodeSelect.value = 'Penunjukan Langsung';
         const readSelect = document.getElementById('sirup-filter-read-select');
         if (readSelect) readSelect.value = '';
+        const umkSelect = document.getElementById('sirup-filter-umk-select');
+        if (umkSelect) umkSelect.value = '';
         this.loadResults();
     },
 
@@ -550,6 +560,7 @@ const SirupBrowsePage = {
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;
+            if (this.filterUmk) params.umk = this.filterUmk;
             if (this.filterRead) {
                 params.read_status = this.filterRead;
                 params.read_codes = [...this.readSet].join(',');
@@ -564,7 +575,7 @@ const SirupBrowsePage = {
             const defaultBulan = new Set(); for (let m = new Date().getMonth()+1; m<=12; m++) defaultBulan.add(m);
             const isDefaultBulan = this.filterBulanMulti.size === defaultBulan.size && [...this.filterBulanMulti].every(m => defaultBulan.has(m));
             const isDefaultMetode = this.filterMetode === 'Penunjukan Langsung';
-            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear() || !!this.filterRead;
+            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear() || !!this.filterRead || !!this.filterUmk;
 
             if (!this.results.length) {
                 container.innerHTML = `
@@ -666,6 +677,16 @@ const SirupBrowsePage = {
                                 ${this.metodeList.map(m =>
                                     `<option value="${m}" ${this.filterMetode===m?'selected':''}>${m}</option>`
                                 ).join('')}
+                            </select>
+
+                            <!-- Filter UMK: dropdown -->
+                            <select class="form-select" id="sirup-filter-umk-select"
+                                style="height:32px;font-size:0.82rem;min-width:88px;max-width:110px;padding:0 16px 0 6px;"
+                                onchange="SirupBrowsePage.setFilterUmk(this.value)"
+                                title="Filter UMK / Non-UMK">
+                                <option value="" ${this.filterUmk===''?'selected':''}>Semua UMK</option>
+                                <option value="umk" ${this.filterUmk==='umk'?'selected':''}>UMK</option>
+                                <option value="non-umk" ${this.filterUmk==='non-umk'?'selected':''}>Non-UMK</option>
                             </select>
 
                             <!-- Filter Dibaca: dropdown -->
@@ -995,6 +1016,7 @@ const SirupBrowsePage = {
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;
+            if (this.filterUmk) params.umk = this.filterUmk;
             if (this.filterRead) {
                 params.read_status = this.filterRead;
                 params.read_codes = [...this.readSet].join(',');

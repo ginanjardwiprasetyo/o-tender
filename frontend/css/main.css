@@ -718,7 +718,7 @@ tbody tr:last-child td { border-bottom: none; }
   overflow: hidden;
   background: #eff6ff;
 }
-.login-screen.hidden { display: none; }
+.login-screen.hidden { display: none !important; }
 
 .login-layout {
   display: grid;
