@@ -45,7 +45,7 @@
     <script src="https://unpkg.com/lucide@0.454.0"></script>
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/main.css?v=2">
 </head>
 
 <body class="light-theme">
@@ -158,6 +158,9 @@
                     <button class="topbar-btn" id="theme-toggle" aria-label="Toggle tema">
                         <i data-lucide="moon"></i>
                     </button>
+                    <button class="topbar-btn topbar-logout" id="logout-btn" aria-label="Logout" title="Logout">
+                        <i data-lucide="log-out"></i>
+                    </button>
                 </div>
             </header>
 
@@ -177,81 +180,163 @@
 
     <!-- Login Screen -->
     <div id="login-screen" class="login-screen">
-        <!-- Construction animated background (pure CSS/SVG, no JS) -->
-        <div class="site-bg" aria-hidden="true">
-            <div class="site-grid"></div>
-            <div class="site-glow"></div>
-            <svg class="site-scene" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMax slice">
-                <!-- ground -->
-                <line x1="0" y1="620" x2="1200" y2="620" stroke="rgba(59,130,246,0.35)" stroke-width="2"/>
-                <!-- buildings under construction -->
-                <g class="bld b1" fill="none" stroke="rgba(148,163,184,0.35)" stroke-width="1.5">
-                    <rect x="80" y="380" width="140" height="240"/>
-                    <path d="M80 440h140M80 500h140M80 560h140"/>
-                    <path d="M100 380v-40h40v40" stroke-dasharray="4 4"/>
-                </g>
-                <g class="bld b2" fill="none" stroke="rgba(148,163,184,0.28)" stroke-width="1.5">
-                    <rect x="920" y="420" width="160" height="200"/>
-                    <path d="M920 470h160M920 520h160M920 570h160"/>
-                </g>
-                <g class="bld b3" fill="none" stroke="rgba(59,130,246,0.22)" stroke-width="1.5">
-                    <rect x="780" y="500" width="100" height="120"/>
-                    <path d="M780 540h100M780 580h100"/>
-                </g>
-                <!-- tower crane -->
-                <g class="crane" stroke="rgba(245,158,11,0.55)" stroke-width="2" fill="none">
-                    <line x1="560" y1="620" x2="560" y2="160"/>
-                    <line x1="540" y1="620" x2="560" y2="160"/>
-                    <line x1="580" y1="620" x2="560" y2="160"/>
-                    <line x1="480" y1="160" x2="740" y2="160"/>
-                    <line x1="560" y1="160" x2="660" y2="100"/>
-                    <line x1="660" y1="100" x2="740" y2="160"/>
-                    <line x1="560" y1="200" x2="740" y2="200" stroke-dasharray="3 6"/>
-                    <g class="crane-trolley">
-                        <line class="crane-cable" x1="700" y1="160" x2="700" y2="300"/>
-                        <rect class="crane-hook" x="688" y="300" width="24" height="14" rx="2"/>
-                        <path class="crane-load" d="M692 314h16l4 18h-24z"/>
-                    </g>
-                </g>
-                <!-- scaffold / rebar accents -->
-                <g stroke="rgba(16,185,129,0.35)" stroke-width="1.5" stroke-dasharray="6 4">
-                    <path d="M260 620v-180h80v180"/>
-                    <path d="M260 500h80M260 560h80"/>
-                </g>
-                <!-- caution stripes base -->
-                <g class="stripes">
-                    <rect x="0" y="628" width="1200" height="10" fill="url(#caution)"/>
-                </g>
-                <defs>
-                    <pattern id="caution" width="24" height="10" patternUnits="userSpaceOnUse" patternTransform="skewX(-30)">
-                        <rect width="12" height="10" fill="rgba(245,158,11,0.35)"/>
-                        <rect x="12" width="12" height="10" fill="rgba(15,23,42,0.35)"/>
-                    </pattern>
-                </defs>
-            </svg>
-            <div class="site-dust">
-                <i></i><i></i><i></i><i></i><i></i><i></i>
-            </div>
-            <div class="site-scan"></div>
-        </div>
+        <div class="login-layout">
+            <!-- Construction animated scene (light theme, left side) -->
+            <div class="site-bg" aria-hidden="true">
+                <div class="site-sky"></div>
+                <div class="site-grid"></div>
+                <div class="site-clouds">
+                    <i></i><i></i><i></i>
+                </div>
+                <svg class="site-scene" viewBox="0 0 900 640" preserveAspectRatio="xMidYMax meet">
+                    <defs>
+                        <linearGradient id="skyFade" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#dbeafe" stop-opacity="0"/>
+                            <stop offset="100%" stop-color="#93c5fd" stop-opacity="0.35"/>
+                        </linearGradient>
+                        <pattern id="caution" width="20" height="8" patternUnits="userSpaceOnUse" patternTransform="skewX(-30)">
+                            <rect width="10" height="8" fill="rgba(245,158,11,0.55)"/>
+                            <rect x="10" width="10" height="8" fill="rgba(30,41,59,0.35)"/>
+                        </pattern>
+                    </defs>
 
-        <div class="login-card">
-            <div class="login-logo">
-                <img src="/img/logo.svg" alt="oTender" width="52" height="52">
+                    <!-- ground -->
+                    <rect x="0" y="560" width="900" height="80" fill="url(#skyFade)"/>
+                    <line x1="0" y1="560" x2="900" y2="560" stroke="rgba(37,99,235,0.45)" stroke-width="2.5"/>
+                    <rect x="0" y="568" width="900" height="10" fill="url(#caution)"/>
+
+                    <!-- buildings under construction -->
+                    <g class="bld b1" fill="none" stroke="rgba(30,64,175,0.4)" stroke-width="1.8">
+                        <rect x="40" y="300" width="130" height="260"/>
+                        <path d="M40 360h130M40 420h130M40 480h130"/>
+                        <path d="M60 300v-36h40v36" stroke-dasharray="4 4"/>
+                        <path class="window-w1" d="M70 380h20v20H70zM110 380h20v20h-20zM70 440h20v20H70zM110 440h20v20h-20z" fill="rgba(59,130,246,0.2)" stroke="none"/>
+                    </g>
+                    <g class="bld b2" fill="none" stroke="rgba(30,64,175,0.32)" stroke-width="1.8">
+                        <rect x="720" y="340" width="140" height="220"/>
+                        <path d="M720 390h140M720 440h140M720 490h140"/>
+                    </g>
+                    <g class="bld b3" fill="none" stroke="rgba(37,99,235,0.28)" stroke-width="1.6">
+                        <rect x="600" y="420" width="90" height="140"/>
+                        <path d="M600 460h90M600 500h90"/>
+                    </g>
+
+                    <!-- tower crane -->
+                    <g class="crane" stroke="rgba(217,119,6,0.7)" stroke-width="2.2" fill="none">
+                        <line x1="430" y1="560" x2="430" y2="100"/>
+                        <line x1="412" y1="560" x2="430" y2="100"/>
+                        <line x1="448" y1="560" x2="430" y2="100"/>
+                        <line x1="340" y1="100" x2="620" y2="100"/>
+                        <line x1="430" y1="100" x2="530" y2="48"/>
+                        <line x1="530" y1="48" x2="620" y2="100"/>
+                        <line x1="430" y1="140" x2="620" y2="140" stroke-dasharray="3 6"/>
+                        <g class="crane-trolley">
+                            <line class="crane-cable" x1="580" y1="100" x2="580" y2="230"/>
+                            <rect class="crane-hook" x="568" y="230" width="24" height="12" rx="2"/>
+                            <path class="crane-load" d="M570 242h20l6 22h-32z"/>
+                        </g>
+                        <!-- beacon -->
+                        <circle class="crane-beacon" cx="530" cy="48" r="4" fill="#ef4444" stroke="none"/>
+                    </g>
+
+                    <!-- scaffold / rebar -->
+                    <g stroke="rgba(16,185,129,0.5)" stroke-width="1.6" stroke-dasharray="6 4">
+                        <path d="M200 560v-160h70v160"/>
+                        <path d="M200 460h70M200 510h70"/>
+                    </g>
+
+                    <!-- excavator (digging) -->
+                    <g class="excavator" transform="translate(48,500)">
+                        <rect class="ex-body" x="0" y="-40" width="70" height="32" rx="6"/>
+                        <rect class="ex-cab" x="40" y="-62" width="30" height="24" rx="4"/>
+                        <rect x="8" y="-8" width="54" height="14" rx="7" fill="#334155"/>
+                        <circle class="ex-wheel" cx="20" cy="-1" r="6" fill="#64748b"/>
+                        <circle class="ex-wheel" cx="35" cy="-1" r="6" fill="#64748b"/>
+                        <circle class="ex-wheel" cx="50" cy="-1" r="6" fill="#64748b"/>
+                        <g class="ex-arm">
+                            <line x1="70" y1="-48" x2="110" y2="-70" stroke="#d97706" stroke-width="5" stroke-linecap="round"/>
+                            <g class="ex-boom">
+                                <line x1="110" y1="-70" x2="140" y2="-30" stroke="#d97706" stroke-width="4.5" stroke-linecap="round"/>
+                                <path class="ex-bucket" d="M140 -30 l18 8 -4 16 -20 -6z" fill="#f59e0b" stroke="#b45309" stroke-width="1.5"/>
+                            </g>
+                        </g>
+                    </g>
+
+                    <!-- dump truck driving -->
+                    <g class="dump-truck" transform="translate(0,0)">
+                        <g transform="translate(780,505)">
+                            <rect x="0" y="-36" width="90" height="30" rx="4" fill="#f59e0b" stroke="#b45309" stroke-width="1.5"/>
+                            <path d="M90 -36h28l14 18v12H90z" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>
+                            <rect x="98" y="-30" width="16" height="12" rx="2" fill="rgba(255,255,255,0.55)"/>
+                            <rect x="4" y="-48" width="70" height="14" rx="3" fill="#d97706" class="dump-bed"/>
+                            <circle class="truck-wheel" cx="20" cy="0" r="10" fill="#1e293b"/>
+                            <circle cx="20" cy="0" r="4" fill="#94a3b8"/>
+                            <circle class="truck-wheel" cx="55" cy="0" r="10" fill="#1e293b"/>
+                            <circle cx="55" cy="0" r="4" fill="#94a3b8"/>
+                            <circle class="truck-wheel" cx="115" cy="0" r="10" fill="#1e293b"/>
+                            <circle cx="115" cy="0" r="4" fill="#94a3b8"/>
+                        </g>
+                    </g>
+
+                    <!-- cement mixer (rotating drum) -->
+                    <g class="mixer" transform="translate(300,508)">
+                        <rect x="0" y="-28" width="80" height="24" rx="4" fill="#64748b"/>
+                        <rect x="70" y="-40" width="28" height="20" rx="3" fill="#3b82f6"/>
+                        <g class="mixer-drum" transform="translate(40,-48)">
+                            <ellipse cx="0" cy="0" rx="28" ry="18" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+                            <path d="M-20 -8 h40 M-20 0 h40 M-20 8 h40" stroke="#94a3b8" stroke-width="1.5"/>
+                        </g>
+                        <circle class="truck-wheel" cx="18" cy="0" r="9" fill="#1e293b"/>
+                        <circle class="truck-wheel" cx="55" cy="0" r="9" fill="#1e293b"/>
+                    </g>
+
+                    <!-- workers -->
+                    <g class="worker w1" transform="translate(250,540)">
+                        <circle cx="0" cy="-28" r="6" fill="#fcd34d"/>
+                        <rect x="-5" y="-22" width="10" height="16" rx="2" fill="#2563eb"/>
+                        <path d="M-4 -6 v10 M4 -6 v10" stroke="#1e293b" stroke-width="3"/>
+                        <path class="wave-arm" d="M5 -18 l10 -8" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>
+                    </g>
+                    <g class="worker w2" transform="translate(560,542)">
+                        <circle cx="0" cy="-28" r="6" fill="#fcd34d"/>
+                        <rect x="-5" y="-22" width="10" height="16" rx="2" fill="#dc2626"/>
+                        <path d="M-4 -6 v10 M4 -6 v10" stroke="#1e293b" stroke-width="3"/>
+                    </g>
+
+                    <!-- traffic cone -->
+                    <g transform="translate(670,548)">
+                        <path d="M0 0 l6 -20 h8 l6 20z" fill="#f97316"/>
+                        <rect x="3" y="-10" width="14" height="4" fill="#fff" opacity="0.85"/>
+                    </g>
+                </svg>
+                <div class="site-dust">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </div>
+                <div class="site-scan"></div>
+                <div class="site-badge">
+                    <span class="site-badge-dot"></span>
+                    Lapangan aktif · Live site
+                </div>
             </div>
-            <h1 class="login-title">Masuk ke oTender</h1>
-            <p class="login-sub">Akses project — silakan login dulu</p>
-            <form id="login-form" autocomplete="on" onsubmit="return false;">
-                <label class="login-label" for="login-user">Username</label>
-                <input class="login-input" id="login-user" name="username" type="text" autocomplete="username" required placeholder="Username">
-                <label class="login-label" for="login-pass">Password</label>
-                <input class="login-input" id="login-pass" name="password" type="password" autocomplete="current-password" required placeholder="Password">
-                <div id="login-error" class="login-error hidden"></div>
-                <button type="button" class="login-btn" id="login-btn" onclick="App.submitLogin()">
-                    <span id="login-btn-text">Masuk</span>
-                </button>
-            </form>
-            <p class="login-foot">tender.rekayasa-sipil.my.id</p>
+
+            <div class="login-card">
+                <div class="login-logo">
+                    <img src="/img/logo.svg" alt="oTender" width="52" height="52">
+                </div>
+                <h1 class="login-title">Masuk ke oTender</h1>
+                <p class="login-sub">Manajemen tender & dokumen konstruksi</p>
+                <form id="login-form" autocomplete="on" onsubmit="return false;">
+                    <label class="login-label" for="login-user">Username</label>
+                    <input class="login-input" id="login-user" name="username" type="text" autocomplete="username" required placeholder="Username">
+                    <label class="login-label" for="login-pass">Password</label>
+                    <input class="login-input" id="login-pass" name="password" type="password" autocomplete="current-password" required placeholder="Password">
+                    <div id="login-error" class="login-error hidden"></div>
+                    <button type="button" class="login-btn" id="login-btn" onclick="App.submitLogin()">
+                        <span id="login-btn-text">Masuk</span>
+                    </button>
+                </form>
+                <p class="login-foot">tender.rekayasa-sipil.my.id</p>
+            </div>
         </div>
     </div>
 
@@ -294,7 +379,7 @@
     <script src="/js/pages/tender-manage.js"></script>
     <script src="/js/pages/tender-detail.js"></script>
     <script src="/js/pages/settings.js"></script>
-    <script src="/js/app.js?v=2"></script>
+    <script src="/js/app.js?v=3"></script>
 </body>
 
 </html>

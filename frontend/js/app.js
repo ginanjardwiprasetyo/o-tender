@@ -59,6 +59,8 @@ const App = {
             this.updateThemeIcon();
         });
 
+        document.getElementById('logout-btn')?.addEventListener('click', () => this.logout());
+
         document.getElementById('login-pass')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.submitLogin();
         });
@@ -141,6 +143,17 @@ const App = {
         }
         this.navigate();
         this.checkDbStatus();
+    },
+
+    async logout() {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch { /* tetap keluar lokal */ }
+        this._authed = false;
+        document.body.classList.remove('is-authed');
+        location.hash = '';
+        this.showLogin();
+        Toast.info('Anda telah logout', { duration: 2500 });
     },
 
     async checkDbStatus() {
