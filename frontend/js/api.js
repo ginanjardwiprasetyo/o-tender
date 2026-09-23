@@ -20,6 +20,10 @@ const API = {
                 if (typeof App !== 'undefined' && App.showLogin) App.showLogin();
                 throw new Error('Belum login');
             }
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            if (!ct.includes('application/json')) {
+                throw new Error(`Response bukan JSON (HTTP ${res.status} ${ct || 'tanpa content-type'})`);
+            }
             const json = await res.json();
             if (!json.success) throw new Error(json.error || 'Terjadi kesalahan');
             return json;
