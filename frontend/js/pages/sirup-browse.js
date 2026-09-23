@@ -9,7 +9,7 @@ const SirupBrowsePage = {
     results: [],
     total: 0,
     page: 1,
-    sortCol: null,
+    sortCol: 'pemilihan',
     sortDir: 'asc',
     filterProvinsi: '',
     filterCari: '',
@@ -17,6 +17,7 @@ const SirupBrowsePage = {
     filterBulanMulti: new Set(),
     filterTahun: new Date().getFullYear(),
     filterMetode: '',
+    filterRead: '', // '' = semua, 'read' = dibaca, 'unread' = belum dibaca
     crawledProvinces: [],
     metodeList: [],
     readSet: new Set(),
@@ -482,6 +483,12 @@ const SirupBrowsePage = {
         this.loadResults();
     },
 
+    setFilterRead(val) {
+        this.filterRead = val || '';
+        this.page = 1;
+        this.loadResults();
+    },
+
     applyFilterCari() {
         this.filterCari = document.getElementById('sirup-filter-cari').value.trim();
         this.page = 1;
@@ -515,6 +522,7 @@ const SirupBrowsePage = {
         for (let m = cm; m <= 12; m++) this.filterBulanMulti.add(m);
         this.filterTahun = new Date().getFullYear();
         this.filterMetode = 'Penunjukan Langsung';
+        this.filterRead = '';
         this.page = 1;
         const input = document.getElementById('sirup-filter-cari');
         if (input) input.value = '';
@@ -524,6 +532,8 @@ const SirupBrowsePage = {
         if (tahunSelect) tahunSelect.value = String(new Date().getFullYear());
         const metodeSelect = document.getElementById('sirup-filter-metode-select');
         if (metodeSelect) metodeSelect.value = 'Penunjukan Langsung';
+        const readSelect = document.getElementById('sirup-filter-read-select');
+        if (readSelect) readSelect.value = '';
         this.loadResults();
     },
 
@@ -540,6 +550,10 @@ const SirupBrowsePage = {
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;
+            if (this.filterRead) {
+                params.read_status = this.filterRead;
+                params.read_codes = [...this.readSet].join(',');
+            }
             if (this.sortCol) { params.sort = this.sortCol; params.dir = this.sortDir; }
 
             console.log('[SIRUP] loadResults params:', JSON.stringify(params));
@@ -550,7 +564,7 @@ const SirupBrowsePage = {
             const defaultBulan = new Set(); for (let m = new Date().getMonth()+1; m<=12; m++) defaultBulan.add(m);
             const isDefaultBulan = this.filterBulanMulti.size === defaultBulan.size && [...this.filterBulanMulti].every(m => defaultBulan.has(m));
             const isDefaultMetode = this.filterMetode === 'Penunjukan Langsung';
-            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear();
+            const hasActiveFilter = this.filterCari || this.filterExcludeWords.length || this.filterProvinsi || !isDefaultBulan || !isDefaultMetode || this.filterTahun !== new Date().getFullYear() || !!this.filterRead;
 
             if (!this.results.length) {
                 container.innerHTML = `
@@ -654,9 +668,19 @@ const SirupBrowsePage = {
                                 ).join('')}
                             </select>
 
+                            <!-- Filter Dibaca: dropdown -->
+                            <select class="form-select" id="sirup-filter-read-select"
+                                style="height:32px;font-size:0.82rem;min-width:100px;max-width:130px;padding:0 16px 0 6px;"
+                                onchange="SirupBrowsePage.setFilterRead(this.value)">
+                                <option value="" ${this.filterRead===''?'selected':''}>Semua Hasil</option>
+                                <option value="unread" ${this.filterRead==='unread'?'selected':''}>Belum Dibaca</option>
+                                <option value="read" ${this.filterRead==='read'?'selected':''}>Dibaca</option>
+                            </select>
+
                             ${hasActiveFilter ? `<button class="btn btn-xs btn-danger" style="height:24px;font-size:0.72rem;" onclick="SirupBrowsePage.clearAllFilters()">Clear</button>` : ''}
                             <button class="btn btn-xs btn-secondary" style="height:24px;font-size:0.72rem;margin-left:4px;" onclick="SirupBrowsePage.markAllAsRead()">Tandai Semua Dibaca</button>
-                            <button class="btn btn-xs btn-secondary" style="height:24px;font-size:0.72rem;" onclick="SirupBrowsePage.exportPdf()"><i data-lucide="download" style="width:11px;height:11px;"></i> Export PDF</button>
+                            <button class="btn btn-xs btn-secondary" style="height:24px;font-size:0.72rem;" onclick="SirupBrowsePage.downloadPdf()"><i data-lucide="download" style="width:11px;height:11px;"></i> Download PDF</button>
+                            <button class="btn btn-xs btn-secondary" style="height:24px;font-size:0.72rem;" onclick="SirupBrowsePage.kirimPdf()"><i data-lucide="send" style="width:11px;height:11px;"></i> Kirim PDF</button>
                             <span style="font-size:0.82rem;color:var(--text-muted);margin-left:auto;">${this.total} data</span>
                         </div>
                     </div>
@@ -931,9 +955,34 @@ const SirupBrowsePage = {
         Toast.success('Semua ditandai sudah dibaca');
     },
 
-    // ─── Export PDF ──────────────────────────────────
+    // ─── Export / Kirim PDF ──────────────────────────
+    async downloadPdf() {
+        const { doc, filename } = await this.exportPdf();
+        if (!doc) return;
+        doc.save(filename);
+        Toast.success('PDF berhasil di-download');
+    },
+
+    async kirimPdf() {
+        try {
+            const { doc, filename } = await this.exportPdf();
+            if (!doc) return;
+            Toast.info('Mengirim PDF ke WhatsApp...');
+            const blob = doc.output('blob');
+            const fd = new FormData();
+            fd.append('file', blob, filename);
+            fd.append('message', `RUP SIRUP — Tahun ${this.filterTahun} (${filename})`);
+            const res = await fetch('/api/sirup/send-pdf', { method: 'POST', body: fd });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || 'Gagal mengirim');
+            Toast.success('PDF terkirim ke WhatsApp');
+        } catch (err) {
+            Toast.error('Gagal kirim: ' + err.message);
+        }
+    },
+
     async exportPdf() {
-        Toast.info('Menyiapkan export...');
+        Toast.info('Menyiapkan PDF...');
         try {
             // Fetch all matching data (paginate)
             const allData = [];
@@ -945,6 +994,11 @@ const SirupBrowsePage = {
             if (this.filterProvinsi) params.filter_lokasi = this.filterProvinsi;
             if (this.filterBulanMulti.size) params.bulan = [...this.filterBulanMulti].join(',');
             if (this.filterMetode) params.metode = this.filterMetode;
+            if (this.filterRead) {
+                params.read_status = this.filterRead;
+                params.read_codes = [...this.readSet].join(',');
+            }
+            if (this.sortCol) { params.sort = this.sortCol; params.dir = this.sortDir; }
 
             while (true) {
                 params.page = pg;
@@ -955,9 +1009,9 @@ const SirupBrowsePage = {
                 pg++;
             }
 
-            if (!allData.length) { Toast.warning('Tidak ada data untuk di-export'); return; }
+            if (!allData.length) { Toast.warning('Tidak ada data untuk di-export'); return { doc: null, filename: null }; }
 
-            if (!window.jspdf) { Toast.error('jsPDF belum ter-load, coba refresh halaman'); return; }
+            if (!window.jspdf) { Toast.error('jsPDF belum ter-load, coba refresh halaman'); return { doc: null, filename: null }; }
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
@@ -996,7 +1050,7 @@ const SirupBrowsePage = {
             doc.text('Rencana Umum Pengadaan (RUP) — SIRUP LKPP', 14, 15);
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
-            doc.text(`Tahun Anggaran: ${this.filterTahun} | Total: ${allData.length} data | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+            doc.text(`Tahun Anggaran: ${this.filterTahun} | Total: ${allData.length} data | Dicetak: ${new Date().toLocaleDateString('id-ID')} | https://tender.rekayasa-sipil.my.id`, 14, 22);
 
             const rows = allData.map((r, i) => [
                 i + 1,
@@ -1052,17 +1106,18 @@ const SirupBrowsePage = {
                 margin: { left: 14, right: 14 },
             });
 
-            // Add watermark to all pages
+            // Watermark on every page
             const totalPages = doc.internal.getNumberOfPages();
             for (let i = 1; i <= totalPages; i++) {
                 doc.setPage(i);
                 addWatermark();
             }
 
-            doc.save(`RUP_${this.filterTahun}_${new Date().toISOString().slice(0,10)}.pdf`);
-            Toast.success('PDF berhasil di-download');
+            const filename = `RUP_${this.filterTahun}_${new Date().toISOString().slice(0,10)}.pdf`;
+            return { doc, filename };
         } catch (err) {
             Toast.error('Gagal export: ' + err.message);
+            return { doc: null, filename: null };
         }
     },
 

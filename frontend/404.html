@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 — Halaman Tidak Ditemukan | oTender</title>
+    <link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.18), transparent),
+                var(--bg);
+            color: var(--text);
+            padding: 24px;
+        }
+        .wrap {
+            text-align: center;
+            max-width: 440px;
+            width: 100%;
+        }
+        .logo {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 28px;
+            opacity: 0.9;
+        }
+        .code {
+            font-size: clamp(5rem, 18vw, 7.5rem);
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.06em;
+            background: linear-gradient(135deg, #60a5fa, #3b82f6 40%, #1d4ed8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 8px;
+        }
+        .glow {
+            width: 120px;
+            height: 4px;
+            margin: 0 auto 28px;
+            border-radius: 99px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            box-shadow: 0 0 24px rgba(59,130,246,0.55);
+        }
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        p {
+            color: var(--muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+        .actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 22px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+        }
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(59,130,246,0.4);
+        }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text);
+            border-color: var(--border);
+        }
+        .btn-ghost:hover {
+            background: var(--card);
+            border-color: var(--muted);
+        }
+        .foot {
+            margin-top: 40px;
+            font-size: 0.75rem;
+            color: #64748b;
+            letter-spacing: 0.02em;
+        }
+        .foot a { color: var(--muted); text-decoration: none; }
+        .foot a:hover { color: var(--accent); }
+        @media (prefers-color-scheme: light) {
+            body {
+                background:
+                    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.12), transparent),
+                    #f8fafc;
+                color: #1e293b;
+            }
+            p { color: #64748b; }
+            .btn-ghost { color: #1e293b; border-color: #e2e8f0; }
+            .btn-ghost:hover { background: #fff; border-color: #94a3b8; }
+            .foot { color: #94a3b8; }
+            .foot a { color: #64748b; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <img class="logo" src="/img/logo.svg" alt="oTender" width="56" height="56">
+        <div class="code">404</div>
+        <div class="glow"></div>
+        <h1>Halaman tidak ditemukan</h1>
+        <p>URL yang kamu akses tidak tersedia atau sudah dipindahkan. Periksa kembali alamatnya, atau kembali ke beranda.</p>
+        <div class="actions">
+            <a class="btn btn-primary" href="/">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/></svg>
+                Ke Beranda
+            </a>
+            <a class="btn btn-ghost" href="javascript:history.back()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+                Kembali
+            </a>
+        </div>
+        <div class="foot">© oTender · <a href="https://tender.rekayasa-sipil.my.id">tender.rekayasa-sipil.my.id</a></div>
+    </div>
+</body>
+</html>

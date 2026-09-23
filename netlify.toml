@@ -1,5 +1,6 @@
 # Netlify Configuration for o-tender / TenderBuild
 # Menentukan folder frontend sebagai base publikasi dan mengatur proxy API
+# Catatan: Netlify mencocokkan redirect dari BAWAH ke ATAS (rule terakhir diprioritaskan)
 
 [build]
   # Mengarahkan Netlify untuk mempublikasikan folder frontend saja
@@ -25,3 +26,30 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# ── Security: blok akses direct ke path sirup → 404 elegan ──
+# (di atas rule lain agar diprioritaskan)
+
+[[redirects]]
+  from = "/uploads/sirup/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*/*/sirup/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*/sirup/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/sirup/*"
+  to = "/404.html"
+  status = 404
+  force = true

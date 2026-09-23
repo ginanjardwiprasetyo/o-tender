@@ -77,6 +77,29 @@ app.post('/api/db-migrate', async (req, res) => {
     }
 });
 
+// ─── Security: blok akses direct ke path sirup → 404 elegan ──
+const send404 = (res) => {
+    const p = path.join(__dirname, '..', 'frontend', '404.html');
+    if (fs.existsSync(p)) return res.status(404).sendFile(p);
+    res.status(404).send('Not Found');
+};
+app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path.startsWith('/api')) return next();
+    const p = req.path;
+    // /uploads/sirup/*, /sirup/*, /*/sirup/*, /*/*/sirup/*, //uploads/sirup/*
+    if (
+        /^\/uploads\/sirup(\/|$)/.test(p) ||
+        /^\/sirup(\/|$)/.test(p) ||
+        /^\/\/uploads\/sirup(\/|$)/.test(p) ||
+        /\/[^/]+\/sirup(\/|$)/.test(p) ||
+        /\/[^/]+\/[^/]+\/sirup(\/|$)/.test(p)
+    ) {
+        return send404(res);
+    }
+    next();
+});
+
 // ─── SPA Fallback ─────────────────────────────────────────────
 app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
@@ -84,10 +107,10 @@ app.get('*', (req, res) => {
         if (fs.existsSync(indexPath)) {
             res.sendFile(indexPath);
         } else {
-            res.json({ 
-                success: true, 
-                message: "TenderBuild API Server is running successfully.", 
-                timestamp: new Date().toISOString() 
+            res.json({
+                success: true,
+                message: "TenderBuild API Server is running successfully.",
+                timestamp: new Date().toISOString()
             });
         }
     }

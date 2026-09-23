@@ -56,7 +56,7 @@ router.get('/crawled-provinces', async (req, res) => {
 // GET /api/sirup — List crawled RUP data with filters
 router.get('/', async (req, res) => {
     try {
-        const { provinsi, bulan, tahun, metode, search, filter_lokasi, exclude, page = 1, limit = 20 } = req.query;
+        const { provinsi, bulan, tahun, metode, search, filter_lokasi, exclude, read_status, read_codes, page = 1, limit = 20 } = req.query;
         const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
         const lim = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
@@ -128,6 +128,26 @@ router.get('/', async (req, res) => {
             where.push(`(lokasi ILIKE $${paramIdx} OR SPLIT_PART(lokasi, ',', 1) ILIKE $${paramIdx})`);
             params.push(`%${filter_lokasi}%`);
             paramIdx++;
+        }
+
+        // Read/unread — kode list from client localStorage
+        if (read_status === 'read' || read_status === 'unread') {
+            const codes = (read_codes || '').split(',').map(s => s.trim()).filter(Boolean);
+            if (read_status === 'read') {
+                if (!codes.length) {
+                    where.push('FALSE');
+                } else {
+                    where.push(`kode_paket = ANY($${paramIdx})`);
+                    params.push(codes);
+                    paramIdx++;
+                }
+            } else {
+                if (codes.length) {
+                    where.push(`NOT (kode_paket = ANY($${paramIdx}))`);
+                    params.push(codes);
+                    paramIdx++;
+                }
+            }
         }
 
         const whereClause = where.join(' AND ');
@@ -233,6 +253,37 @@ router.post('/crawl/stop', (req, res) => {
     try {
         sirupCrawler.stop();
         res.json({ success: true, message: 'Stop requested' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/sirup/send-pdf — Kirim PDF RUP ke WhatsApp (Fonnte)
+const multer = require('multer');
+const sendPdfUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+});
+router.post('/send-pdf', sendPdfUpload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'File PDF wajib diupload' });
+        }
+        const { sendWhatsAppFile } = require('../utils/whatsapp');
+        const message = req.body.message || 'RUP — SIRUP LKPP';
+        const targets = req.body.targets || null;
+        const result = await sendWhatsAppFile(
+            req.file.buffer,
+            req.file.originalname || 'RUP.pdf',
+            targets,
+            message,
+            req.file.mimetype || 'application/pdf'
+        );
+        if (result.success) {
+            res.json({ success: true, results: result.results });
+        } else {
+            res.status(502).json({ success: false, error: result.error, results: result.results });
+        }
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

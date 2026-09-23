@@ -46,12 +46,9 @@ router.post('/', upload.single('file'), async (req, res) => {
             });
         }
         
-        // 2. Dapatkan URL Publik CDN dari berkas yang diunggah
-        const { data: publicUrlData } = supabase.storage
-            .from('uploads')
-            .getPublicUrl(fileName);
-            
-        const url = publicUrlData.publicUrl;
+        // 2. Dapatkan URL Publik CDN dari berkas yang diunggah → rewrite ke domain sendiri
+        // (Netlify proxy /uploads/* → Supabase, netlify.toml)
+        const url = `https://tender.rekayasa-sipil.my.id/uploads/${fileName}`;
         console.log(`[Upload Success] URL Publik: ${url}`);
         
         res.json({ success: true, url });
