@@ -10,6 +10,18 @@
 # (di atas rule lain agar diprioritaskan sebelum proxy uploads / SPA)
 
 [[redirects]]
+  from = "/uploads"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/uploads/"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
   from = "/uploads/sirup/*"
   to = "/404.html"
   status = 404

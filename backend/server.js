@@ -87,8 +87,10 @@ app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path.startsWith('/api')) return next();
     const p = req.path;
-    // /uploads/sirup/*, /sirup/*, /*/sirup/*, /*/*/sirup/*, //uploads/sirup/*
+    // root uploads (error Supabase invalidkey) + /uploads/sirup/*, /sirup/*, dll
     if (
+        p === '/uploads' ||
+        p === '/uploads/' ||
         /^\/uploads\/sirup(\/|$)/.test(p) ||
         /^\/sirup(\/|$)/.test(p) ||
         /^\/\/uploads\/sirup(\/|$)/.test(p) ||
@@ -163,16 +165,16 @@ app.listen(PORT, async () => {
             console.warn('⚠️ Gagal menambahkan kolom notifikasi followed_tenders:', colErr.message);
         }
 
-        // Self-healing: Disable RLS (backend uses service role, bypasses RLS anyway)
+        // Self-healing: Enable RLS deny-all (backend via DATABASE_URL = postgres owner/bypass)
+        // Jangan pakai 010_disable_rls lagi — bikin linter Supabase error terus
         try {
-            const rlsPath = path.join(__dirname, 'migrations', '010_disable_rls.sql');
+            const rlsPath = path.join(__dirname, 'migrations', '012_enable_rls_deny_all.sql');
             if (fs.existsSync(rlsPath)) {
                 const rlsSql = fs.readFileSync(rlsPath, 'utf8');
                 await db.runMigration(rlsSql);
-                console.log('✅ RLS disabled on all tables');
+                console.log('✅ RLS enabled (deny-all) on all public tables');
             }
         } catch (rlsErr) {
-            // Ignore if policies don't exist or RLS already disabled
             console.warn('⚠️ RLS migration skipped:', rlsErr.message);
         }
     }
