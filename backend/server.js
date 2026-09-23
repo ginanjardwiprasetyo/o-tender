@@ -40,6 +40,7 @@ app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/cron',       require('./routes/cron'));
 app.use('/api/dokpil',     require('./routes/dokpil'));
 app.use('/api/onlyoffice', require('./routes/onlyoffice'));
+app.use('/api/sirup',      require('./routes/sirup'));
 
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -168,6 +169,14 @@ app.listen(PORT, async () => {
     } else {
         console.log('🚫 [Scheduler] Crawler is disabled on this instance (DISABLE_CRAWLER = true)');
     }
+
+    // Schedule SIRUP Crawl (7 AM daily)
+    const sirupCrawler = require('./services/sirup_crawler');
+    cron.schedule('0 7 * * *', () => {
+        console.log('Running scheduled SIRUP crawl (7 AM)');
+        sirupCrawler.crawlAll({ provinsi: ['DKI Jakarta'], bulan: [new Date().getMonth() + 1] }).catch(e => console.error(e));
+    });
+    console.log('📅 [Scheduler] SIRUP crawl scheduled at 7 AM');
 
     // Schedule WA notifications check for Followed Tenders (every 15 minutes)
     const { checkAndSendNotifications } = require('./services/notif_scheduler');

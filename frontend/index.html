@@ -30,8 +30,11 @@
 
     <!-- Favicon & Touch Icons -->
     <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
-    <link rel="alternate icon" type="image/png" href="/img/logo.png">
-    <link rel="apple-touch-icon" href="/img/logo.png">
+    <link rel="alternate icon" type="image/png" sizes="32x32" href="/img/logo-32.png">
+    <link rel="alternate icon" type="image/png" sizes="16x16" href="/img/logo-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/img/logo-180.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/img/logo-512.png">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -73,6 +76,10 @@
                     <a href="#tender-browse" class="nav-item" data-page="tender-browse">
                         <i data-lucide="search"></i>
                         <span>Cari Tender LKPP</span>
+                    </a>
+                    <a href="#sirup-browse" class="nav-item" data-page="sirup-browse">
+                        <i data-lucide="clipboard-list"></i>
+                        <span>Cari RUP (SIRUP)</span>
                     </a>
                     <a href="#tender-manage" class="nav-item" data-page="tender-manage">
                         <i data-lucide="folder-kanban"></i>
@@ -200,7 +207,10 @@
     <script src="/js/pages/templates.js"></script>
     <script src="/js/pages/onlyoffice.js"></script>
     <script src="/js/pages/dokpil.js"></script>
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="/js/pages/tender-browse.js"></script>
+    <script src="/js/pages/sirup-browse.js?v=3"></script>
     <script src="/js/pages/tender-manage.js"></script>
     <script src="/js/pages/tender-detail.js"></script>
     <script src="/js/pages/settings.js"></script>

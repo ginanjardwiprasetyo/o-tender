@@ -13,3 +13,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Tender crawl hanya di localhost; server online hanya SIRUP + notifikasi
+      - key: DISABLE_CRAWLER
+        value: "true"
+      # node-cron pakai timezone server (Render default UTC)
+      - key: TZ
+        value: Asia/Jakarta

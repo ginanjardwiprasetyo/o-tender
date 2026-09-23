@@ -147,6 +147,22 @@ const API = {
     getWALogs(page = 1, limit = 20) { return this.request(`/settings/wa-logs?page=${page}&limit=${limit}`); },
     resendWALog(id) { return this.request('/settings/wa-resend', { method: 'POST', body: { id } }); },
 
+    // ─── SIRUP ────────────────────────────────────────
+    getSirupProvinces() { return this.request('/sirup/provinces'); },
+    getSirupCrawledProvinces() { return this.request('/sirup/crawled-provinces'); },
+    getSirupMetode() { return this.request('/sirup/metode'); },
+    getSirupRup(params) {
+        const clean = {};
+        if (params) Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null && (!Array.isArray(v) || v.length > 0)) clean[k] = v; });
+        const q = new URLSearchParams(clean).toString();
+        return this.request(`/sirup${q ? '?' + q : ''}`);
+    },
+    getSirupDetail(kode) { return this.request(`/sirup/${kode}`); },
+    startSirupCrawl(data) { return this.request('/sirup/crawl', { method: 'POST', body: data }); },
+    stopSirupCrawl() { return this.request('/sirup/crawl/stop', { method: 'POST' }); },
+    getSirupCrawlStatus() { return this.request('/sirup/status'); },
+    getSirupStats(tahun) { return this.request(`/sirup/stats?tahun=${tahun || 2026}`); },
+
     // ─── Health ───────────────────────────────────────
     health() { return this.request('/health'); },
 };
