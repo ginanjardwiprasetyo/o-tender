@@ -125,6 +125,23 @@ const SirupBrowsePage = {
         this.loadReadSet();
         this.page = 1;
 
+        // Prefer DB settings (shared local + online); fall back to localStorage
+        try {
+            const res = await API.getSettings();
+            const s = res.data || {};
+            let remote = false;
+            if (s.sirup_provinsi) {
+                try { this.selectedProvinces = new Set(JSON.parse(s.sirup_provinsi)); remote = true; } catch {}
+            }
+            if (s.sirup_akhir_bulan) {
+                try { this.selectedAkhirBulan = new Set(JSON.parse(s.sirup_akhir_bulan)); remote = true; } catch {}
+            }
+            if (s.sirup_exclude_words) {
+                try { this.filterExcludeWords = JSON.parse(s.sirup_exclude_words); remote = true; } catch {}
+            }
+            if (remote) this.saveToStorage();
+        } catch {}
+
         if (!this.provinces.length) {
             try {
                 const res = await API.getSirupProvinces();
@@ -182,13 +199,21 @@ const SirupBrowsePage = {
     },
 
     saveToStorage() {
-        try {
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify({
-                provinsi: [...this.selectedProvinces],
-                akhirBulan: [...this.selectedAkhirBulan],
-                excludeWords: this.filterExcludeWords,
-            }));
-        } catch {}
+        const payload = {
+            provinsi: [...this.selectedProvinces],
+            akhirBulan: [...this.selectedAkhirBulan],
+            excludeWords: this.filterExcludeWords,
+        };
+        try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(payload)); } catch {}
+        // Persist to DB so local + online share the same crawl config
+        clearTimeout(this._saveSettingsTimer);
+        this._saveSettingsTimer = setTimeout(() => {
+            API.updateSettings({
+                sirup_provinsi: JSON.stringify(payload.provinsi),
+                sirup_akhir_bulan: JSON.stringify(payload.akhirBulan),
+                sirup_exclude_words: JSON.stringify(payload.excludeWords),
+            }).catch(() => {});
+        }, 400);
     },
 
     // ─── Province Selector ─────────────────────────────
@@ -539,6 +564,7 @@ const SirupBrowsePage = {
                                     style="height:32px;width:160px;font-size:0.82rem;"
                                     oninput="SirupBrowsePage.filterSearchProv(this.value)"
                                     onfocus="SirupBrowsePage.filterSearchProv(this.value)"
+                                    onkeydown="if(event.key==='Enter'){event.preventDefault();SirupBrowsePage.applyFilterProv(this.value.trim());}"
                                     onblur="setTimeout(()=>document.getElementById('sirup-filter-prov-dd').classList.add('hidden'),150)">
                                 <div id="sirup-filter-prov-dd" class="hidden" style="position:absolute;top:100%;left:0;z-index:50;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;"></div>
                             </div>
@@ -651,6 +677,7 @@ const SirupBrowsePage = {
 
     // ─── Detail Modal ──────────────────────────────────
     async showDetail(kode) {
+        Toast.info('Memuat detail RUP...');
         try {
             const res = await API.getSirupDetail(kode);
             const r = res.data;
@@ -777,6 +804,9 @@ const SirupBrowsePage = {
             }
 
             html += '</div>';
+            if (!Object.keys(d).length) {
+                html += `<p style="margin-top:12px;font-size:0.82rem;color:var(--text-muted);">Detail lengkap belum tersedia di data crawl. Ringkasan di atas dari daftar paket.</p>`;
+            }
             Modal.open('Detail RUP', html);
         } catch (err) { Toast.error('Gagal: ' + err.message); }
     },

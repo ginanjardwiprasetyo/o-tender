@@ -115,7 +115,8 @@ router.get('/', async (req, res) => {
         }
 
         if (filter_lokasi) {
-            where.push(`SPLIT_PART(lokasi, ',', 1) ILIKE $${paramIdx}`);
+            // Match full lokasi (provinsi + kota) or just the province segment
+            where.push(`(lokasi ILIKE $${paramIdx} OR SPLIT_PART(lokasi, ',', 1) ILIKE $${paramIdx})`);
             params.push(`%${filter_lokasi}%`);
             paramIdx++;
         }

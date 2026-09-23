@@ -170,11 +170,30 @@ app.listen(PORT, async () => {
         console.log('🚫 [Scheduler] Crawler is disabled on this instance (DISABLE_CRAWLER = true)');
     }
 
-    // Schedule SIRUP Crawl (7 AM daily)
+    // Schedule SIRUP Crawl (7 AM daily) — config from settings table (synced online/local)
     const sirupCrawler = require('./services/sirup_crawler');
-    cron.schedule('0 7 * * *', () => {
+    cron.schedule('0 7 * * *', async () => {
         console.log('Running scheduled SIRUP crawl (7 AM)');
-        sirupCrawler.crawlAll({ provinsi: ['DKI Jakarta'], bulan: [new Date().getMonth() + 1] }).catch(e => console.error(e));
+        try {
+            const { rows } = await db.query(
+                `SELECT key, value FROM settings WHERE key IN ('sirup_provinsi', 'sirup_akhir_bulan')`
+            );
+            const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]));
+            let provinsi = [];
+            try { provinsi = cfg.sirup_provinsi ? JSON.parse(cfg.sirup_provinsi) : []; } catch {}
+            let akhirBulan = [];
+            try { akhirBulan = cfg.sirup_akhir_bulan ? JSON.parse(cfg.sirup_akhir_bulan) : []; } catch {}
+            if (!provinsi.length) provinsi = ['DKI Jakarta'];
+            const bulanArr = akhirBulan.length ? [1,2,3,4,5,6,7,8,9,10,11,12] : [new Date().getMonth() + 1];
+            sirupCrawler.crawlAll({
+                provinsi,
+                bulan: bulanArr,
+                akhirBulan: akhirBulan.length ? akhirBulan : undefined,
+            }).catch(e => console.error(e));
+        } catch (e) {
+            console.error('[SIRUP cron]', e);
+            sirupCrawler.crawlAll({ provinsi: ['DKI Jakarta'], bulan: [new Date().getMonth() + 1] }).catch(e2 => console.error(e2));
+        }
     });
     console.log('📅 [Scheduler] SIRUP crawl scheduled at 7 AM');
 
