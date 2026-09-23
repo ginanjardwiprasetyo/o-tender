@@ -300,14 +300,23 @@ async function upsertRup(row, bulan, tahunAnggaran, detailData) {
     const province = getProvince(String(row.idsLokasi || ''));
     const raw = typeof row === 'object' ? row : {};
 
+    // Extract end month from detail_data
+    let bulanAkhir = null;
+    if (detailData) {
+        const akhirKey = Object.keys(detailData).find(k => k.endsWith('Akhir') && k.startsWith('Jadwal Pemilihan'));
+        const akhirVal = akhirKey ? detailData[akhirKey] : null;
+        const parsed = parseMonthYear(akhirVal);
+        if (parsed) bulanAkhir = parsed.bulan;
+    }
+
     await db.query(`
         INSERT INTO sirup_rup (
             kode_paket, nama_paket, pagu, jenis_pengadaan,
             is_pdn, is_umk, metode, pemilihan,
             kldi, satuan_kerja, lokasi, lokasi_id,
-            tahun_anggaran, bulan,
+            tahun_anggaran, bulan, bulan_akhir,
             detail_data, raw_data, crawled_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW())
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW(),NOW())
         ON CONFLICT (kode_paket) DO UPDATE SET
             nama_paket = EXCLUDED.nama_paket,
             pagu = EXCLUDED.pagu,
@@ -321,6 +330,7 @@ async function upsertRup(row, bulan, tahunAnggaran, detailData) {
             lokasi = EXCLUDED.lokasi,
             lokasi_id = EXCLUDED.lokasi_id,
             bulan = EXCLUDED.bulan,
+            bulan_akhir = COALESCE(EXCLUDED.bulan_akhir, sirup_rup.bulan_akhir),
             detail_data = COALESCE(EXCLUDED.detail_data, sirup_rup.detail_data),
             raw_data = EXCLUDED.raw_data,
             updated_at = NOW()
@@ -339,6 +349,7 @@ async function upsertRup(row, bulan, tahunAnggaran, detailData) {
         String(row.idsLokasi || row.id || ''),
         tahunAnggaran,
         row.idBulan || bulan,
+        bulanAkhir,
         detailData ? JSON.stringify(detailData) : null,
         JSON.stringify(raw),
     ]);
@@ -370,10 +381,11 @@ async function crawlAll(config = {}) {
         .filter(Boolean);
     const provinsiList = config.provinsi && config.provinsi.length > 0
         ? config.provinsi
-        : ['DKI Jakarta']; // default
+        : []; // no default - require explicit provinsi
 
     const lokasiIds = resolveProvinceIds(provinsiList);
-    log(`Starting crawl: tahun=${tahun}, bulan=[${bulanList}], akhirBulan=[${config.akhirBulan || 'none'}], exclude=[${excludeList.join(', ') || 'none'}], provinsi=[${provinsiList.join(', ')}] (${lokasiIds.length} lokasi, detail=${fetchDetails})`);
+    const jenisStr = config.jenisPengadaan && config.jenisPengadaan.length ? config.jenisPengadaan.join(',') : '2';
+    log(`Starting crawl: tahun=${tahun}, bulan=[${bulanList}], akhirBulan=[${config.akhirBulan || 'none'}], jenis=[${jenisStr}], exclude=[${excludeList.join(', ') || 'none'}], provinsi=[${provinsiList.join(', ')}] (${lokasiIds.length} lokasi, detail=${fetchDetails})`);
 
     let totalFetched = 0;
     let totalSkipped = 0;
@@ -397,77 +409,90 @@ async function crawlAll(config = {}) {
                     let totalRecords = null;
                     const pageLength = 100;
 
-                    while (true) {
+                    // Support multiple jenisPengadaan (default: 2 for Konstruksi)
+                    const jenisList = config.jenisPengadaan && config.jenisPengadaan.length > 0
+                        ? config.jenisPengadaan
+                        : ['2']; // default: only Konstruksi
+
+                    for (const jenis of jenisList) {
                         if (_stopRequested) break;
 
-                        const data = await fetchListPage(jar, {
-                            tahunAnggaran: tahun,
-                            jenisPengadaan: '2', // Pekerjaan Konstruksi
-                            bulan: String(bulan),
-                            lokasi: String(lokasiId),
-                        }, start, pageLength);
+                        // Reset pagination for each jenis
+                        start = 0;
+                        totalRecords = null;
 
-                        if (!data || !data.data) {
-                            log(`No data returned for lokasi ${lokasiId}, bulan ${bulan}`);
-                            break;
-                        }
-
-                        if (totalRecords === null) {
-                            totalRecords = data.recordsTotal || 0;
-                            if (totalRecords === 0) break;
-                            log(`lokasi=${lokasiId} bulan=${bulan}: ${totalRecords} records found`);
-                        }
-
-                        const rows = data.data;
-                        if (rows.length === 0) break;
-
-                        // Process each row
-                        for (const row of rows) {
+                        while (true) {
                             if (_stopRequested) break;
 
-                            try {
-                                const paketName = String(row.paket || row.nama || '').toLowerCase();
-                                if (excludeList.some(w => paketName.includes(w))) {
-                                    totalSkipped++;
-                                    continue; // excluded by user keyword
-                                }
+                            const data = await fetchListPage(jar, {
+                                tahunAnggaran: tahun,
+                                jenisPengadaan: String(jenis),
+                                bulan: String(bulan),
+                                lokasi: String(lokasiId),
+                            }, start, pageLength);
 
-                                let detailData = null;
-
-                                if (fetchDetails) {
-                                    // Fetch detail page to get "Jadwal Pemilihan Penyedia" end date
-                                    const html = await fetchDetail(jar, row.id);
-                                    detailData = parseDetailHtml(html);
-
-                                    let akhirVal = null;
-                                    if (detailData) {
-                                        const akhirKey = Object.keys(detailData).find(k => k.endsWith('Akhir') && k.startsWith('Jadwal Pemilihan'));
-                                        akhirVal = akhirKey ? detailData[akhirKey] : null;
-                                    }
-                                    // Fallback: list column "pemilihan" (e.g. "Mulai Akhir Oktober 2026 Desember 2026")
-                                    if (!akhirVal) akhirVal = row.pemilihan;
-                                    const parsed = parseMonthYear(akhirVal);
-
-                                    if (!parsed || !akhirBulanSet.has(parsed.bulan)) {
-                                        totalSkipped++;
-                                        continue; // skip: end month doesn't match
-                                    }
-
-                                    await sleep(300); // rate limit between detail fetches
-                                }
-
-                                await upsertRup(row, bulan, tahun, detailData);
-                                totalFetched++;
-                            } catch (rowErr) {
-                                totalFailed++;
-                                log(`Failed to process ${row.id}: ${rowErr.message}`);
+                            if (!data || !data.data) {
+                                log(`No data for lokasi=${lokasiId} bulan=${bulan} jenis=${jenis}`);
+                                break;
                             }
+
+                            if (totalRecords === null) {
+                                totalRecords = data.recordsTotal || 0;
+                                if (totalRecords === 0) break;
+                                log(`lokasi=${lokasiId} bulan=${bulan} jenis=${jenis}: ${totalRecords} records`);
+                            }
+
+                            const rows = data.data;
+                            if (rows.length === 0) break;
+
+                            // Process each row
+                            for (const row of rows) {
+                                if (_stopRequested) break;
+
+                                try {
+                                    const paketName = String(row.paket || row.nama || '').toLowerCase();
+                                    if (excludeList.some(w => paketName.includes(w))) {
+                                        totalSkipped++;
+                                        continue; // excluded by user keyword
+                                    }
+
+                                    let detailData = null;
+
+                                    if (fetchDetails) {
+                                        // Fetch detail page to get "Jadwal Pemilihan Penyedia" end date
+                                        const html = await fetchDetail(jar, row.id);
+                                        detailData = parseDetailHtml(html);
+
+                                        let akhirVal = null;
+                                        if (detailData) {
+                                            const akhirKey = Object.keys(detailData).find(k => k.endsWith('Akhir') && k.startsWith('Jadwal Pemilihan'));
+                                            akhirVal = akhirKey ? detailData[akhirKey] : null;
+                                        }
+                                        // Fallback: list column "pemilihan"
+                                        if (!akhirVal) akhirVal = row.pemilihan;
+                                        const parsed = parseMonthYear(akhirVal);
+
+                                        if (!parsed || !akhirBulanSet.has(parsed.bulan)) {
+                                            totalSkipped++;
+                                            continue; // skip: end month doesn't match
+                                        }
+
+                                        await sleep(300); // rate limit between detail fetches
+                                    }
+
+                                    await upsertRup(row, bulan, tahun, detailData);
+                                    totalFetched++;
+                                } catch (rowErr) {
+                                    totalFailed++;
+                                    log(`Failed to process ${row.id}: ${rowErr.message}`);
+                                }
+                            }
+
+                            start += pageLength;
+                            if (start >= totalRecords) break;
+
+                            await sleep(500); // rate limit between pages
                         }
-
-                        start += pageLength;
-                        if (start >= totalRecords) break;
-
-                        await sleep(500); // rate limit between pages
                     }
                 } catch (locErr) {
                     totalFailed++;

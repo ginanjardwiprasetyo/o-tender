@@ -4,6 +4,7 @@
 const SirupBrowsePage = {
     provinces: [],
     selectedProvinces: new Set(),
+    selectedBulan: new Set(),
     selectedAkhirBulan: new Set(),
     results: [],
     total: 0,
@@ -85,13 +86,20 @@ const SirupBrowsePage = {
                 <div id="sirup-selected-provinces" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;"></div>
             </div>
 
-            <!-- Tahun + Akhir Pemilihan -->
-            <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end;">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label class="form-label" style="font-weight:700;">Tahun</label>
-                    <select class="form-select" id="sirup-tahun" style="height:42px; min-width:140px;">
-                        <option value="2026" selected>2026</option>
-                    </select>
+            <!-- Tahun + Awal + Akhir Pemilihan -->
+            <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" style="font-weight:700;">Tahun</label>
+                <select class="form-select" id="sirup-tahun" style="height:42px; min-width:140px;">
+                    <option value="2026" selected>2026</option>
+                </select>
+            </div>
+            <div style="display:flex; gap:24px; flex-wrap:wrap;">
+                <div class="form-group" style="flex:1; min-width:300px; margin-bottom:0;">
+                    <label class="form-label" style="font-weight:700; margin-bottom:10px;">
+                        <i data-lucide="calendar" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i>
+                        Awal Pemilihan
+                    </label>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;" id="sirup-bulan-chips"></div>
                 </div>
                 <div class="form-group" style="flex:1; min-width:300px; margin-bottom:0;">
                     <label class="form-label" style="font-weight:700; margin-bottom:10px;">
@@ -134,7 +142,14 @@ const SirupBrowsePage = {
                 try { this.selectedProvinces = new Set(JSON.parse(s.sirup_provinsi)); remote = true; } catch {}
             }
             if (s.sirup_akhir_bulan) {
-                try { this.selectedAkhirBulan = new Set(JSON.parse(s.sirup_akhir_bulan)); remote = true; } catch {}
+                try {
+                    const arr = JSON.parse(s.sirup_akhir_bulan);
+                    // Only use remote if size is reasonable (not old default)
+                    if (Array.isArray(arr) && arr.length > 0 && arr.length <= 3) {
+                        this.selectedAkhirBulan = new Set(arr);
+                        remote = true;
+                    }
+                } catch {}
             }
             if (s.sirup_exclude_words) {
                 try { this.filterExcludeWords = JSON.parse(s.sirup_exclude_words); remote = true; } catch {}
@@ -159,6 +174,7 @@ const SirupBrowsePage = {
             this.metodeList = res.data || [];
         } catch { this.metodeList = []; }
 
+        this.renderBulanChips();
         this.renderAkhirBulanChips();
         this.renderSelectedProvinces();
         this.loadResults();
@@ -178,20 +194,26 @@ const SirupBrowsePage = {
             if (raw) {
                 const s = JSON.parse(raw);
                 if (s.provinsi) this.selectedProvinces = new Set(s.provinsi);
+                if (s.bulan) this.selectedBulan = new Set(s.bulan);
                 if (s.akhirBulan) this.selectedAkhirBulan = new Set(s.akhirBulan);
                 if (s.excludeWords) this.filterExcludeWords = s.excludeWords;
             }
         } catch {}
-        // Default akhir pemilihan: current month → December
-        if (this.selectedAkhirBulan.size === 0) {
-            const cm = new Date().getMonth() + 1;
-            this.selectedAkhirBulan = new Set();
-            for (let m = cm; m <= 12; m++) this.selectedAkhirBulan.add(m);
+        const cm = new Date().getMonth() + 1;
+        // Default awal pemilihan: cm-1 s/d cm (2 bulan). Reset if empty or old default (size > 3)
+        if (this.selectedBulan.size === 0 || this.selectedBulan.size > 3) {
+            this.selectedBulan = new Set();
+            if (cm > 1) this.selectedBulan.add(cm - 1);
+            this.selectedBulan.add(cm);
+        }
+        // Default akhir pemilihan: cm s/d cm+1 (2 bulan). Reset if empty or old default (size > 3)
+        if (this.selectedAkhirBulan.size === 0 || this.selectedAkhirBulan.size > 3) {
+            this.selectedAkhirBulan = new Set([cm]);
+            if (cm < 12) this.selectedAkhirBulan.add(cm + 1);
         }
         this.filterProvinsi = '';
         this.filterCari = '';
         // Default: bulan ini s/d Desember, metode Penunjukan Langsung
-        const cm = new Date().getMonth() + 1;
         this.filterBulanMulti = new Set();
         for (let m = cm; m <= 12; m++) this.filterBulanMulti.add(m);
         this.filterTahun = new Date().getFullYear();
@@ -201,6 +223,7 @@ const SirupBrowsePage = {
     saveToStorage() {
         const payload = {
             provinsi: [...this.selectedProvinces],
+            bulan: [...this.selectedBulan],
             akhirBulan: [...this.selectedAkhirBulan],
             excludeWords: this.filterExcludeWords,
         };
@@ -210,6 +233,7 @@ const SirupBrowsePage = {
         this._saveSettingsTimer = setTimeout(() => {
             API.updateSettings({
                 sirup_provinsi: JSON.stringify(payload.provinsi),
+                sirup_bulan: JSON.stringify(payload.bulan),
                 sirup_akhir_bulan: JSON.stringify(payload.akhirBulan),
                 sirup_exclude_words: JSON.stringify(payload.excludeWords),
             }).catch(() => {});
@@ -217,6 +241,24 @@ const SirupBrowsePage = {
     },
 
     // ─── Province Selector ─────────────────────────────
+    renderBulanChips() {
+        const el = document.getElementById('sirup-bulan-chips');
+        if (!el) return;
+        el.innerHTML = this.BULAN_NAMES.map((name, i) => {
+            const m = i + 1;
+            const active = this.selectedBulan.has(m);
+            return `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}"
+                style="height:32px; padding:0 14px;"
+                onclick="SirupBrowsePage.toggleBulan(${m})">${name}</button>`;
+        }).join('');
+    },
+
+    toggleBulan(m) {
+        this.selectedBulan.has(m) ? this.selectedBulan.delete(m) : this.selectedBulan.add(m);
+        this.renderBulanChips();
+        this.saveToStorage();
+    },
+
     renderAkhirBulanChips() {
         const el = document.getElementById('sirup-akhir-bulan-chips');
         if (!el) return;
@@ -286,14 +328,15 @@ const SirupBrowsePage = {
     // ─── Crawl Control ─────────────────────────────────
     async startCrawl() {
         if (this.selectedProvinces.size === 0) return Toast.warning('Pilih minimal satu provinsi');
+        if (this.selectedBulan.size === 0) return Toast.warning('Pilih minimal satu bulan awal pemilihan');
         if (this.selectedAkhirBulan.size === 0) return Toast.warning('Pilih minimal satu bulan akhir pemilihan');
 
         try {
             await API.startSirupCrawl({
                 provinsi: [...this.selectedProvinces],
+                bulan: [...this.selectedBulan],
                 akhirBulan: [...this.selectedAkhirBulan],
                 tahun: parseInt(document.getElementById('sirup-tahun').value),
-                excludeWords: [...this.filterExcludeWords],
             });
             Toast.success('Proses crawl dimulai');
             document.getElementById('btn-start-sirup').style.display = 'none';

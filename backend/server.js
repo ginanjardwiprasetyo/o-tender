@@ -176,26 +176,27 @@ app.listen(PORT, async () => {
         console.log('Running scheduled SIRUP crawl (7 AM)');
         try {
             const { rows } = await db.query(
-                `SELECT key, value FROM settings WHERE key IN ('sirup_provinsi', 'sirup_akhir_bulan', 'sirup_exclude_words')`
+                `SELECT key, value FROM settings WHERE key IN ('sirup_provinsi', 'sirup_bulan', 'sirup_akhir_bulan', 'sirup_exclude_words')`
             );
             const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]));
             let provinsi = [];
             try { provinsi = cfg.sirup_provinsi ? JSON.parse(cfg.sirup_provinsi) : []; } catch {}
+            let bulan = [];
+            try { bulan = cfg.sirup_bulan ? JSON.parse(cfg.sirup_bulan) : []; } catch {}
             let akhirBulan = [];
             try { akhirBulan = cfg.sirup_akhir_bulan ? JSON.parse(cfg.sirup_akhir_bulan) : []; } catch {}
             let excludeWords = [];
             try { excludeWords = cfg.sirup_exclude_words ? JSON.parse(cfg.sirup_exclude_words) : []; } catch {}
-            if (!provinsi.length) provinsi = ['DKI Jakarta'];
-            const bulanArr = akhirBulan.length ? [1,2,3,4,5,6,7,8,9,10,11,12] : [new Date().getMonth() + 1];
+            if (!provinsi.length) return; // no default - skip if not configured
+            if (!bulan.length) bulan = [new Date().getMonth() + 1];
             sirupCrawler.crawlAll({
                 provinsi,
-                bulan: bulanArr,
+                bulan,
                 akhirBulan: akhirBulan.length ? akhirBulan : undefined,
                 excludeWords,
             }).catch(e => console.error(e));
         } catch (e) {
             console.error('[SIRUP cron]', e);
-            sirupCrawler.crawlAll({ provinsi: ['DKI Jakarta'], bulan: [new Date().getMonth() + 1] }).catch(e2 => console.error(e2));
         }
     });
     console.log('📅 [Scheduler] SIRUP crawl scheduled at 7 AM');

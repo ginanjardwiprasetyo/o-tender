@@ -76,7 +76,8 @@ router.get('/', async (req, res) => {
 
         if (bulan) {
             const bulanArr = Array.isArray(bulan) ? bulan.map(Number) : bulan.split(',').map(Number);
-            where.push(`bulan = ANY($${paramIdx})`);
+            // Filter by end month (bulan_akhir) to match display; fallback to bulan if bulan_akhir is null
+            where.push(`COALESCE(bulan_akhir, bulan) = ANY($${paramIdx})`);
             params.push(bulanArr);
             paramIdx++;
         }
@@ -134,8 +135,10 @@ router.get('/', async (req, res) => {
 
         // Sort: whitelist columns to prevent injection
         const allowedSort = new Set(['nama_paket','pagu','metode','pemilihan','lokasi','bulan','tahun_anggaran','crawled_at','kode_paket']);
-        const sortCol = req.query.sort && allowedSort.has(req.query.sort) ? req.query.sort : 'crawled_at';
+        let sortCol = req.query.sort && allowedSort.has(req.query.sort) ? req.query.sort : 'crawled_at';
         const sortDir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
+        // pemilihan displays end month; sort by bulan_akhir (end month number), fallback to bulan
+        if (sortCol === 'pemilihan') sortCol = 'COALESCE(bulan_akhir, bulan)';
 
         const dataQuery = `SELECT * FROM sirup_rup WHERE ${whereClause} ORDER BY ${sortCol} ${sortDir} LIMIT ${lim} OFFSET ${offset}`;
 
@@ -202,20 +205,21 @@ router.get('/status', (req, res) => {
 // POST /api/sirup/crawl — Trigger crawl
 router.post('/crawl', async (req, res) => {
     try {
-        const { provinsi = [], bulan, tahun, akhirBulan, excludeWords } = req.body;
+        const { provinsi = [], bulan, tahun, akhirBulan, jenisPengadaan, excludeWords } = req.body;
         const akhirBulanArr = akhirBulan ? (Array.isArray(akhirBulan) ? akhirBulan.map(Number) : [Number(akhirBulan)]) : null;
+        const jenisArr = jenisPengadaan ? (Array.isArray(jenisPengadaan) ? jenisPengadaan.map(String) : [String(jenisPengadaan)]) : ['2'];
         const excludeArr = Array.isArray(excludeWords)
             ? excludeWords
             : (excludeWords ? String(excludeWords).split('|') : []);
-        // If bulan not provided, auto-derive from akhirBulan: crawl all 1-12, filter by end month
         const bulanArr = bulan
             ? (Array.isArray(bulan) ? bulan.map(Number) : [Number(bulan)])
-            : (akhirBulanArr ? [1,2,3,4,5,6,7,8,9,10,11,12] : [new Date().getMonth() + 1]);
+            : [new Date().getMonth() + 1];
         sirupCrawler.crawlAll({
             provinsi: Array.isArray(provinsi) ? provinsi : [provinsi],
             bulan: bulanArr,
             tahun: tahun || new Date().getFullYear(),
             akhirBulan: akhirBulanArr,
+            jenisPengadaan: jenisArr,
             excludeWords: excludeArr,
         }).catch(e => console.error('[SIRUP] Crawl error:', e));
         res.json({ success: true, message: 'SIRUP crawl started' });
@@ -247,10 +251,73 @@ router.get('/status', (req, res) => {
 // GET /api/sirup/:kode_paket — Single RUP detail (MUST be last — catch-all)
 router.get('/:kode_paket', async (req, res) => {
     try {
-        const { rows } = await db.query(
+        const kode = req.params.kode_paket;
+        let { rows } = await db.query(
             'SELECT * FROM sirup_rup WHERE kode_paket = $1',
-            [req.params.kode_paket]
+            [kode]
         );
+
+        // Auto-import: some RUP exist only on detail page, not in search API
+        if (rows.length === 0) {
+            try {
+                const { initSession, fetchDetail, parseDetailHtml, parseMonthYear } = require('../services/sirup_crawler');
+                const jar = await initSession();
+                const html = await fetchDetail(jar, kode);
+                const detail = parseDetailHtml(html);
+                if (detail && detail['Nama Paket']) {
+                    const mulai = parseMonthYear(detail['Jadwal Pemilihan Penyedia Mulai']);
+                    const akhir = parseMonthYear(detail['Jadwal Pemilihan Penyedia Akhir']);
+                    const lr = (detail._lokasi_rows || [])[0] || {};
+                    const prov = lr.provinsi || '';
+                    const kab = lr.kabupaten || '';
+                    const lokasi = [prov, kab].filter(Boolean).join(', ');
+                    const { PROVINCE_LOKASI } = require('../utils/sirup-lokasi');
+                    const lokasiIds = PROVINCE_LOKASI[prov] || [];
+                    const pagu = parseInt(String(detail['Total Pagu'] || '0').replace(/[^\d]/g, '')) || 0;
+                    const satkerFull = detail['Satuan Kerja'] || '';
+                    const satkerParts = satkerFull.split('/');
+                    const kldi = satkerParts[0] ? satkerParts[0].trim() : null;
+                    const satuanKerja = satkerParts.length > 1 ? satkerParts.slice(1).join('/').trim() : satkerFull;
+
+                    await db.query(`
+                        INSERT INTO sirup_rup (
+                            kode_paket, nama_paket, pagu, jenis_pengadaan,
+                            is_pdn, is_umk, metode, pemilihan,
+                            kldi, satuan_kerja, lokasi, lokasi_id,
+                            tahun_anggaran, bulan, bulan_akhir,
+                            detail_data, detail_html, raw_data, crawled_at, updated_at
+                        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW(),NOW())
+                        ON CONFLICT (kode_paket) DO UPDATE SET
+                            detail_data = COALESCE(EXCLUDED.detail_data, sirup_rup.detail_data),
+                            detail_html = COALESCE(EXCLUDED.detail_html, sirup_rup.detail_html),
+                            updated_at = NOW()
+                    `, [
+                        kode,
+                        detail['Nama Paket'],
+                        pagu,
+                        detail['Jenis Pengadaan'] || 'Pekerjaan Konstruksi',
+                        !!detail['Produk Dalam Negeri'],
+                        !!detail['Usaha Kecil/Koperasi'],
+                        detail['Metode Pemilihan'] || null,
+                        detail['Jadwal Pemilihan Penyedia Mulai'] || null,
+                        kldi,
+                        satuanKerja,
+                        lokasi || null,
+                        lokasiIds[0] || kode,
+                        parseInt(detail['Tahun Anggaran']) || new Date().getFullYear(),
+                        mulai ? mulai.bulan : null,
+                        akhir ? akhir.bulan : null,
+                        JSON.stringify(detail),
+                        html,
+                        JSON.stringify({ source: 'detail_page_only' }),
+                    ]);
+                    ({ rows } = await db.query('SELECT * FROM sirup_rup WHERE kode_paket = $1', [kode]));
+                }
+            } catch {
+                // fall through to 404
+            }
+        }
+
         if (rows.length === 0) {
             return res.status(404).json({ success: false, error: 'RUP not found' });
         }
