@@ -132,7 +132,7 @@ const SirupBrowsePage = {
 
     async afterRender() {
         this.loadFromStorage();
-        this.loadReadSet();
+        await this.loadReadSet();
         this.page = 1;
 
         // Prefer DB settings (shared local + online); fall back to localStorage
@@ -906,14 +906,33 @@ const SirupBrowsePage = {
     esc(s) { const e = document.createElement('span'); e.textContent = s || ''; return e.innerHTML; },
 
     // ─── Read/Unread ────────────────────────────────
-    loadReadSet() {
+    async loadReadSet() {
         try {
             const raw = localStorage.getItem(this.STORAGE_KEY + '_read');
             if (raw) this.readSet = new Set(JSON.parse(raw));
         } catch {}
+        const localSize = this.readSet.size;
+        // Sync from DB so local + online share read marks
+        try {
+            const res = await API.getSettings();
+            const remote = res.data?.sirup_read;
+            if (remote) {
+                try {
+                    const arr = JSON.parse(remote);
+                    if (Array.isArray(arr)) arr.forEach(k => this.readSet.add(k));
+                } catch {}
+            }
+            // Always push after merge so local-only marks seed the DB
+            if (this.readSet.size || localSize) this.saveReadSet();
+        } catch {}
     },
     saveReadSet() {
-        localStorage.setItem(this.STORAGE_KEY + '_read', JSON.stringify([...this.readSet]));
+        const json = JSON.stringify([...this.readSet]);
+        try { localStorage.setItem(this.STORAGE_KEY + '_read', json); } catch {}
+        clearTimeout(this._saveReadTimer);
+        this._saveReadTimer = setTimeout(() => {
+            API.updateSettings({ sirup_read: json }).catch(() => {});
+        }, 400);
     },
     isRead(kode) { return this.readSet.has(kode); },
 

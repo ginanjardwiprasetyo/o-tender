@@ -69,7 +69,7 @@ router.put('/', async (req, res) => {
             'crawl_lpse_targets', 'default_lpse',
             'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang',
             'wa_target_group_id', 'wa_target_group_name',
-            'sirup_provinsi', 'sirup_akhir_bulan', 'sirup_exclude_words'
+            'sirup_provinsi', 'sirup_akhir_bulan', 'sirup_exclude_words', 'sirup_read'
         ];
         const entries = Object.entries(req.body).filter(([key]) => allowedKeys.includes(key));
         
