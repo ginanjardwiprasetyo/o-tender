@@ -1,0 +1,44 @@
+# Crawl LPSE otomatis — runner GitHub (7GB RAM), gratis karena repo public.
+# Render tetap DISABLE_CRAWLER=true (hanya SIRUP + notifikasi di sana).
+# Cron pakai UTC: 23:00 UTC = 06:00 WIB, 09:00 UTC = 16:00 WIB.
+name: Crawl LPSE
+
+on:
+  schedule:
+    - cron: '0 23 * * *' # 06:00 WIB
+    - cron: '0 9 * * *'  # 16:00 WIB
+  workflow_dispatch: {}
+
+concurrency:
+  group: crawl-lpse
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install Chromium (Playwright)
+        working-directory: backend
+        run: npx playwright install --with-deps chromium
+
+      - name: Crawl LPSE
+        working-directory: backend
+        run: node scripts/crawl-now.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
