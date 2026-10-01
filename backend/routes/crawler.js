@@ -27,6 +27,13 @@ router.post('/task-result', (req, res) => {
 // Start crawl manually
 router.post('/start', async (req, res) => {
     try {
+        // Instance online (Render) tanpa Playwright — crawl dijalankan oleh GitHub Actions
+        if (process.env.DISABLE_CRAWLER === 'true') {
+            return res.status(503).json({
+                success: false,
+                error: 'Crawl tidak tersedia di server online. Jalankan via GitHub Actions (tab Actions → Crawl LPSE → Run workflow) atau buka web dari localhost.'
+            });
+        }
         const year = req.body.year || new Date().getFullYear();
         crawler.status.finishedAt = null;
         // Start asynchronously, do not await
