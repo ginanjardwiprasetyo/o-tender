@@ -16,6 +16,14 @@ const API = {
         }
         try {
             const res = await fetch(url, { credentials: 'same-origin', ...config });
+            const ver = res.headers.get('x-app-ver');
+            if (ver && !this._appVerWarned) {
+                if (this._appVer === undefined) this._appVer = ver;
+                else if (this._appVer !== ver) {
+                    this._appVerWarned = true;
+                    if (typeof Toast !== 'undefined' && Toast.warning) Toast.warning('Aplikasi diperbarui di server — muat ulang halaman (Ctrl/Cmd+R) untuk fitur terbaru');
+                }
+            }
             if (res.status === 401) {
                 if (typeof App !== 'undefined' && App.showLogin) App.showLogin();
                 throw new Error('Belum login');
@@ -87,6 +95,7 @@ const API = {
     startCrawl(year) { return this.request('/crawler/start', { method: 'POST', body: { year } }); },
     stopCrawl() { return this.request('/crawler/stop', { method: 'POST' }); },
     getCrawlStatus() { return this.request('/crawler/status'); },
+    getActionsStatus() { return this.request('/crawler/actions-status'); },
     getCrawledTenders(params) {
         const clean = {};
         if (params) Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) clean[k] = v; });

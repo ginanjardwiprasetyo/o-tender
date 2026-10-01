@@ -306,17 +306,25 @@ const TenderBrowsePage = {
                 if (data.history && data.history.length > 0) {
                     const last = data.history[0];
                     if (last.status === 'running') {
-                        textEl.innerHTML = `<span style="color:var(--warning);"><span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Crawl sedang berjalan — pantau di tab Actions GitHub (github.com/ginanjardwiprasetyo/o-tender/actions).</span>`;
+                        this._remoteWatching = true;
+                        const since = last.started_at ? new Date(last.started_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-';
+                        textEl.innerHTML = `<span style="color:var(--warning);"><span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Crawl berjalan via GitHub Actions sejak ${since} — langkah proses tampil di log di bawah.</span>`;
+                        this.renderActionsLog();
+                        setTimeout(() => this.updateCrawlStatus(), 5000);
                     } else if (last.status === 'success' && last.finished_at) {
+                        this._remoteWatching = false;
                         const date = new Date(last.finished_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
                         textEl.innerHTML = `Terakhir update: <strong>${date}</strong> — ${last.total_konstruksi || 0} tender konstruksi dari ${last.total_lpse || 0} LPSE`;
                     } else if (last.status === 'error') {
+                        this._remoteWatching = false;
                         const date = last.finished_at ? new Date(last.finished_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
                         textEl.innerHTML = `<span style="color:var(--danger);">Crawl terakhir gagal (${date}). </span><span style="color:var(--text-muted);">Klik Jalankan Crawl untuk mencoba ulang.</span>`;
                     } else {
+                        this._remoteWatching = false;
                         textEl.innerHTML = `Belum ada data crawl berhasil. Silakan klik Jalankan Crawl Sekarang.`;
                     }
                 } else {
+                    this._remoteWatching = false;
                     textEl.innerHTML = `Belum ada data crawl. Silakan klik Jalankan Crawl Sekarang.`;
                 }
             }
@@ -331,6 +339,37 @@ const TenderBrowsePage = {
         }
     },
 
+    // Live view langkah GitHub Actions di kotak crawl log (hanya instance online)
+    async renderActionsLog() {
+        const logContainer = document.getElementById('crawl-log-container');
+        const logBox = document.getElementById('crawl-logs');
+        if (!logContainer || !logBox) return;
+        try {
+            const { data } = await API.getActionsStatus();
+            if (!data) { logContainer.classList.add('hidden'); return; }
+            const lines = [`GitHub Actions — run #${data.runNumber} (${data.status}${data.conclusion ? '/' + data.conclusion : ''})`];
+            if (data.startedAt) {
+                lines.push(`Mulai: ${new Date(data.startedAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`);
+            }
+            for (const s of data.steps || []) {
+                const icon = s.completed ? '✅' : (s.status === 'in_progress' ? '▶️' : '⬜');
+                lines.push(`${icon} ${s.name}`);
+            }
+            logContainer.classList.remove('hidden');
+            logBox.innerHTML = lines.map(l => `<div style="margin-bottom:2px;">${Fmt.escape(l)}</div>`).join('');
+        } catch {}
+    },
+
+    // Setelah dispatch remote: polling status sampai run Actions terdeteksi berjalan
+    _pollUntilRemoteRun(n = 0) {
+        if (n > 20 || this._remoteWatching) return; // batas ~60 detik, atau sudah diambil alih loop status
+        setTimeout(async () => {
+            try { await this.updateCrawlStatus(); } catch {}
+            if (this._remoteWatching) return; // updateCrawlStatus sudah self-poll 5 dtk
+            this._pollUntilRemoteRun(n + 1);
+        }, 3000);
+    },
+
     async startManualCrawl() {
         const btn = document.getElementById('btn-start-crawl');
         if (btn) {
@@ -340,6 +379,7 @@ const TenderBrowsePage = {
         try {
             const res = await API.startCrawl(new Date().getFullYear());
             Toast.success(res.message || 'Proses crawl dimulai di latar belakang. Halaman akan otomatis diperbarui.');
+            if (res.remote) this._pollUntilRemoteRun();
             setTimeout(() => this.updateCrawlStatus(), 1500);
         } catch(e) {
             Toast.error('Gagal memulai crawl: ' + e.message);

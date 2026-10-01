@@ -9,16 +9,17 @@ on:
     - cron: '0 9 * * *'  # 16:00 WIB
   workflow_dispatch: {}
 
+# Satu run saja — trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
 concurrency:
   group: crawl-lpse
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   crawl:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -34,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright browser
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ hashFiles('backend/package-lock.json') }}

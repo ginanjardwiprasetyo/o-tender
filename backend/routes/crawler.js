@@ -42,7 +42,7 @@ router.post('/start', async (req, res) => {
                 throw new Error('GitHub API: ' + d);
             });
             if (gh.status !== 204) throw new Error('GitHub API: HTTP ' + gh.status);
-            return res.json({ success: true, message: 'Crawl dijalankan via GitHub Actions (±1–3 menit). Pantau di tab Actions GitHub: github.com/ginanjardwiprasetyo/o-tender/actions — hasil muncul di data yang sama.' });
+            return res.json({ success: true, remote: true, message: 'Crawl dijalankan via GitHub Actions (±1–3 menit). Proses & langkah tampil di kotak crawl log di bawah.' });
         }
         const year = req.body.year || new Date().getFullYear();
         crawler.status.finishedAt = null;
@@ -74,6 +74,56 @@ router.get('/status', async (req, res) => {
         res.json({ success: true, data: status });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Status run GitHub Actions terakhir — untuk live view di UI saat crawl online.
+// Cache 10 detik agar hemat rate limit GitHub.
+let _ghCache = { t: 0, d: null };
+const GH = 'https://api.github.com/repos/ginanjardwiprasetyo/o-tender/actions';
+const ghHeaders = () => ({
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+});
+
+router.get('/actions-status', async (req, res) => {
+    if (process.env.DISABLE_CRAWLER !== 'true' || !process.env.GITHUB_TOKEN) {
+        return res.json({ success: true, data: null });
+    }
+    if (Date.now() - _ghCache.t < 10000) {
+        return res.json({ success: true, data: _ghCache.d });
+    }
+    try {
+        const { data: runs } = await axios.get(`${GH}/workflows/crawl-lpse.yml/runs`, {
+            params: { per_page: 1 }, headers: ghHeaders(), timeout: 10000
+        });
+        const run = runs.workflow_runs && runs.workflow_runs[0];
+        let out = null;
+        if (run) {
+            out = {
+                status: run.status,
+                conclusion: run.conclusion,
+                runNumber: run.run_number,
+                url: run.html_url,
+                startedAt: run.created_at,
+                steps: []
+            };
+            if (run.status === 'in_progress') {
+                try {
+                    const { data: jobs } = await axios.get(`${GH}/runs/${run.id}/jobs`, {
+                        params: { per_page: 1 }, headers: ghHeaders(), timeout: 10000
+                    });
+                    const steps = jobs.jobs && jobs.jobs[0] && jobs.jobs[0].steps;
+                    if (steps) out.steps = steps.map(s => ({ name: s.name, status: s.status, completed: s.completed }));
+                } catch {}
+            }
+        }
+        _ghCache = { t: Date.now(), d: out };
+        res.json({ success: true, data: out });
+    } catch (err) {
+        // GitHub gagal diakses → kirim cache terakhir (mungkin null)
+        res.json({ success: true, data: _ghCache.d || null });
     }
 });
 
