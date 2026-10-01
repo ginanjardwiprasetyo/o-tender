@@ -305,7 +305,9 @@ const TenderBrowsePage = {
                 
                 if (data.history && data.history.length > 0) {
                     const last = data.history[0];
-                    if (last.status === 'success' && last.finished_at) {
+                    if (last.status === 'running') {
+                        textEl.innerHTML = `<span style="color:var(--warning);"><span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Crawl sedang berjalan — pantau di tab Actions GitHub (github.com/ginanjardwiprasetyo/o-tender/actions).</span>`;
+                    } else if (last.status === 'success' && last.finished_at) {
                         const date = new Date(last.finished_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
                         textEl.innerHTML = `Terakhir update: <strong>${date}</strong> — ${last.total_konstruksi || 0} tender konstruksi dari ${last.total_lpse || 0} LPSE`;
                     } else if (last.status === 'error') {
@@ -336,8 +338,8 @@ const TenderBrowsePage = {
             btn.innerHTML = '<span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Memulai...';
         }
         try {
-            await API.startCrawl(new Date().getFullYear());
-            Toast.success('Proses crawl dimulai di latar belakang. Halaman akan otomatis diperbarui.');
+            const res = await API.startCrawl(new Date().getFullYear());
+            Toast.success(res.message || 'Proses crawl dimulai di latar belakang. Halaman akan otomatis diperbarui.');
             setTimeout(() => this.updateCrawlStatus(), 1500);
         } catch(e) {
             Toast.error('Gagal memulai crawl: ' + e.message);
@@ -357,8 +359,8 @@ const TenderBrowsePage = {
             btn.innerHTML = '<span class="spinner-sm" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span> Stopping...';
         }
         try {
-            await API.stopCrawl();
-            Toast.success('Permintaan stop dikirim. Crawl akan berhenti setelah proses berjalan selesai.');
+            const res = await API.stopCrawl();
+            Toast.success(res.message || 'Permintaan stop dikirim. Crawl akan berhenti setelah proses berjalan selesai.');
         } catch(e) {
             Toast.error('Gagal stop crawl: ' + e.message);
             if (btn) {

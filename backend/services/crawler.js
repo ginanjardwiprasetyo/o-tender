@@ -269,8 +269,9 @@ class CrawlerService {
 
     async getStatus() {
         // Clean up stale 'running' logs (from crashed runs) — if current state is idle
-        // but a log is still 'running', mark it as 'error'
-        if (this.status.state !== 'running') {
+        // but a log is still 'running', mark it as 'error'.
+        // Instance online (DISABLE_CRAWLER) tidak membersihkan: baris 'running' milik GitHub Actions yang sedang crawl.
+        if (this.status.state !== 'running' && process.env.DISABLE_CRAWLER !== 'true') {
             try {
                 await db.query(
                     `UPDATE crawl_logs SET finished_at = NOW(), status = 'error', error = 'Proses terhenti (server restart)' WHERE status = 'running'`

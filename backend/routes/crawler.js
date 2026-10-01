@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const crawler = require('../services/crawler');
 const db = require('../config/db');
 const crawlerQueue = require('../services/crawler-queue');
@@ -27,12 +28,21 @@ router.post('/task-result', (req, res) => {
 // Start crawl manually
 router.post('/start', async (req, res) => {
     try {
-        // Instance online (Render) tanpa Playwright — crawl dijalankan oleh GitHub Actions
+        // Instance online (Render) tanpa Playwright — trigger GitHub Actions, crawl jalan di runner GitHub
         if (process.env.DISABLE_CRAWLER === 'true') {
-            return res.status(503).json({
-                success: false,
-                error: 'Crawl tidak tersedia di server online. Jalankan via GitHub Actions (tab Actions → Crawl LPSE → Run workflow) atau buka web dari localhost.'
+            if (!process.env.GITHUB_TOKEN) {
+                return res.status(503).json({ success: false, error: 'GITHUB_TOKEN belum dikonfigurasi di Render (Environment → variable GITHUB_TOKEN).' });
+            }
+            const gh = await axios.post(
+                'https://api.github.com/repos/ginanjardwiprasetyo/o-tender/actions/workflows/crawl-lpse.yml/dispatches',
+                { ref: 'main' },
+                { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, timeout: 15000 }
+            ).catch(e => {
+                const d = e.response ? `HTTP ${e.response.status} ${JSON.stringify(e.response.data)}` : e.message;
+                throw new Error('GitHub API: ' + d);
             });
+            if (gh.status !== 204) throw new Error('GitHub API: HTTP ' + gh.status);
+            return res.json({ success: true, message: 'Crawl dijalankan via GitHub Actions (±1–3 menit). Pantau di tab Actions GitHub: github.com/ginanjardwiprasetyo/o-tender/actions — hasil muncul di data yang sama.' });
         }
         const year = req.body.year || new Date().getFullYear();
         crawler.status.finishedAt = null;
@@ -47,6 +57,9 @@ router.post('/start', async (req, res) => {
 // Stop crawl
 router.post('/stop', async (req, res) => {
     try {
+        if (process.env.DISABLE_CRAWLER === 'true') {
+            return res.json({ success: true, message: 'Instance online tidak menjalankan crawl lokal. Untuk menghentikan, buka tab Actions GitHub → run aktif → Cancel run.' });
+        }
         crawler.stop();
         res.json({ success: true, message: 'Crawl stop requested' });
     } catch (err) {
