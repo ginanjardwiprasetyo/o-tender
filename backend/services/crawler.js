@@ -8,6 +8,7 @@ const { getSlug, getBaseUrl, getLPSEList } = require('../utils/lpse-mapper');
 const { exec } = require('child_process');
 const util = require('util');
 const os = require('os');
+const path = require('path');
 const execPromise = util.promisify(exec);
 const { normalizeDate } = require('../utils/date-formatter');
 const cheerio = require('cheerio');
@@ -52,7 +53,7 @@ async function runScraper(type, url, yearStr) {
         console.warn(`[Crawler] ${warnMsg}`);
         return type === 'list' ? [] : null;
     }
-    const cmd = `node --max-old-space-size=192 --expose-gc /Applications/XAMPP/xamppfiles/htdocs/o-tender/backend/services/playwright_scraper.js --type ${type} --url "${url}" --year ${yearStr}`;
+    const cmd = `node --max-old-space-size=192 --expose-gc ${path.join(__dirname, 'playwright_scraper.js')} --type ${type} --url "${url}" --year ${yearStr}`;
     const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
     try {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
