@@ -1,12 +1,13 @@
 # Crawl LPSE otomatis — runner GitHub (7GB RAM), gratis karena repo public.
 # Render tetap DISABLE_CRAWLER=true (hanya SIRUP + notifikasi di sana).
-# Cron pakai UTC: 23:00 UTC = 06:00 WIB, 09:00 UTC = 16:00 WIB.
+# Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
+# Menit bukan 00 karena antrian GitHub paling padat di awal jam (telat berjam-jam).
 name: Crawl LPSE
 
 on:
   schedule:
-    - cron: '0 23 * * *' # 06:00 WIB
-    - cron: '0 9 * * *'  # 16:00 WIB
+    - cron: '13 23 * * *' # 06:13 WIB
+    - cron: '7 9 * * *'   # 16:07 WIB
   workflow_dispatch: {}
 
 # Satu run saja — trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
