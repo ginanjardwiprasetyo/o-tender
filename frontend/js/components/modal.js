@@ -21,11 +21,13 @@ const Modal = {
         });
     },
 
-    open(title, bodyHTML, footerHTML = '') {
+    open(title, bodyHTML, footerHTML = '', opts = {}) {
         if (!this.overlay) this.init();
         this.titleEl.textContent = title;
         this.bodyEl.innerHTML = bodyHTML;
         this.footerEl.innerHTML = footerHTML;
+        // Ukuran menyesuaikan konten bila diminta (mis. popup alasan)
+        this.overlay.querySelector('.modal').style.maxWidth = opts.maxWidth || '';
         this.overlay.classList.remove('hidden');
         if (window.lucide) lucide.createIcons({ nodes: [this.bodyEl, this.footerEl] });
         // Focus first input if present
@@ -35,6 +37,7 @@ const Modal = {
 
     close() {
         if (this.overlay) this.overlay.classList.add('hidden');
+        document.dispatchEvent(new CustomEvent('modal:close'));
     },
 
     /** Convenience: confirm dialog */

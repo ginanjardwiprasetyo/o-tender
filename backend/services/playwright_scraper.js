@@ -92,7 +92,7 @@ async function scrape() {
     if (!browser) throw new Error('Gagal menjalankan browser Chromium/Chrome');
 
     // Tanpa userAgent palsu: UA & Client Hints harus konsisten dengan browser yang dipakai.
-    const context = await browser.newContext();
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await context.newPage();
 
     try {

@@ -11,6 +11,7 @@ const FIELDS = [
     'kop_is_image', 'kop_image_url',
     'ttd_nama', 'ttd_jabatan', 'ttd_image_url', 'cap_image_url',
     'paper_size', 'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
+    'orientation',
     'fit_layout'
 ];
 

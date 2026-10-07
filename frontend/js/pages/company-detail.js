@@ -5,8 +5,8 @@ const CompanyDetailPage = {
     companyId: null,
     companyData: null,
 
-    async render(params) {
-        this.companyId = params[0];
+    async render(query, id) {
+        this.companyId = id;
         return `
         <div class="page-header">
             <div>
@@ -29,6 +29,10 @@ const CompanyDetailPage = {
 
     async loadData() {
         const el = document.getElementById('cd-content');
+        if (!this.companyId) {
+            el.innerHTML = '<div class="empty-state"><i data-lucide="alert-circle" style="color:var(--danger);"></i><p>Perusahaan tidak ditemukan — kembali ke daftar perusahaan.</p></div>';
+            lucide.createIcons(); return;
+        }
         try {
             const res = await API.getCompanyById(this.companyId);
             this.companyData = res.data;

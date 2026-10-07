@@ -7,6 +7,7 @@ const App = {
         'tender-browse':  { page: TenderBrowsePage, title: 'Cari Tender LKPP' },
         'sirup-browse':   { page: SirupBrowsePage,  title: 'Cari RUP (SIRUP)' },
         'tender-manage':  { page: TenderManagePage, title: 'Tender Saya' },
+        'tender-recap':   { page: TenderRecapPage,  title: 'Rekap Tender' },
         'tender-detail':  { page: TenderDetailPage, title: 'Detail Tender' },
         'equipment':      { page: EquipmentPage,    title: 'Data Peralatan' },
         'personnel':      { page: PersonnelPage,    title: 'Data Personil' },

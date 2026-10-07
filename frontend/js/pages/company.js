@@ -224,7 +224,35 @@ const CompanyPage = {
                             <input class="form-input" id="f-comp-kop-kontak" value="${Fmt.escape(c.kop_kontak || '')}" placeholder="Telp: (021) 123456 | Email: info@perusahaan.com">
                         </div>
                     </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Warna Garis Kop</label>
+                            <input type="color" id="f-comp-kop-warna" value="${c.kop_garis_warna || '#000000'}" style="height:38px; width:100%; padding:3px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-primary); cursor:pointer;">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Font Teks Surat</label>
+                            <select class="form-select" id="f-comp-font-surat">
+                                ${['Times New Roman', 'Aptos', 'Calibri', 'Arial', 'Cambria', 'Georgia', 'Garamond', 'Tahoma', 'Verdana'].map(f =>
+                                    `<option ${(c.font_surat || 'Times New Roman') === f ? 'selected' : ''}>${f}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
  
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Ukuran Cap / Stempel (px)</label>
+                            <input type="number" class="form-input" id="f-comp-cap-size" value="${c.cap_size || 110}" min="30" max="300" step="5">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Posisi Cap / Stempel</label>
+                            <select class="form-select" id="f-comp-cap-pos">
+                                ${[['kiri', 'Agak Kiri'], ['tengah', 'Tengah'], ['kanan', 'Agak Kanan']].map(([v, l]) =>
+                                    `<option value="${v}" ${(c.cap_pos || 'kiri') === v ? 'selected' : ''}>${l}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Tanda Tangan Direktur</label>
@@ -529,6 +557,10 @@ const CompanyPage = {
                 kop_nama: document.getElementById('f-comp-kop-nama')?.value?.trim() || null,
                 kop_alamat: document.getElementById('f-comp-kop-alamat')?.value?.trim() || null,
                 kop_kontak: document.getElementById('f-comp-kop-kontak')?.value?.trim() || null,
+                kop_garis_warna: document.getElementById('f-comp-kop-warna')?.value || '#000000',
+                font_surat: document.getElementById('f-comp-font-surat')?.value || 'Times New Roman',
+                cap_size: parseInt(document.getElementById('f-comp-cap-size')?.value) || 110,
+                cap_pos: document.getElementById('f-comp-cap-pos')?.value || 'kiri',
                 attachments: (() => {
                     const val = document.getElementById('f-comp-attachments-data')?.value || '[]';
                     let atts = val;

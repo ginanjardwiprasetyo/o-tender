@@ -19,11 +19,17 @@ app.use(express.json({ limit: '100gb' }));
 app.use(express.urlencoded({ limit: '100gb', extended: true }));
 
 // ─── Static Files ─────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
+// js/css tanpa versi → no-cache agar browser selalu ambil yang terbaru (hindari "perubahan tidak muncul" karena cache)
+app.use(express.static(path.join(__dirname, '..', 'frontend'), {
+    setHeaders: (res, filePath) => { if (/\.(js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache'); }
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/migrations', express.static(path.join(__dirname, 'migrations')));
 
 // ─── API Auth (cookie session) ───────────────────────────────
+// penanda versi server (id proses) → tab lama yang tidak pernah reload dapat notifikasi muat ulang
+const APP_VER = String(Date.now());
+app.use('/api', (req, res, next) => { res.setHeader('X-App-Ver', APP_VER); next(); });
 const { requireAuth } = require('./utils/auth');
 app.use('/api', requireAuth);
 app.use('/api/auth', require('./routes/auth'));
@@ -43,8 +49,9 @@ app.use('/api/documents',  require('./routes/documents'));
 app.use('/api/letters',    require('./routes/letters'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/cron',       require('./routes/cron'));
-app.use('/api/dokpil',     require('./routes/dokpil'));
-app.use('/api/onlyoffice', require('./routes/onlyoffice'));
+app.use('/api/dokpil',       require('./routes/dokpil'));
+// ONLYOFFICE_DULU_DIMATIKAN — route OnlyOffice dinonaktifkan (edit template via CKEditor). Aktifkan lagi: uncomment 2 baris terkait onlyoffice di file ini
+// app.use('/api/onlyoffice', require('./routes/onlyoffice'));
 app.use('/api/sirup',      require('./routes/sirup'));
 
 // ─── Health Check ─────────────────────────────────────────────
@@ -185,6 +192,9 @@ app.listen(PORT, async () => {
             console.warn('⚠️ RLS migration skipped:', rlsErr.message);
         }
     }
+
+    // ONLYOFFICE_DULU_DIMATIKAN — auto-start DocumentServer dimatikan (juga uncomment app.use '/api/onlyoffice' di atas)
+    // try { require('./routes/onlyoffice').ensureOnlyOffice(); } catch {}
 
     // Schedule Crawler (6 AM and 4 PM) - Can be disabled via env DISABLE_CRAWLER=true (e.g. for Render.com instance)
     const disableCrawler = process.env.DISABLE_CRAWLER === 'true';

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 360px;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            padding: 14px;
+            margin: 0;
+            background: #f8fafc;
+            color: #0f172a;
+        }
+
+        h4 {
+            margin: 0 0 10px;
+            font-size: 14px;
+            color: #0f172a;
+        }
+
+        button {
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        /* ── Destination card ── */
+        #destCard {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+
+        #destCard .label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+        }
+
+        #destCard .path {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1d4ed8;
+            word-break: break-word;
+            line-height: 1.35;
+        }
+
+        #destCard .path .root {
+            color: #0f172a;
+        }
+
+        #btnPick {
+            width: 100%;
+            padding: 9px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            border: 1px solid #bfdbfe;
+        }
+
+        #btnPick:hover {
+            background: #dbeafe;
+        }
+
+        /* ── Picker modal-ish panel ── */
+        #picker {
+            display: none;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+            animation: pop 0.18s ease;
+        }
+
+        @keyframes pop {
+            from {
+                opacity: 0;
+                transform: translateY(-6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #pickerHeader {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            background: #f1f5f9;
+            border-bottom: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+
+        #btnUp {
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            background: #fff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        #btnUp:hover:not(:disabled) {
+            background: #f8fafc;
+        }
+
+        /* 1 baris, scroll horizontal — level tidak pernah hilang */
+        #breadcrumb {
+            flex: 1;
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 0;
+            font-size: 12px;
+            min-width: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+            -webkit-overflow-scrolling: touch;
+            mask-image: linear-gradient(90deg, #000 92%, transparent);
+        }
+
+        #breadcrumb::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        #breadcrumb::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        #breadcrumb button {
+            flex: 0 0 auto;
+            background: transparent;
+            color: #1d4ed8;
+            padding: 3px 5px;
+            font-size: 12px;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            border-radius: 4px;
+        }
+
+        #breadcrumb button.current {
+            color: #0f172a;
+            font-weight: 600;
+            cursor: default;
+        }
+
+        #breadcrumb button:hover:not(.current) {
+            text-decoration: underline;
+        }
+
+        #breadcrumb .sep {
+            color: #94a3b8;
+            padding: 2px 0;
+        }
+
+        #folderSearch {
+            width: calc(100% - 20px);
+            margin: 8px 10px 0;
+            padding: 7px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        #folderSearch:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+        }
+
+        #folderList {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 6px;
+            min-height: 72px;
+        }
+
+        #folderList .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            background: #fff;
+            border-radius: 8px;
+            margin-bottom: 2px;
+            font-size: 13px;
+            color: #1e293b;
+            border: 1px solid transparent;
+        }
+
+        #folderList .row:hover {
+            background: #f0f9ff;
+            border-color: #e0f2fe;
+        }
+
+        #folderList .row.selected {
+            background: #dbeafe;
+            border-color: #93c5fd;
+        }
+
+        #folderList .row .icon {
+            flex-shrink: 0;
+            width: 18px;
+            text-align: center;
+        }
+
+        #folderList .row .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #folderList .row .go {
+            flex-shrink: 0;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        #folderList .row.selected .go {
+            color: #1d4ed8;
+            font-weight: 600;
+        }
+
+        #folderList .empty,
+        #folderList .err {
+            padding: 16px 10px;
+            font-size: 12px;
+            color: #64748b;
+            text-align: center;
+        }
+
+        #folderList .err {
+            color: #dc2626;
+        }
+
+        /* loader */
+        .loader {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #cbd5e1;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+        }
+
+        .loader.lg {
+            width: 22px;
+            height: 22px;
+            border-width: 3px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        #pickerFooter {
+            display: flex;
+            gap: 6px;
+            padding: 8px 10px;
+            border-top: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+
+        #pickerFooter button {
+            flex: 1;
+            padding: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        #btnUseHere {
+            background: #1a73e8;
+            color: #fff;
+        }
+
+        #btnUseHere:hover:not(:disabled) {
+            background: #1557b0;
+        }
+
+        #btnCancelPick {
+            background: #fff;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+        }
+
+        #btnCancelPick:hover {
+            background: #f1f5f9;
+        }
+
+        /* main action */
+        #btnProcess {
+            width: 100%;
+            padding: 11px;
+            background: #1a73e8;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        #btnProcess:hover:not(:disabled) {
+            background: #1557b0;
+        }
+
+        #btnProcess .pct {
+            font-weight: 800;
+            margin-left: 4px;
+        }
+
+        #status {
+            font-size: 12px;
+            color: #334155;
+            white-space: pre-wrap;
+            min-height: 16px;
+        }
+
+        #status.ok {
+            color: #15803d;
+        }
+
+        #status.err {
+            color: #dc2626;
+        }
+
+        #status.busy {
+            color: #1d4ed8;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 10px;
+            line-height: 1.45;
+        }
+
+        .reauth-btn {
+            display: block;
+            width: calc(100% - 16px);
+            margin: 8px;
+            background: #1a73e8;
+            color: #fff;
+            padding: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <h4>Export SPSE ke Drive</h4>
+
+    <div id="destCard">
+        <div class="label">Folder tujuan (disimpan)</div>
+        <div class="path" id="destName"><span class="root">My Drive</span></div>
+    </div>
+
+    <button type="button" id="btnPick">Pilih / ganti folder tujuan</button>
+
+    <div id="picker">
+        <div id="pickerHeader">
+            <button type="button" id="btnUp" title="Naik satu folder" disabled>↑</button>
+            <div id="breadcrumb"></div>
+        </div>
+        <input type="text" id="folderSearch" placeholder="Cari folder di lokasi ini...">
+        <div id="folderList">
+            <div class="empty"><span class="loader"></span> Memuat...</div>
+        </div>
+        <div id="pickerFooter">
+            <button type="button" id="btnUseHere" disabled>Pakai folder ini</button>
+            <button type="button" id="btnCancelPick">Batal</button>
+        </div>
+    </div>
+
+    <button id="btnProcess">Mulai Unggah</button>
+    <div id="status"></div>
+
+    <p class="hint">
+        Klik folder untuk <b>masuk</b> ke dalamnya → tekan <b>Pakai folder ini</b> untuk menjadikan tujuan.<br>
+        Folder paket dibuat otomatis di dalamnya. Lokasi terakhir diingat untuk export berikutnya.
+    </p>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

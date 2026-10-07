@@ -154,16 +154,16 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const { nama, tempat_lahir, tanggal_lahir, tingkat_pendidikan, tahun_pengalaman,
-                sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url } = req.body;
+                sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url } = req.body;
         if (!nama || !nama.trim()) return res.status(400).json({ success: false, error: 'Nama wajib diisi' });
 
         const { rows } = await db.query(
             `INSERT INTO personnel (nama, tempat_lahir, tanggal_lahir, tingkat_pendidikan, tahun_pengalaman,
-             sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+             sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
             [nama, tempat_lahir || null, tanggal_lahir || null, tingkat_pendidikan || null,
              tahun_pengalaman || null, sertifikat_keahlian || null, no_registrasi_ska || null,
-             ijasah_ref || null, foto_url || null, jabatan || null, ktp_url || null, npwp_url || null, skk_url || null]
+             ijasah_ref || null, foto_url || null, jabatan || null, ktp_url || null, npwp_url || null, skk_url || null, ttd_image_url || null]
         );
         res.status(201).json({ success: true, data: rows[0] });
     } catch (err) {
@@ -172,19 +172,21 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/personnel/:id
+const PERSONNEL_FIELDS = ['nama', 'tempat_lahir', 'tanggal_lahir', 'tingkat_pendidikan', 'tahun_pengalaman',
+    'sertifikat_keahlian', 'no_registrasi_ska', 'ijasah_ref', 'foto_url', 'jabatan', 'ktp_url', 'npwp_url', 'skk_url', 'ttd_image_url'];
 router.put('/:id', async (req, res) => {
     try {
-        const { nama, tempat_lahir, tanggal_lahir, tingkat_pendidikan, tahun_pengalaman,
-                sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url } = req.body;
-        const { rows } = await db.query(
-            `UPDATE personnel SET nama=$1, tempat_lahir=$2, tanggal_lahir=$3, tingkat_pendidikan=$4,
-             tahun_pengalaman=$5, sertifikat_keahlian=$6, no_registrasi_ska=$7, ijasah_ref=$8, foto_url=$9,
-             jabatan=$10, ktp_url=$11, npwp_url=$12, skk_url=$13
-             WHERE id=$14 RETURNING *`,
-            [nama, tempat_lahir || null, tanggal_lahir || null, tingkat_pendidikan || null,
-             tahun_pengalaman || null, sertifikat_keahlian || null, no_registrasi_ska || null,
-             ijasah_ref || null, foto_url || null, jabatan || null, ktp_url || null, npwp_url || null, skk_url || null, req.params.id]
-        );
+        // update hanya field yang dikirim → edit parsial (mis. hapus berkas) tidak menimpa kolom lain
+        const sets = [], vals = [];
+        for (const k of PERSONNEL_FIELDS) {
+            if (Object.prototype.hasOwnProperty.call(req.body, k)) {
+                vals.push(req.body[k] ?? null);
+                sets.push(`${k}=$${vals.length}`);
+            }
+        }
+        if (!sets.length) return res.status(400).json({ success: false, error: 'Tidak ada field yang diupdate' });
+        vals.push(req.params.id);
+        const { rows } = await db.query(`UPDATE personnel SET ${sets.join(', ')} WHERE id=$${vals.length} RETURNING *`, vals);
         if (!rows[0]) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, data: rows[0] });
     } catch (err) {
@@ -195,10 +197,10 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/personnel/:id
 router.delete('/:id', async (req, res) => {
     try {
-        const { rows } = await db.query('SELECT foto_url, ktp_url, npwp_url, skk_url FROM personnel WHERE id = $1', [req.params.id]);
+        const { rows } = await db.query('SELECT foto_url, ktp_url, npwp_url, skk_url, ttd_image_url FROM personnel WHERE id = $1', [req.params.id]);
         if (rows[0]) {
             const p = rows[0];
-            const files = [p.foto_url, p.ktp_url, p.npwp_url, p.skk_url];
+            const files = [p.foto_url, p.ktp_url, p.npwp_url, p.skk_url, p.ttd_image_url];
             
             // Mengambil semua URL berkas dari riwayat pendidikan, pengalaman, dan SKA
             const [edu, exp, ska] = await Promise.all([

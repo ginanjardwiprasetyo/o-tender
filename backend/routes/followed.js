@@ -162,11 +162,15 @@ router.post('/sync-status', async (req, res) => {
                             checked++;
                             const result = await checkWinLose(tender.slug, tender.kode_tender, companyNames);
                             if (result.success) {
+                                const pesertaJson = JSON.stringify(result.peserta || []);
+                                const pemenang = result.pemenang || '';
                                 if (result.isMenang) {
-                                    await db.query("UPDATE followed_tenders SET status = 'Menang' WHERE id = $1", [tender.id]);
+                                    await db.query("UPDATE followed_tenders SET status = 'Menang', history_alasan = $1, history_peserta = $2::jsonb, history_pemenang = $3 WHERE id = $4", [result.bukti || 'Pemenang terverifikasi', pesertaJson, pemenang, tender.id]);
                                     updated++;
-                                } else if (result.alasanKalah) {
-                                    await db.query("UPDATE followed_tenders SET status = 'Kalah', history_alasan = $1 WHERE id = $2", [result.alasanKalah, tender.id]);
+                                } else if (result.peserta && result.peserta.length) {
+                                    // Alasan per perusahaan dari halaman hasil; baris tanpa alasan → kosong
+                                    const alasan = (result.peserta.find(p => p.alasan) || {}).alasan || '';
+                                    await db.query("UPDATE followed_tenders SET status = 'Kalah', history_alasan = $1, history_peserta = $2::jsonb, history_pemenang = $3 WHERE id = $4", [alasan, pesertaJson, pemenang, tender.id]);
                                     updated++;
                                 }
                             }

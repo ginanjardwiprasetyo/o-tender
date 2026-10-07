@@ -27,10 +27,28 @@ async function scrapeTender(slug, kode) {
     const jadwalUrl = `${base}/lelang/${kode}/jadwal`;
     const yearStr = new Date().getFullYear().toString();
 
-    const rawData = await runPlaywrightScraper('detail', pengumumanUrl, yearStr);
+    // HTTP-first: halaman pengumuman+jadwal bisa diambil tanpa browser (warmup session dulu).
+    // Render free tier tanpa Playwright tetap bisa serve tombol detail & sync-status.
+    let rawData = null;
+    try {
+        const { httpDetailScraper } = require('./crawler');
+        rawData = await httpDetailScraper(pengumumanUrl);
+        if (rawData && !rawData.nama_paket && !rawData.pagu && !rawData.hps) rawData = null; // halaman kosong/shell
+    } catch (e) {
+        console.warn(`[Scraper] HTTP detail failed for ${kode}: ${e.message}`);
+        rawData = null;
+    }
+    if (!rawData) {
+        rawData = await runPlaywrightScraper('detail', pengumumanUrl, yearStr);
+    }
 
     if (!rawData || rawData.error) {
-        throw new Error(rawData?.error || 'Playwright scrape returned no data');
+        throw new Error(rawData?.error || 'Scrape returned no data');
+    }
+
+    // Prevent zero-data corruption if extraction failed but page loaded
+    if (!rawData.nama_paket && !rawData.pagu && !rawData.hps) {
+        throw new Error('Scraped data is empty (WAF blocked or layout changed), aborting to prevent zero-data corruption');
     }
 
     const details = {

@@ -40,10 +40,24 @@ router.post('/', upload.single('file'), async (req, res) => {
             
         if (error) {
             console.error('[Upload Error Supabase]', error.message);
-            return res.status(500).json({ 
-                success: false, 
-                error: `Gagal upload ke Supabase: ${error.message}. Pastikan bucket 'uploads' sudah dibuat dan diset Public.` 
-            });
+            // ponytail: Supabase storage RLS sering menolak anon (row-level security) → fallback disk lokal;
+            // server sudah serve /uploads (server.js) dan DELETE route sudah tangani URL lokal.
+            // Supabase jalan lagi kalau bucket 'uploads' punya policy INSERT utk anon/service role.
+            try {
+                const fs = require('fs');
+                const dir = path.join(__dirname, '..', 'uploads');
+                fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(path.join(dir, fileName), file.buffer);
+                const localUrl = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
+                console.log('[Upload Fallback Lokal]', localUrl);
+                return res.json({ success: true, url: localUrl, local: true });
+            } catch (fsErr) {
+                console.error('[Upload Fallback Error]', fsErr.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: `Gagal upload ke Supabase: ${error.message}. Pastikan bucket 'uploads' sudah dibuat dan diset Public.` 
+                });
+            }
         }
         
         // 2. Dapatkan URL Publik CDN dari berkas yang diunggah → rewrite ke domain sendiri

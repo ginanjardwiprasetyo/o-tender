@@ -27,7 +27,7 @@ const OnlyOfficePage = {
     <div id="oo-editor" style="width:100%; height:75vh; min-height:600px; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.08);">
       <div style="display:flex; align-items:center; justify-content:center; height:100%; flex-direction:column; gap:12px; color:#64748b;">
         <div class="spinner"></div><div>Memuat Word Online (OnlyOffice)...</div>
-        <div style="font-size:0.75rem; max-width:520px; text-align:center;">Jika ini pertama kali, jalankan <code>docker compose up -d onlyoffice</code> lalu tunggu 20-30 detik hingga DocumentServer siap di <code>http://localhost:8000</code></div>
+        <div style="font-size:0.75rem; max-width:520px; text-align:center;">Jika pertama kali, Docker/Colima + DocumentServer akan dijalankan otomatis — tunggu 30-90 detik</div>
       </div>
     </div>
     <div style="margin-top:12px; padding:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; font-size:0.82rem; color:#92400e;">
@@ -60,11 +60,24 @@ const OnlyOfficePage = {
       const r = await fetch('/api/onlyoffice/health');
       const j = await r.json();
       if (j.reachable) this._showStatus(`✅ OnlyOffice DocumentServer aktif di <code>${j.documentServerUrl}</code> (status ${j.status})`, 'info');
-      else this._showStatus(`❌ DocumentServer tidak terjangkau di <code>${j.documentServerUrl}</code> — jalankan <code>docker compose up -d onlyoffice</code> dan tunggu 30 detik.`, 'error');
+      else if (j.starting) this._showStatus(`⏳ DocumentServer belum siap — sedang dijalankan otomatis (Docker/Colima), tunggu ~30-90 detik.`, 'warn');
+      else this._showStatus(`❌ DocumentServer tidak terjangkau di <code>${j.documentServerUrl}</code> — pastikan Docker/Colima jalan (<code>colima start</code>).`, 'error');
     } catch(e) { this._showStatus('❌ Gagal cek health: '+e.message, 'error'); }
   },
 
-  async loadEditor(templateId) {
+  // auto-retry sampai DocumentServer siap (maks ~90 detik — colima start bisa lama)
+  async _waitForServer(retries = 18) {
+    for (let i = 0; i < retries; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const j = await (await fetch('/api/onlyoffice/health')).json();
+        if (j.reachable) return true;
+      } catch {}
+    }
+    return false;
+  },
+
+  async loadEditor(templateId, _isRetry = false) {
     try {
       // 1. get config
       const res = await fetch(`/api/onlyoffice/config/${templateId}`);
@@ -80,7 +93,7 @@ const OnlyOfficePage = {
           const s = document.createElement('script');
           s.src = apiUrl;
           s.onload = resolve;
-          s.onerror = () => reject(new Error('Gagal load DocsAPI dari '+apiUrl+' — pastikan DocumentServer jalan di '+documentServerUrl));
+          s.onerror = () => reject(Object.assign(new Error('DocumentServer belum siap di '+documentServerUrl), { _docsApi: true }));
           document.head.appendChild(s);
         });
       }
@@ -109,7 +122,15 @@ const OnlyOfficePage = {
       this.checkHealth();
     } catch(e) {
       console.error(e);
-      this._showStatus('❌ '+Fmt.escape(e.message)+'<br><br>Jalankan: <code>docker compose up -d onlyoffice</code> lalu refresh. Pastikan port 8000 tidak dipakai app lain.', 'error');
+      // DocsAPI gagal load → kemungkinan DS masih booting; auto-start via health + tunggu + retry
+      if (e._docsApi && !_isRetry) {
+        this._showStatus('⏳ DocumentServer belum siap — mencoba jalankan otomatis (Docker/Colima), tunggu ~30-90 detik...', 'warn');
+        const holder = document.getElementById('oo-editor');
+        if (holder) holder.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; flex-direction:column; gap:12px; color:#64748b;"><div class="spinner"></div><div>Menjalankan DocumentServer otomatis...</div></div>`;
+        await fetch('/api/onlyoffice/health'); // trigger docker compose up
+        if (await this._waitForServer()) return this.loadEditor(templateId, true);
+      }
+      this._showStatus('❌ '+Fmt.escape(e.message), 'error');
       const holder = document.getElementById('oo-editor');
       if (holder) holder.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; flex-direction:column; gap:12px; padding:24px; text-align:center; color:#dc2626;"><i data-lucide="alert-triangle" style="width:48px; height:48px;"></i><div style="font-weight:600;">Gagal memuat Word Online</div><div style="font-size:0.85rem; color:#475569;">${Fmt.escape(e.message)}</div><button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="OnlyOfficePage.loadEditor('${templateId}')">Coba Lagi</button></div>`;
       lucide.createIcons();

@@ -1,12 +1,17 @@
 /**
- * TenderBuild — Document Templates Page — WYSIWYG Word-like (Aptos, Tabel Fleksibel, Undo/Redo)
- * ponytail: execCommand + history stack native, no deps
+ * TenderBuild — Document Templates Page — WYSIWYG editor CKEditor 5 custom build (GPL-3.0)
+ * ponytail: fidelity style dipertahankan plugin RawStyle (frontend/editor-src/rawstyle.js),
+ * build & tes: npm run build:editor && npm run test:editor
  */
 const TemplatesPage = {
     templates: [],
-    _editorHistory: [],
-    _historyIdx: -1,
-    _historyTimer: null,
+    _ck: null,
+    _ckPromise: null,
+    _ckHtml: '',
+    _ckEpoch: 0,
+    _ckCloseBound: false,
+    _sample: null,
+    _sampleP: null,
 
     async render() {
         return `
@@ -78,9 +83,8 @@ const TemplatesPage = {
                     </div>
                 </div>
                 <div class="table-actions" onclick="event.stopPropagation()">
-                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); window.location.hash='#onlyoffice?id=${t.id}'" title="Edit dengan OnlyOffice Word Online (seperti filestash)"><i data-lucide="file-pen-line"></i> Word Online</button>
                     <button class="btn btn-secondary btn-sm" onclick="TemplatesPage.preview('${t.id}')"><i data-lucide="eye"></i> Preview</button>
-                    <button class="btn btn-secondary btn-icon btn-sm" onclick="TemplatesPage.openEditor('${t.id}')" title="Edit HTML WYSIWYG"><i data-lucide="pencil"></i></button>
+                    <button class="btn btn-secondary btn-icon btn-sm" onclick="TemplatesPage.openEditor('${t.id}')" title="Edit dengan CKEditor"><i data-lucide="pencil"></i></button>
                     <button class="btn btn-danger btn-icon btn-sm" onclick="TemplatesPage.remove('${t.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
                 </div>
             </div>
@@ -124,348 +128,167 @@ const TemplatesPage = {
         { key: '{{ttd_personil}}', label: 'TTD Personil', cat: 'Tanda Tangan' },
     ],
 
-    // ─── HISTORY (undo/redo yang benar) ───────────────
-    _pushHistory() {
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return;
-        const html = ed.innerHTML;
-        if (this._editorHistory[this._historyIdx] === html) return;
-        this._editorHistory = this._editorHistory.slice(0, this._historyIdx + 1);
-        this._editorHistory.push(html);
-        this._historyIdx++;
-        if (this._editorHistory.length > 80) { this._editorHistory.shift(); this._historyIdx--; }
+    // ─── CKEDITOR (vendor/ckeditor5 — fidelity: plugin RawStyle) ──
+    _loadCkCss() {
+        if (document.getElementById('ck-editor-css')) return;
+        const l = document.createElement('link');
+        l.id = 'ck-editor-css';
+        l.rel = 'stylesheet';
+        l.href = '/vendor/ckeditor5/ckeditor.css';
+        document.head.appendChild(l);
     },
-    _schedulePush() {
-        clearTimeout(this._historyTimer);
-        this._historyTimer = setTimeout(() => this._pushHistory(), 400);
+    async _loadCk() {
+        if (window.ClassicEditor) return;
+        this._loadCkCss();
+        if (!this._ckPromise) {
+            this._ckPromise = new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = '/vendor/ckeditor5/ckeditor.js';
+                s.onload = res;
+                s.onerror = () => rej(new Error('Modul editor gagal dimuat'));
+                document.head.appendChild(s);
+            });
+        }
+        await this._ckPromise;
     },
-    _undo() {
-        if (this._historyIdx > 0) {
-            this._historyIdx--;
-            const ed = document.getElementById('tpl-editor');
-            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; setTimeout(()=>this._enhanceTables(),30); this.updateLiveEditorPreview(); }
-        } else Toast.info('Tidak ada lagi untuk undo');
+    _destroyEditor() {
+        this._ckEpoch++;
+        const ed = this._ck;
+        this._ck = null;
+        if (ed) { try { ed.destroy(); } catch (_) {} }
     },
-    _redo() {
-        if (this._historyIdx < this._editorHistory.length - 1) {
-            this._historyIdx++;
-            const ed = document.getElementById('tpl-editor');
-            if (ed) { ed.innerHTML = this._editorHistory[this._historyIdx]; setTimeout(()=>this._enhanceTables(),30); this.updateLiveEditorPreview(); }
-        } else Toast.info('Tidak ada lagi untuk redo');
+    async _initEditor(html, focus) {
+        // epoch: init batal jika modal sudah ditutup di tengah jalan
+        const epoch = ++this._ckEpoch;
+        try {
+            await this._loadCk();
+            if (epoch !== this._ckEpoch) return;
+            const src = document.getElementById('tpl-editor');
+            if (!src) return;
+            src.innerHTML = html || '<p><br></p>';
+            this._ck = await window.ClassicEditor.create(src, { licenseKey: 'GPL' });
+            if (epoch !== this._ckEpoch) { this._destroyEditor(); return; }
+            this._ck.model.document.on('change:data', () => this.updateLiveEditorPreview());
+            if (focus) this._ck.focus();
+            this.updateLiveEditorPreview();
+        } catch (e) { Toast.error('Editor gagal dimuat: ' + e.message); }
     },
-    _initHistory() {
-        this._editorHistory = [];
-        this._historyIdx = -1;
-        this._pushHistory();
-    },
-
-    // ─── WYSIWYG helpers ──────────────────────────────
-    _htmlToEditor(html) {
-        if (!html) return '<p><br></p>';
-        return html.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (m, name) => {
-            const full = '{{' + name + '}}';
-            return `<span class="wysiwyg-var" contenteditable="false" data-var="${full}">${full}</span>`;
-        });
-    },
-    _editorToHtml(editorEl) {
-        if (!editorEl) return '';
-        let html = editorEl.innerHTML;
-        html = html.replace(/<span[^>]*class="wysiwyg-var"[^>]*data-var="([^"]+)"[^>]*>.*?<\/span>/g, '$1');
-        html = html.replace(/<span[^>]*class="wysiwyg-var"[^>]*>(.*?)<\/span>/g, '$1');
-        if (!html.trim() || html === '<p><br></p>') return '';
+    _editorToHtml() {
+        const html = this._ck ? this._ck.getData() : this._ckHtml;
+        if (!html || !html.trim() || html.trim() === '<p><br></p>') return '';
         return html.trim();
     },
     _insertVarAtCursor(varKey) {
-        const editor = document.getElementById('tpl-editor');
-        if (!editor) return;
-        editor.focus();
-        // pakai insertHTML agar masuk undo stack native (fallback ke range jika tidak support)
-        const tokenHtml = `<span class="wysiwyg-var" contenteditable="false" data-var="${varKey}">${varKey}</span>&nbsp;`;
-        if (document.queryCommandSupported('insertHTML')) {
-            document.execCommand('insertHTML', false, tokenHtml);
-        } else {
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-                const range = sel.getRangeAt(0);
-                range.deleteContents();
-                const frag = range.createContextualFragment(tokenHtml);
-                const lastNode = frag.lastChild;
-                range.insertNode(frag);
-                range.setStartAfter(lastNode);
-                range.collapse(true);
-                sel.removeAllRanges();
-                sel.addRange(range);
-            } else {
-                editor.innerHTML += tokenHtml;
-                const range = document.createRange();
-                range.selectNodeContents(editor);
-                range.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(range);
-            }
-        }
-        this._pushHistory();
+        if (!this._ck) { Toast.info('Editor belum siap'); return; }
+        this._ck.focus();
+        this._ck.execute('input', { text: varKey + ' ' });
         this.updateLiveEditorPreview();
     },
-    _fmt(cmd, val = null) {
-        if (cmd === 'undo') { this._undo(); return; }
-        if (cmd === 'redo') { this._redo(); return; }
-        const ed = document.getElementById('tpl-editor');
-        if (ed) ed.focus();
-        document.execCommand(cmd, false, val);
-        if (ed) ed.focus();
-        this._pushHistory();
-        this.updateLiveEditorPreview();
+    _ensureTableStyles(html) {
+        // tabel baru bawaan CKEditor belum bergaya — samakan dengan tampilan & ekspor docx
+        return html
+            .replace(/<table(?=[\s>])(?![^>]*style=)/g, '<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"')
+            .replace(/<(td|th)(?=[\s>])(?![^>]*style=)/g, '<$1 style="border:1px solid #000; padding:6px;"');
     },
-    _wrapSpan(styleProp, value) {
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return;
-        ed.focus();
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-            document.execCommand('styleWithCSS', false, true);
-            return;
+
+    // ─── DATA CONTOH — data asli dari DB; kosong? crawl live SPSE ──
+    async _sampleData() {
+        if (this._sample) return this._sample;
+        if (!this._sampleP) {
+            this._sampleP = this._buildSample()
+                .then(s => (this._sample = s))
+                .catch(() => (this._sample = {}));
         }
-        const range = sel.getRangeAt(0);
-        if (!ed.contains(range.commonAncestorContainer)) return;
-        const span = document.createElement('span');
-        span.style[styleProp] = value;
-        try { range.surroundContents(span); }
-        catch(e) {
-            const frag = range.extractContents();
-            span.appendChild(frag);
-            range.insertNode(span);
-        }
-        sel.removeAllRanges();
-        const nr = document.createRange();
-        nr.selectNodeContents(span);
-        sel.addRange(nr);
-        this._pushHistory();
-        this.updateLiveEditorPreview();
+        return this._sampleP;
     },
-    _setFontFamily(fam) {
-        if (!fam) return;
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return;
-        ed.focus();
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed) document.execCommand('fontName', false, fam);
-        else this._wrapSpan('fontFamily', fam);
-        if (!sel || sel.isCollapsed) this._pushHistory();
-        this.updateLiveEditorPreview();
+    async _buildSample() {
+        const arr = p => p.then(r => (r && r.data) || []).catch(() => []);
+        const [comps, tends, follows, crawls, pers, eqps, letters] = await Promise.all([
+            arr(API.getCompanies()), arr(API.getTenders()), arr(API.getFollowedTenders()),
+            arr(API.getCrawledTenders({ limit: 5 })), arr(API.getPersonnel()),
+            arr(API.getEquipments()), arr(API.getLetters())
+        ]);
+        const c = comps[0] || {};
+        const t = tends[0] || follows[0] || crawls[0] || await this._crawlSampleTender() || {};
+        const p = pers[0] || {};
+        const L = letters[0] || {};
+        const esc = Fmt.escape;
+        const pagu = t.pagu ?? t['Pagu'] ?? '';
+        const hps = t.hps ?? t['HPS'] ?? '';
+        const now = new Date();
+        const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][now.getMonth()];
+        const namaPaket = t.nama_paket || t.nama_tender || t['Nama Paket'] || '';
+        const instansi = t.instansi || t.klpd || t['Instansi'] || t['LPSE'] || '';
+        const tb = pagu !== '' ? DocumentsPage._terbilang(pagu) : '';
+        const nomor = L.nomor_surat || `001/SP/${c.singkatan || 'XX'}/${roman}/${now.getFullYear()}`;
+        const perihal = L.perihal || (namaPaket ? 'Penawaran ' + namaPaket : 'Penawaran');
+        const tanggal = `${c.kota ? esc(c.kota) + ', ' : ''}${Fmt.date(now.toISOString())}`;
+        const hRow = (label, val) => `<tr><td style="width:80px; padding:2px 0; vertical-align:top;">${label}</td><td style="width:15px; padding:2px 0; vertical-align:top;">:</td><td style="padding:2px 0; vertical-align:top;">${val}</td></tr>`;
+        const cells = (v, center) => ` style="border:1px solid #000; padding:4px;${center ? ' text-align:center;' : ''}"`;
+        const th = (v) => `<th${cells(v)}>${v}</th>`;
+        const tbl = (heads, rows, kosong) => rows
+            ? `<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;">${heads.map(th).join('')}</tr>${rows}</table>`
+            : `<div style="border:1px dashed #94a3b8; padding:8px; text-align:center; color:#64748b; font-size:0.8rem;">[${kosong}]</div>`;
+        const pRows = pers.slice(0, 20).map((x, i) =>
+            `<tr><td${cells(1, 1)}>${i + 1}</td><td${cells(1)}>${esc(x.nama || '')}</td><td${cells(1)}>${esc(x.jabatan || x.pangkat || '-')}</td></tr>`).join('');
+        const eqRows = eqps.slice(0, 20).map((e, i) =>
+            `<tr><td${cells(1, 1)}>${i + 1}</td><td${cells(1)}>${esc(e.jenis || '')}</td><td${cells(1)}>${esc(e.kapasitas || '-')}</td><td${cells(1, 1)}>${esc(String(e.jumlah ?? '-'))}</td></tr>`).join('');
+        const lok = t.lokasi || t.lokasi_pekerjaan || '';
+        return {
+            nama_perusahaan: esc(c.nama_perusahaan || ''),
+            singkatan: esc(c.singkatan || ''),
+            direktur: esc(c.direktur || ''),
+            kota_perusahaan: esc(c.kota || ''),
+            alamat: esc(c.alamat || ''),
+            npwp: esc(c.npwp_usaha || ''),
+            kop_nama: esc(c.kop_nama || c.nama_perusahaan || ''),
+            kop_alamat: esc(c.kop_alamat || [c.alamat, c.kota].filter(Boolean).join(', ')),
+            kop_kontak: esc(c.kop_kontak || ''),
+            kop_is_image: !!c.kop_is_image,
+            kop_image_url: c.kop_image_url || '',
+            kop_garis_warna: c.kop_garis_warna || '#000000',
+            font_surat: c.font_surat || 'Times New Roman',
+            nama_paket: esc(namaPaket),
+            kode_tender: esc(String(t.kode_tender || t['Kode Tender'] || '')),
+            instansi: esc(instansi),
+            lokasi: esc(typeof lok === 'object' && lok ? Object.values(lok).join(', ') : lok),
+            pokja: esc(t.pokja || ''),
+            alamat_pokja: esc(t.alamat_pokja || ''),
+            jangka_waktu: esc(String(t.jangka_waktu || '')),
+            nilai_pagu: pagu !== '' ? Fmt.rupiah(pagu) : '',
+            nilai_hps: hps !== '' ? Fmt.rupiah(hps) : '',
+            pagu_anggaran: pagu !== '' ? Fmt.rupiah(pagu) : '',
+            terbilang: tb, nilai_pagu_terbilang: tb, pagu_terbilang: tb,
+            nomor_surat: esc(nomor),
+            tanggal_surat: tanggal,
+            perihal: esc(perihal),
+            lampiran: esc(L.lampiran || '-'),
+            nama_personil: esc(p.nama || ''),
+            jabatan_personil: esc(p.jabatan || p.pangkat || ''),
+            header_surat: `<table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:inherit; font-family:inherit;">${hRow('Nomor', esc(nomor))}${hRow('Lampiran', esc(L.lampiran || '-'))}${hRow('Perihal', esc(perihal))}</table>`,
+            tabel_personil: tbl(['No', 'Nama', 'Jabatan'], pRows, 'Tabel Personil — terisi otomatis'),
+            tabel_peralatan: tbl(['No', 'Jenis', 'Kapasitas', 'Jumlah'], eqRows, 'Tabel Peralatan — terisi otomatis'),
+            struktur_organisasi: '<div style="text-align:center; border:1px solid #000; padding:8px; margin:10px 0;">Bagan Struktur Organisasi</div>',
+            ttd_gabungan: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;">[Tanda Tangan Pihak 1 & Pihak 2 Akan Muncul Disini]</div>',
+            ttd_direktur: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;margin-left:auto;">[Tanda Tangan Direktur Akan Muncul Disini]</div>',
+            ttd_personil: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;">[Tanda Tangan Personil Akan Muncul Disini]</div>',
+        };
     },
-    _setFontSize(pt) { if (!pt) return; this._wrapSpan('fontSize', pt); },
-    _setLineHeight(val) {
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return;
-        ed.focus();
-        const sel = window.getSelection();
-        let nodes = [];
-        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
-            const range = sel.getRangeAt(0);
-            let common = range.commonAncestorContainer;
-            if (common.nodeType === 3) common = common.parentElement;
-            const blocks = ed.querySelectorAll('p, h1, h2, h3, h4, li, div, td, th');
-            blocks.forEach(b => { if (range.intersectsNode(b)) nodes.push(b); });
-            if (!nodes.length && common && ed.contains(common)) {
-                let cur = common;
-                while (cur && cur !== ed) {
-                    if (/^(P|H1|H2|H3|H4|LI|DIV)$/.test(cur.tagName)) { nodes.push(cur); break; }
-                    cur = cur.parentElement;
-                }
-            }
-        }
-        if (!nodes.length) {
-            const paras = ed.querySelectorAll('p');
-            if (paras.length) paras.forEach(p => p.style.lineHeight = val);
-            else ed.style.lineHeight = val;
-        } else { nodes.forEach(n => n.style.lineHeight = val); }
-        ed.style.lineHeight = val;
-        this._pushHistory();
-        this.updateLiveEditorPreview();
-    },
-    _setColor(color) { document.execCommand('foreColor', false, color); this._pushHistory(); this.updateLiveEditorPreview(); },
-    _setHilite(color) {
-        if (document.queryCommandSupported('hiliteColor')) document.execCommand('hiliteColor', false, color);
-        else document.execCommand('backColor', false, color);
-        this._pushHistory(); this.updateLiveEditorPreview();
-    },
-    _setBlock(tag) { this._fmt('formatBlock', tag); },
-    _findTable() {
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return null;
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) {
-            // fallback: last table in editor
-            const tables = ed.querySelectorAll('table');
-            return tables.length ? tables[tables.length-1] : null;
-        }
-        let node = sel.anchorNode;
-        if (node && node.nodeType === 3) node = node.parentElement;
-        while (node && node !== ed) {
-            if (node.tagName === 'TABLE') return node;
-            if (node.tagName === 'TD' || node.tagName === 'TH') return node.closest('table');
-            node = node.parentElement;
-        }
-        // if no table at caret, pick table under range
+    async _crawlSampleTender() {
+        // ponytail: db tenders kosong → tarik 1 paket live dari SPSE (scrape fallback)
         try {
-            const range = sel.getRangeAt(0);
-            const tables = ed.querySelectorAll('table');
-            for (const t of tables) if (range.intersectsNode(t)) return t;
-        } catch(e) {}
-        return null;
+            const lpse = (await API.getLPSEList()).data || [];
+            if (!lpse.length) return null;
+            const res = await API.searchTenders(String(new Date().getFullYear()), String(lpse[0].kd_lpse));
+            return ((res && res.data) || [])[0] || null;
+        } catch (e) { return null; }
     },
-    _deleteTable() {
-        const t = this._findTable();
-        if (!t) { Toast.warning('Letakkan kursor di dalam tabel dulu'); return; }
-        t.remove();
-        this._pushHistory(); this.updateLiveEditorPreview();
-        Toast.success('Tabel dihapus');
+    _fontStack(name) {
+        const n = String(name || 'Times New Roman').replace(/[^A-Za-z0-9 '\-.,]/g, '');
+        return `'${n}', 'Times New Roman', Times, serif`;
     },
-    _addRow() {
-        const t = this._findTable();
-        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
-        const sel = window.getSelection();
-        let row = null;
-        if (sel && sel.anchorNode) {
-            let n = sel.anchorNode; if (n.nodeType===3) n=n.parentElement;
-            row = n ? n.closest('tr') : null;
-        }
-        const cols = (row ? row.cells.length : (t.rows[0]?.cells.length || 3));
-        const isHeader = row && row.parentElement.tagName==='THEAD';
-        const newRow = t.insertRow(row ? row.rowIndex + 1 : t.rows.length);
-        for (let i=0;i<cols;i++) {
-            const c = newRow.insertCell();
-            c.style.cssText='border:1px solid #000; padding:6px;';
-            if (isHeader) { c.style.background='#f2f2f2'; c.style.fontWeight='600'; }
-            c.innerHTML='&nbsp;';
-        }
-        this._pushHistory(); this.updateLiveEditorPreview();
-    },
-    _delRow() {
-        const t = this._findTable();
-        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
-        const sel = window.getSelection();
-        let row = null;
-        if (sel && sel.anchorNode) { let n=sel.anchorNode; if(n.nodeType===3) n=n.parentElement; row=n?n.closest('tr'):null; }
-        if (!row) { Toast.warning('Letakkan kursor di baris yang ingin dihapus'); return; }
-        if (t.rows.length <= 1) { Toast.warning('Tabel minimal 1 baris'); return; }
-        row.remove();
-        this._pushHistory(); this.updateLiveEditorPreview();
-    },
-    _addCol() {
-        const t = this._findTable();
-        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
-        for (const row of t.rows) {
-            const c = row.insertCell(-1);
-            const isHead = row.parentElement.tagName==='THEAD' || row.cells[0]?.tagName==='TH';
-            c.style.cssText='border:1px solid #000; padding:6px;';
-            if (isHead) { c.style.background='#f2f2f2'; c.style.fontWeight='600'; c.innerHTML='Kolom'; }
-            else c.innerHTML='&nbsp;';
-        }
-        this._pushHistory(); this.updateLiveEditorPreview();
-    },
-    _delCol() {
-        const t = this._findTable();
-        if (!t) { Toast.warning('Letakkan kursor di dalam tabel'); return; }
-        const sel = window.getSelection();
-        let cell = null;
-        if (sel && sel.anchorNode) { let n=sel.anchorNode; if(n.nodeType===3) n=n.parentElement; cell=n?n.closest('td,th'):null; }
-        if (!cell) { Toast.warning('Letakkan kursor di kolom yang ingin dihapus'); return; }
-        const idx = cell.cellIndex;
-        if (t.rows[0].cells.length <= 1) { Toast.warning('Tabel minimal 1 kolom'); return; }
-        for (const row of t.rows) { if (row.cells[idx]) row.deleteCell(idx); }
-        this._pushHistory(); this.updateLiveEditorPreview();
-    },
-    _enhanceTables() {
-        const ed = document.getElementById('tpl-editor');
-        if (!ed) return;
-        ed.querySelectorAll('table').forEach(tbl => {
-            tbl.style.tableLayout = 'fixed';
-            tbl.style.width = '100%';
-            const rows = tbl.rows;
-            if (!rows.length) return;
-            // ensure each cell has width set for dragging
-            for (let r = 0; r < rows.length; r++) {
-                for (let c = 0; c < rows[r].cells.length; c++) {
-                    const cell = rows[r].cells[c];
-                    if (!cell.style.width) cell.style.width = (cell.offsetWidth || 100) + 'px';
-                    // add resizer to header cells and first row data cells (visual handle)
-                    if (r === 0 && c < rows[r].cells.length - 1 && !cell.querySelector('.col-resizer')) {
-                        const h = document.createElement('span');
-                        h.className = 'col-resizer';
-                        h.title = 'Drag untuk atur lebar kolom';
-                        h.addEventListener('mousedown', (e) => this._startColResize(e, tbl, c));
-                        cell.appendChild(h);
-                        cell.style.position = 'relative';
-                    }
-                }
-            }
-        });
-    },
-    _startColResize(e, table, colIdx) {
-        e.preventDefault();
-        const startX = e.pageX;
-        const cols = table.rows[0].cells;
-        if (colIdx >= cols.length - 1) return;
-        const leftCell = cols[colIdx];
-        const rightCell = cols[colIdx + 1];
-        const startWLeft = leftCell.offsetWidth;
-        const startWRight = rightCell.offsetWidth;
-        const handle = e.target;
-        handle.classList.add('dragging');
-        const onMove = (ev) => {
-            const dx = ev.pageX - startX;
-            let nl = startWLeft + dx;
-            let nr = startWRight - dx;
-            if (nl < 30) nl = 30;
-            if (nr < 30) nr = 30;
-            // apply to all rows
-            for (const row of table.rows) {
-                if (row.cells[colIdx]) row.cells[colIdx].style.width = nl + 'px';
-                if (row.cells[colIdx + 1]) row.cells[colIdx + 1].style.width = nr + 'px';
-            }
-        };
-        const onUp = () => {
-            handle.classList.remove('dragging');
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-            this._pushHistory();
-            this.updateLiveEditorPreview();
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-    },
-    _insertTable(cols) {
-        const editor = document.getElementById('tpl-editor');
-        if (!editor) return;
-        editor.focus();
-        let html = '';
-        if (cols === 2) {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Kolom 1</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Kolom 2</th></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
-        } else if (cols === 4) {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:10%;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:50%;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:20%;">Vol</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:20%;">Ket</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
-        } else {
-            html = `<table style="width:100%; border-collapse:collapse; margin:10px 0; table-layout:fixed;"><tr><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:10%;">No</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:45%;">Uraian</th><th style="border:1px solid #000; padding:6px; background:#f2f2f2; width:45%;">Keterangan</th></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">1</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr><tr><td style="border:1px solid #000; padding:6px; text-align:center;">2</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td><td style="border:1px solid #000; padding:6px;">&nbsp;</td></tr></table><p><br></p>`;
-        }
-        if (document.queryCommandSupported('insertHTML')) {
-            document.execCommand('insertHTML', false, html);
-        } else {
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-                const range = sel.getRangeAt(0);
-                range.deleteContents();
-                const frag = range.createContextualFragment(html);
-                range.insertNode(frag);
-                range.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(range);
-            } else editor.innerHTML += html;
-        }
-        this._pushHistory();
-        setTimeout(() => this._enhanceTables(), 50);
-        this.updateLiveEditorPreview();
-        editor.focus();
+    _kopLine(color) {
+        return /^#[0-9a-fA-F]{3,8}$/.test(color || '') ? color : '#000000';
     },
 
     // ─── EDITOR ───────────────────────────────────────
@@ -492,7 +315,6 @@ const TemplatesPage = {
                     ${vars.map(v => `<span class="badge badge-info" style="cursor:pointer; font-size:0.72rem; padding:3px 7px;" onclick="TemplatesPage._insertVarAtCursor('${v.key}')" title="${v.label}">${v.key}</span>`).join('')}
                 </div>
             </div>`).join('');
-        const editorHtml = this._htmlToEditor(t.html_content || '');
         const body = `
         <div style="max-height:82vh; overflow-y:auto; padding-right:6px;">
             <div class="form-row">
@@ -507,105 +329,9 @@ const TemplatesPage = {
                 </div>
             </div>
 
-            <!-- WORD-LIKE WYSIWYG -->
-            <div style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; margin-bottom:12px; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-                <!-- ribbon tabs (Word familiar) -->
-                <div style="display:flex; align-items:center; gap:4px; padding:6px 10px 0 10px; background:#f1f5f9; border-bottom:1px solid #e2e8f0;">
-                    <span class="ribbon-tab active" data-tab="home" onclick="TemplatesPage._switchTab('home')">Beranda</span>
-                    <span class="ribbon-tab" data-tab="insert" onclick="TemplatesPage._switchTab('insert')">Sisipkan</span>
-                    <span class="ribbon-tab" data-tab="layout" onclick="TemplatesPage._switchTab('layout')">Tata Letak</span>
-                    <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
-                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._undo()" title="Undo (Ctrl+Z)">↶ Undo</button>
-                        <button type="button" class="btn btn-secondary btn-sm" style="padding:3px 8px; font-size:0.75rem;" onclick="TemplatesPage._redo()" title="Redo (Ctrl+Y)">↷ Redo</button>
-                        <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; cursor:pointer; margin-left:8px;"><input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan</label>
-                    </div>
-                </div>
-
-                <!-- HOME tab -->
-                <div class="ribbon-panel" data-panel="home" style="display:flex; flex-wrap:wrap; gap:0; background:white;">
-                    <div style="display:flex; flex-wrap:wrap; gap:6px; padding:10px; align-items:center; border-right:1px solid #e2e8f0; flex:1;">
-                        <select class="form-select" style="width:150px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontFamily(this.value)" title="Jenis font">
-                            <option value="">Font</option>
-                            <option value="'Aptos', Calibri, sans-serif" style="font-family:'Aptos', Calibri, sans-serif;">Aptos ★ (Word baru)</option>
-                            <option value="'Times New Roman', Times, serif" style="font-family:'Times New Roman', serif;">Times New Roman</option>
-                            <option value="Arial, Helvetica, sans-serif" style="font-family:Arial, sans-serif;">Arial</option>
-                            <option value="Calibri, sans-serif" style="font-family:Calibri, sans-serif;">Calibri</option>
-                            <option value="Cambria, serif" style="font-family:Cambria, serif;">Cambria</option>
-                            <option value="'Courier New', monospace" style="font-family:'Courier New', monospace;">Courier New</option>
-                            <option value="Georgia, serif" style="font-family:Georgia, serif;">Georgia</option>
-                            <option value="Tahoma, sans-serif" style="font-family:Tahoma, sans-serif;">Tahoma</option>
-                            <option value="Verdana, sans-serif" style="font-family:Verdana, sans-serif;">Verdana</option>
-                        </select>
-                        <select class="form-select" style="width:86px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setFontSize(this.value)" title="Ukuran font">
-                            <option value="">Ukuran</option>
-                            <option value="8pt">8</option><option value="9pt">9</option><option value="10pt">10</option><option value="11pt">11</option><option value="12pt">12</option><option value="14pt">14</option><option value="16pt">16</option><option value="18pt">18</option><option value="20pt">20</option><option value="24pt">24</option><option value="28pt">28</option>
-                        </select>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('bold')" title="Tebal (Ctrl+B)"><b>B</b></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('italic')" title="Miring (Ctrl+I)"><i>I</i></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('underline')" title="Garis bawah (Ctrl+U)"><u>U</u></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('strikeThrough')" title="Coret"><span style="text-decoration:line-through;">S</span></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('superscript')" title="Superscript">x<sup>2</sup></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('subscript')" title="Subscript">x<sub>2</sub></button>
-                        <label class="word-btn" style="gap:4px; cursor:pointer;" title="Warna teks">
-                            <span style="font-size:0.7rem; font-weight:700;">A</span><input type="color" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setColor(this.value)">
-                        </label>
-                        <label class="word-btn" style="gap:4px; cursor:pointer; background:#fef08a;" title="Stabilo">
-                            <i data-lucide="highlighter" style="width:14px; height:14px;"></i><input type="color" value="#fef08a" style="width:18px; height:18px; border:none; padding:0; cursor:pointer;" onchange="TemplatesPage._setHilite(this.value)">
-                        </label>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('removeFormat')" title="Hapus format">✕</button>
-                    </div>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px; padding:10px; align-items:center; background:#f8fafc; border-right:1px solid #e2e8f0;">
-                        <select class="form-select" style="width:120px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setBlock(this.value); this.selectedIndex=0" title="Gaya paragraf">
-                            <option value="">Gaya</option><option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="blockquote">Kutipan</option>
-                        </select>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyLeft')" title="Rata kiri"><i data-lucide="align-left" style="width:15px;height:15px;"></i></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyCenter')" title="Tengah"><i data-lucide="align-center" style="width:15px;height:15px;"></i></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyRight')" title="Kanan"><i data-lucide="align-right" style="width:15px;height:15px;"></i></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('justifyFull')" title="Justify"><i data-lucide="align-justify" style="width:15px;height:15px;"></i></button>
-                        <select class="form-select" style="width:90px; padding:5px 8px; font-size:0.82rem; height:32px;" onchange="TemplatesPage._setLineHeight(this.value)" title="Spasi baris">
-                            <option value="">Spasi</option><option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="2.5">2.5</option>
-                        </select>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('indent')" title="Indent">→</button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('outdent')" title="Outdent">←</button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertUnorderedList')" title="Bullet"><i data-lucide="list" style="width:15px;height:15px;"></i></button>
-                        <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertOrderedList')" title="Numbering"><i data-lucide="list-ordered" style="width:15px;height:15px;"></i></button>
-                    </div>
-                </div>
-
-                <!-- INSERT tab -->
-                <div class="ribbon-panel" data-panel="insert" style="display:none; flex-wrap:wrap; gap:6px; padding:10px; background:white; align-items:center; border-bottom:1px solid #e2e8f0;">
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(2)" title="Tabel 2 kolom">⊞ 2 kol</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(3)" title="Tabel 3 kolom">⊞ 3 kol</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._insertTable(4)" title="Tabel 4 kolom">⊞ 4 kol</button>
-                    <span style="width:1px; height:28px; background:#e2e8f0; margin:0 4px;"></span>
-                    <button type="button" class="word-btn" style="background:#fef2f2; border-color:#fecaca;" onclick="TemplatesPage._deleteTable()" title="Hapus tabel terpilih">🗑 Tabel</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._addRow()" title="Tambah baris">+ Baris</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._delRow()" title="Hapus baris">− Baris</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._addCol()" title="Tambah kolom">+ Kolom</button>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._delCol()" title="Hapus kolom">− Kolom</button>
-                    <span style="width:1px; height:28px; background:#e2e8f0; margin:0 4px;"></span>
-                    <button type="button" class="word-btn" onclick="TemplatesPage._fmt('insertHorizontalRule')" title="Garis horizontal">― Garis</button>
-                    <span style="font-size:0.72rem; color:#64748b; margin-left:8px;">Tip: klik di dalam tabel lalu pakai tombol baris/kolom. Undo/redo berfungsi untuk semua aksi tabel.</span>
-                </div>
-
-                <!-- LAYOUT tab -->
-                <div class="ribbon-panel" data-panel="layout" style="display:none; flex-wrap:wrap; gap:6px; padding:10px; background:#f8fafc; align-items:center;">
-                    <span style="font-size:0.78rem; color:#475569;">Margin & ukuran kertas diatur di panel <b>Layout Halaman</b> di bawah editor.</span>
-                    <span style="font-size:0.72rem; color:#64748b; margin-left:8px;">Ruler & bayangan kertas aktif — tampilan seperti MS Word Online.</span>
-                </div>
-
-                <!-- ruler Word-like -->
-                <div class="word-ruler" style="height:16px; background:#f1f5f9; border-bottom:1px solid #cbd5e1; position:relative; overflow:hidden; display:flex; align-items:flex-end; padding:0 24px; gap:0; font-size:0.6rem; color:#94a3b8;">
-                    <div style="flex:1; display:flex; justify-content:space-between; border-top:1px solid #cbd5e1; padding-top:2px;">
-                        <span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span><span>12</span><span>14</span><span>16</span><span>18</span><span>20</span><span>21 cm</span>
-                    </div>
-                </div>
-
-                <div id="tpl-editor" contenteditable="true" class="wysiwyg-editor" style="min-height:340px; max-height:560px; overflow-y:auto; padding:24px 28px; background:white; color:#000; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:12pt; line-height:1.5; outline:none; text-align:justify;" oninput="TemplatesPage._schedulePush(); TemplatesPage.updateLiveEditorPreview()" onkeyup="TemplatesPage.updateLiveEditorPreview()">${editorHtml}</div>
-                <div style="padding:6px 12px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:0.70rem; color:#64748b; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-                    <span>Word Online versimu — font Aptos, tabel fleksibel (Sisipkan → baris/kolom), hapus tabel 1 klik, undo/redo untuk semua aksi.</span>
-                    <span style="opacity:0.7;">Ctrl+Z / Ctrl+Y berfungsi • Klik kanan tabel untuk edit manual</span>
-                </div>
+            <!-- CKEditor WYSIWYG (custom build — style mentah dipertahankan, lihat frontend/editor-src) -->
+            <div class="tpl-ck-box" style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <div id="tpl-editor"></div>
             </div>
 
             <!-- Variables -->
@@ -627,8 +353,11 @@ const TemplatesPage = {
                             <option ${t.paper_size === 'F4' ? 'selected' : ''}>F4</option>
                         </select>
                     </div>
-                    <div class="form-group"><label class="form-label">Margin Atas (mm)</label>
-                        <input type="number" class="form-input" id="tpl-mt" value="${t.margin_top ?? 25}">
+                    <div class="form-group"><label class="form-label">Orientasi</label>
+                        <select class="form-select" id="tpl-orient">
+                            <option ${(t.orientation || 'portrait') === 'portrait' ? 'selected' : ''}>portrait</option>
+                            <option ${t.orientation === 'landscape' ? 'selected' : ''}>landscape</option>
+                        </select>
                     </div>
                 </div>
                 <div class="form-row">
@@ -639,14 +368,20 @@ const TemplatesPage = {
                         <input type="number" class="form-input" id="tpl-mr" value="${t.margin_right ?? 25}">
                     </div>
                 </div>
-                <div class="form-group"><label class="form-label">Margin Bawah (mm)</label>
-                    <input type="number" class="form-input" id="tpl-mb" value="${t.margin_bottom ?? 25}" style="max-width:200px;">
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Margin Atas (mm)</label>
+                        <input type="number" class="form-input" id="tpl-mt" value="${t.margin_top ?? 25}">
+                    </div>
+                    <div class="form-group"><label class="form-label">Margin Bawah (mm)</label>
+                        <input type="number" class="form-input" id="tpl-mb" value="${t.margin_bottom ?? 25}">
+                    </div>
                 </div>
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; margin-top:8px;"><input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan (rapat saat preview)</label>
             </div>
 
             <div style="margin-top:12px;">
-                <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Live Preview (dengan data dummy):</div>
-                <div id="tpl-live-preview" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:120px; max-height:220px; overflow-y:auto; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:11pt; line-height:1.4; text-align:justify;"></div>
+                <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Live Preview (data asli dari database / SPSE):</div>
+                <div id="tpl-live-preview" class="ck-content tpl-doc" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:120px; max-height:220px; overflow-y:auto;"></div>
             </div>
         </div>`;
 
@@ -659,101 +394,69 @@ const TemplatesPage = {
         const modalEl = document.getElementById('modal');
         if (modalEl) modalEl.style.maxWidth = '1020px';
         lucide.createIcons();
-        // init history & shortcuts
-        this._editorHistory = []; this._historyIdx = -1;
-        setTimeout(() => {
-            const ed = document.getElementById('tpl-editor');
-            if (ed) {
-                this._initHistory();
-                this._enhanceTables();
-                // re-enhance on paste/input
-                ed.addEventListener('input', () => setTimeout(()=>this._enhanceTables(),200));
-                // context menu for table delete (right click)
-                ed.addEventListener('contextmenu', (e) => {
-                    const tbl = e.target.closest ? e.target.closest('table') : null;
-                    if (tbl) {
-                        e.preventDefault();
-                        if (confirm('Hapus tabel ini?')) { tbl.remove(); this._pushHistory(); this.updateLiveEditorPreview(); }
-                    }
-                });
-                ed.addEventListener('keydown', (e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='z') { e.preventDefault(); this._undo(); }
-                    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase()==='y' || (e.shiftKey && e.key.toLowerCase()==='z'))) { e.preventDefault(); this._redo(); }
-                });
-                // click on table shows hint? add outline
-                ed.addEventListener('click', (e) => {
-                    const tbl = e.target.closest ? e.target.closest('table') : null;
-                    ed.querySelectorAll('table').forEach(t=> t.style.outline='');
-                    if (tbl) tbl.style.outline='2px solid #3b82f6';
-                });
-            }
-            this.updateLiveEditorPreview();
-        }, 100);
-        setTimeout(() => { const ed = document.getElementById('tpl-editor'); if (ed && !id) ed.focus(); }, 200);
+        this._bindSheetVars();
+        this._sampleData().then(s => {
+            const box = document.querySelector('.tpl-ck-box');
+            if (box) box.style.setProperty('--ck-content-font-family', this._fontStack(s.font_surat));
+        });
+        if (!this._ckCloseBound) {
+            this._ckCloseBound = true;
+            document.addEventListener('modal:close', () => this._destroyEditor());
+        }
+        this._ckHtml = t.html_content || '';
+        this._initEditor(this._ckHtml, !id);
     },
 
-    _switchTab(tab) {
-        document.querySelectorAll('.ribbon-tab').forEach(el => el.classList.toggle('active', el.dataset.tab===tab));
-        document.querySelectorAll('.ribbon-panel').forEach(el => {
-            const show = el.dataset.panel===tab;
-            el.style.display = show ? 'flex' : 'none';
+    _paperW(paper, orient) {
+        if (orient === 'landscape') return paper === 'F4' ? '330mm' : '297mm';
+        return paper === 'F4' ? '215mm' : '210mm';
+    },
+    _bindSheetVars() {
+        // layout form → CSS var lembar kertas editor (real-time, sama dgn preview)
+        const box = document.querySelector('.tpl-ck-box');
+        if (!box) return;
+        const set = () => {
+            const paper = document.getElementById('tpl-paper');
+            const orient = document.getElementById('tpl-orient');
+            box.style.setProperty('--pw', this._paperW(paper && paper.value, orient && orient.value));
+            ['mt', 'mr', 'mb', 'ml'].forEach(k => {
+                const el = document.getElementById('tpl-' + k);
+                box.style.setProperty('--' + k, (parseInt(el && el.value, 10) || (k === 'ml' ? 30 : 25)) + 'mm');
+            });
+            const fit = document.getElementById('tpl-fit-layout');
+            box.style.setProperty('--ck-content-font-size', fit && fit.checked ? '11pt' : '12pt');
+            box.style.setProperty('--ck-content-line-height', fit && fit.checked ? '1.3' : '1.5');
+        };
+        ['tpl-paper', 'tpl-orient', 'tpl-mt', 'tpl-mr', 'tpl-mb', 'tpl-ml', 'tpl-fit-layout'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', set);
         });
-        lucide.createIcons();
+        set();
     },
 
     updateLiveEditorPreview() {
-        const ed = document.getElementById('tpl-editor');
         const prev = document.getElementById('tpl-live-preview');
         if (!prev) return;
-        let html = ed ? ed.innerHTML : '';
-        if (!html || html === '<br>' || html.trim() === '') { prev.innerHTML = '<em style="color:#999;">Belum ada isi surat...</em>'; return; }
-        const dummy = {
-            '{{nama_perusahaan}}': 'CV. GRAHA MANDIRI',
-            '{{singkatan}}': 'CV.GM',
-            '{{direktur}}': 'Ahmad Sutojo, S.T.',
-            '{{kota_perusahaan}}': 'Sleman',
-            '{{alamat}}': 'Jl. Magelang No. 123, Sleman, DIY',
-            '{{npwp}}': '12.345.678.9-012.000',
-            '{{nama_paket}}': 'Pekerjaan Pengecatan Gedung RSUD Sleman',
-            '{{kode_tender}}': '12345678',
-            '{{nilai_pagu}}': 'Rp 1.500.000.000',
-            '{{nilai_hps}}': 'Rp 1.450.000.000',
-            '{{pagu_anggaran}}': 'Rp 1.500.000.000',
-            '{{terbilang}}': 'satu miliar lima ratus juta rupiah',
-            '{{nilai_pagu_terbilang}}': 'satu miliar lima ratus juta rupiah',
-            '{{pagu_terbilang}}': 'satu miliar lima ratus juta rupiah',
-            '{{instansi}}': 'RSUD Sleman',
-            '{{pokja}}': 'Pokja Pemilihan RSUD Sleman',
-            '{{alamat_pokja}}': 'Jl. Magelang KM 14, Sleman',
-            '{{lokasi}}': 'RSUD Sleman, DIY',
-            '{{jangka_waktu}}': '90',
-            '{{header_surat}}': '<table style="width:100%; margin-bottom:12px;"><tr><td style="width:80px;">Nomor</td><td style="width:10px;">:</td><td>001/SP/CV.GM/V/2026</td></tr><tr><td>Lampiran</td><td>:</td><td>-</td></tr><tr><td>Perihal</td><td>:</td><td>Penawaran</td></tr></table>',
-            '{{nomor_surat}}': '001/SP/CV.GM/V/2026',
-            '{{tanggal_surat}}': 'Sleman, 15 Mei 2026',
-            '{{perihal}}': 'Penawaran Pekerjaan Pengecatan Gedung',
-            '{{lampiran}}': '-',
-            '{{nama_personil}}': 'Budi Santoso',
-            '{{jabatan_personil}}': 'Pelaksana',
-            '{{tabel_peralatan}}': '<div style="border:1px dashed #94a3b8; padding:8px; text-align:center; color:#64748b; font-size:0.8rem;">[Tabel Peralatan — terisi otomatis]</div>',
-            '{{tabel_personil}}': '<div style="border:1px dashed #94a3b8; padding:8px; text-align:center; color:#64748b; font-size:0.8rem;">[Tabel Personil — terisi otomatis]</div>',
-            '{{struktur_organisasi}}': '<div style="border:1px dashed #94a3b8; padding:8px; text-align:center; color:#64748b; font-size:0.8rem;">[Bagan Struktur Organisasi]</div>',
-            '{{ttd_direktur}}': '<div style="border:1px dashed #94a3b8; padding:10px; text-align:center; color:#94a3b8; font-size:0.8rem;">[TTD Direktur]</div>',
-            '{{ttd_personil}}': '<div style="border:1px dashed #94a3b8; padding:10px; text-align:center; color:#94a3b8; font-size:0.8rem;">[TTD Personil]</div>',
-            '{{ttd_gabungan}}': '<div style="border:1px dashed #94a3b8; padding:10px; text-align:center; color:#94a3b8; font-size:0.8rem;">[TTD Gabungan]</div>',
-        };
-        html = html.replace(/<span[^>]*class="wysiwyg-var"[^>]*data-var="([^"]+)"[^>]*>.*?<\/span>/g, (m, v) => dummy[v] || `<span style="background:#fef3c7; padding:1px 4px; border-radius:3px;">${Fmt.escape(v)}</span>`);
-        html = html.replace(/\{\{[^}]+\}\}/g, m => dummy[m] || `<span style="background:#fef3c7; padding:1px 4px;">${Fmt.escape(m)}</span>`);
-        prev.innerHTML = html;
+        const html = this._editorToHtml();
+        if (!html) { prev.innerHTML = '<em style="color:#999;">Belum ada isi surat...</em>'; return; }
+        this._sampleData().then(s => {
+            const p = document.getElementById('tpl-live-preview');
+            if (!p) return;
+            p.style.setProperty('--ck-content-font-family', this._fontStack(s.font_surat));
+            p.innerHTML = html.replace(/\{\{([^}]+)\}\}/g, (m, k) =>
+                s[k] != null && s[k] !== '' ? s[k]
+                    : `<span style="background:#fef3c7; padding:1px 4px;">${Fmt.escape(m)}</span>`);
+        });
     },
 
     _collectFormData() {
-        const editor = document.getElementById('tpl-editor');
         return {
             nama_template: document.getElementById('tpl-nama')?.value?.trim(),
             kategori: document.getElementById('tpl-kategori')?.value || null,
-            html_content: this._editorToHtml(editor),
+            html_content: this._ensureTableStyles(this._editorToHtml()),
             fit_layout: document.getElementById('tpl-fit-layout')?.checked || false,
             paper_size: document.getElementById('tpl-paper')?.value || 'A4',
+            orientation: document.getElementById('tpl-orient')?.value === 'landscape' ? 'landscape' : 'portrait',
             margin_top: parseInt(document.getElementById('tpl-mt')?.value) || 25,
             margin_bottom: parseInt(document.getElementById('tpl-mb')?.value) || 25,
             margin_left: parseInt(document.getElementById('tpl-ml')?.value) || 30,
@@ -782,45 +485,20 @@ const TemplatesPage = {
         let t;
         if (fromForm) { t = this._collectFormData(); }
         else { try { const res = await API.request(`/templates/${id}`); t = res.data; } catch (e) { Toast.error(e.message); return; } }
-        const paperW = t.paper_size === 'F4' ? '215mm' : '210mm';
-        let narasi = (t.html_content || '');
-        const headerTable = `<table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:inherit; font-family:inherit;"><tr><td style="width:80px; padding:2px 0; vertical-align:top;">Nomor</td><td style="width:15px; padding:2px 0; vertical-align:top;">:</td><td style="padding:2px 0; vertical-align:top;">001/SP/CV-GM/V/2026</td></tr><tr><td style="padding:2px 0; vertical-align:top;">Lampiran</td><td style="padding:2px 0; vertical-align:top;">:</td><td style="padding:2px 0; vertical-align:top;">-</td></tr><tr><td style="padding:2px 0; vertical-align:top;">Perihal</td><td style="padding:2px 0; vertical-align:top;">:</td><td style="padding:2px 0; vertical-align:top;">Penawaran Pekerjaan Pengecatan Gedung RSUD Sleman</td></tr></table>`;
-        narasi = narasi
-            .replace(/\{\{header_surat\}\}/g, headerTable)
-            .replace(/\{\{nomor_surat\}\}/g, '001/SP/CV-GM/V/2026')
-            .replace(/\{\{perihal\}\}/g, 'Penawaran Pekerjaan Pengecatan Gedung RSUD Sleman')
-            .replace(/\{\{lampiran\}\}/g, '-')
-            .replace(/\{\{tanggal_surat\}\}/g, 'Sleman, 15 Mei 2026')
-            .replace(/\{\{kota_perusahaan\}\}/g, 'Sleman')
-            .replace(/\{\{nama_perusahaan\}\}/g, 'CV. UTAMA GRAHA MANDIRI')
-            .replace(/\{\{singkatan\}\}/g, 'CV.UGM')
-            .replace(/\{\{direktur\}\}/g, 'Ginanjar Dwi Prasetyo, S.T.')
-            .replace(/\{\{alamat\}\}/g, 'Jl. Magelang No.259, Sleman, DIY')
-            .replace(/\{\{npwp\}\}/g, '12.345.678.9-012.000')
-            .replace(/\{\{nama_paket\}\}/g, 'Pekerjaan Pengecatan Gedung RSUD Sleman')
-            .replace(/\{\{kode_tender\}\}/g, '12345678')
-            .replace(/\{\{nilai_pagu\}\}/g, 'Rp 1.500.000.000,00')
-            .replace(/\{\{nilai_hps\}\}/g, 'Rp 1.450.000.000,00')
-            .replace(/\{\{pagu_anggaran\}\}/g, 'Rp 1.500.000.000,00')
-            .replace(/\{\{terbilang\}\}/g, 'Satu Miliar Lima Ratus Juta Rupiah')
-            .replace(/\{\{nilai_pagu_terbilang\}\}/g, 'satu miliar lima ratus juta rupiah')
-            .replace(/\{\{pagu_terbilang\}\}/g, 'satu miliar lima ratus juta rupiah')
-            .replace(/\{\{instansi\}\}/g, 'RSUD Sleman')
-            .replace(/\{\{pokja\}\}/g, 'Pokja Pemilihan RSUD Sleman')
-            .replace(/\{\{alamat_pokja\}\}/g, 'Jl. Magelang KM 14, Sleman')
-            .replace(/\{\{lokasi\}\}/g, 'RSUD Sleman, DIY')
-            .replace(/\{\{jangka_waktu\}\}/g, '90')
-            .replace(/\{\{nama_personil\}\}/g, 'Budi Santoso')
-            .replace(/\{\{jabatan_personil\}\}/g, 'Pelaksana')
-            .replace(/\{\{tabel_peralatan\}\}/g, '<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;"><th style="border:1px solid #000; padding:4px;">No</th><th style="border:1px solid #000; padding:4px;">Jenis</th><th style="border:1px solid #000; padding:4px;">Kapasitas</th><th style="border:1px solid #000; padding:4px;">Jumlah</th></tr><tr><td style="border:1px solid #000; padding:4px; text-align:center;">1</td><td style="border:1px solid #000; padding:4px;">Scaffolding</td><td style="border:1px solid #000; padding:4px;">-</td><td style="border:1px solid #000; padding:4px; text-align:center;">250 Unit</td></tr></table>')
-            .replace(/\{\{tabel_personil\}\}/g, '<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;"><th style="border:1px solid #000; padding:4px;">No</th><th style="border:1px solid #000; padding:4px;">Nama</th><th style="border:1px solid #000; padding:4px;">Jabatan</th></tr><tr><td style="border:1px solid #000; padding:4px; text-align:center;">1</td><td style="border:1px solid #000; padding:4px;">Budi Santoso</td><td style="border:1px solid #000; padding:4px;">Pelaksana</td></tr></table>')
-            .replace(/\{\{struktur_organisasi\}\}/g, '<div style="text-align:center; border:1px solid #000; padding:8px; margin:10px 0;">Bagan Struktur Organisasi</div>');
-        const html = `<div style="background:#e2e8f0; padding:24px; border-radius:var(--radius-md); overflow:auto; max-height:70vh;"><div style="width:${paperW}; max-width:100%; margin:0 auto; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.12); padding:${t.margin_top||25}mm ${t.margin_right||25}mm ${t.margin_bottom||25}mm ${t.margin_left||30}mm; font-family:'Aptos', Calibri, 'Times New Roman', serif; font-size:${t.fit_layout ? '11pt' : '12pt'}; color:#000; line-height:${t.fit_layout ? '1.3' : '1.5'}; min-height:400px;"><div style="text-align:center; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:20px; color:#94a3b8; border-color:#cbd5e1; font-style:italic;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">[KOP SURAT PERUSAHAAN]</div><div style="font-size:10pt;">Alamat Perusahaan akan tampil otomatis di sini</div></div><div style="text-align:justify;">${narasi || '<span style="color:#999;">— Narasi belum diisi —</span>'}</div></div></div>`;
-        let finalHtml = html
-            .replace(/\{\{ttd_gabungan\}\}/g, '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;">[Tanda Tangan Pihak 1 & Pihak 2 Akan Muncul Disini]</div>')
-            .replace(/\{\{ttd_direktur\}\}/g, '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;margin-left:auto;">[Tanda Tangan Direktur Akan Muncul Disini]</div>')
-            .replace(/\{\{ttd_personil\}\}/g, '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;">[Tanda Tangan Personil Akan Muncul Disini]</div>')
-            .replace(/\{\{[^}]+\}\}/g, '.........');
+        const s = await this._sampleData();
+        this._loadCkCss();
+        const paperW = this._paperW(t.paper_size, t.orientation);
+        const subst = str => (str || '').replace(/\{\{([^}]+)\}\}/g, (m, k) => s[k] || m);
+        const fontStack = this._fontStack(s.font_surat);
+        const kopLine = this._kopLine(s.kop_garis_warna);
+        const kop = s.kop_is_image && s.kop_image_url
+            ? `<img src="${Fmt.url(s.kop_image_url)}" style="width:100%; max-height:140px; object-fit:contain; display:block; margin:0 auto 10px auto; border-bottom:3px double ${kopLine}; padding-bottom:8px;">`
+            : s.kop_nama
+                ? `<div style="text-align:center; border-bottom:3px double ${kopLine}; padding-bottom:12px; margin-bottom:10px;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">${s.kop_nama}</div><div style="font-size:10pt;">${[s.kop_alamat, s.kop_kontak].filter(Boolean).join(' • ')}</div></div>`
+                : `<div style="text-align:center; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:10px; color:#94a3b8; border-color:#cbd5e1; font-style:italic;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">[KOP SURAT PERUSAHAAN]</div><div style="font-size:10pt;">Alamat Perusahaan akan tampil otomatis di sini</div></div>`;
+        const narasi = subst(t.html_content);
+        const html = `<div style="background:#e2e8f0; padding:24px; border-radius:var(--radius-md); overflow:auto; max-height:70vh;"><div style="width:${paperW}; max-width:100%; margin:0 auto; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.12); padding:${t.margin_top||25}mm ${t.margin_right||25}mm ${t.margin_bottom||25}mm ${t.margin_left||30}mm; font-family:${fontStack}; color:#000; min-height:400px;">${kop}<div class="ck-content tpl-doc" style="--ck-content-font-family:${fontStack}; --ck-content-font-size:${t.fit_layout ? '11pt' : '12pt'}; --ck-content-line-height:${t.fit_layout ? '1.3' : '1.5'};">${narasi || '<span style="color:#999;">— Narasi belum diisi —</span>'}</div></div></div>`;
+        const finalHtml = html.replace(/\{\{[^}]+\}\}/g, '.........');
         if (fromForm) {
             const overlay = document.createElement('div');
             overlay.id = 'tpl-preview-overlay';

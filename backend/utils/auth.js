@@ -88,6 +88,8 @@ function requireAuth(req, res, next) {
     // Publik: login + health + cek DB setup
     const p = req.path;
     if (p === '/auth/login' || p === '/health' || p === '/db-status') return next();
+    // DocumentServer (container) → tanpa cookie; divalidasi HMAC di route onlyoffice
+    if (p.startsWith('/onlyoffice/file/') || p.startsWith('/onlyoffice/callback/')) return next();
     if (verifySession(getSessionToken(req))) return next();
     res.status(401).json({ success: false, error: 'Belum login' });
 }

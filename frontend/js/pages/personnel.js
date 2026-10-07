@@ -125,31 +125,60 @@ const PersonnelPage = {
                     </div>
                 </div>
             </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Upload Tanda Tangan (PNG)</label>
+                    <input type="file" class="form-input" id="f-ttd" accept="image/*" style="margin-bottom:6px;" onchange="PersonnelPage.previewTtd(this)">
+                    <input type="hidden" id="f-ttd-url" value="${p.ttd_image_url || ''}">
+                    <div id="prev-ttd-container" style="display:${p.ttd_image_url ? 'flex' : 'none'}; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color); width:fit-content;">
+                        <img id="prev-ttd-img" src="${p.ttd_image_url ? Fmt.url(p.ttd_image_url) : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}" style="max-height:48px;" onerror="this.style.display='none';">
+                        <button type="button" onclick="PersonnelPage.deleteFileField('${id || ''}', 'ttd_image_url', 'prev-ttd-container', event)" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem; border-radius:4px; display:inline-flex; align-items:center; gap:2px; height:20px; border:none; cursor:pointer;" title="Hapus Tanda Tangan">
+                            <i data-lucide="x" style="width:10px; height:10px;"></i> Hapus
+                        </button>
+                    </div>
+                    <small style="color:var(--text-muted); font-size:0.72rem;">Dipakai untuk ttd_personil / ttd_gabungan saat cetak surat</small>
+                </div>
+                <div class="form-group"></div>
+            </div>
         </div>`;
         const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><button class="btn btn-primary" onclick="PersonnelPage.save('${id || ''}')">Simpan</button>`;
         Modal.open(title, body, footer);
         lucide.createIcons();
     },
 
+    previewTtd(input) {
+        if (!input.files || !input.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = document.getElementById('prev-ttd-img');
+            const cont = document.getElementById('prev-ttd-container');
+            if (img) { img.src = e.target.result; img.style.display = 'block'; }
+            if (cont) cont.style.display = 'flex';
+        };
+        reader.readAsDataURL(input.files[0]);
+    },
+
     async deleteFileField(id, fieldKey, containerId, event) {
         if (event) event.preventDefault();
-        
-        let fileInputId = fieldKey === 'ktp_url' ? 'f-ktp' : 'f-npwp';
-        let urlInputId = fieldKey === 'ktp_url' ? 'f-ktp-url' : 'f-npwp-url';
-        
+
+        const base = fieldKey.replace(/_image|_url/g, '');
+        const label = fieldKey === 'ttd_image_url' ? 'TTD' : fieldKey === 'ktp_url' ? 'KTP' : 'NPWP';
+        const fileInputId = 'f-' + base;
+        const urlInputId = 'f-' + base + '-url';
+
         const fileInput = document.getElementById(fileInputId);
         const urlInput = document.getElementById(urlInputId);
         const url = urlInput ? urlInput.value : '';
-        
+
         const resetUI = () => {
             if (urlInput) urlInput.value = '';
             if (fileInput) fileInput.value = '';
             const container = document.getElementById(containerId);
             if (container) container.style.display = 'none';
         };
-        
+
         if (url) {
-            Modal.confirm('Hapus Berkas', `Yakin ingin menghapus berkas ${fieldKey === 'ktp_url' ? 'KTP' : 'NPWP'} ini secara permanen dari Supabase Storage?`, async () => {
+            Modal.confirm('Hapus Berkas', `Yakin ingin menghapus berkas ${label} ini secara permanen dari Storage?`, async () => {
                 try {
                     Toast.info('Menghapus berkas...');
                     await API.deleteFile(url);
@@ -182,24 +211,34 @@ const PersonnelPage = {
         try {
             const ktpFile = document.getElementById('f-ktp').files[0];
             const npwpFile = document.getElementById('f-npwp').files[0];
+            const ttdFile = document.getElementById('f-ttd')?.files?.[0];
             let ktp_url = document.getElementById('f-ktp-url')?.value || null;
             let npwp_url = document.getElementById('f-npwp-url')?.value || null;
+            let ttd_url = document.getElementById('f-ttd-url')?.value || null;
 
             if (ktpFile) {
                 const oldKtp = id ? (this.data.find(x => x.id === id)?.ktp_url) : null;
+                const res = await API.uploadFile(ktpFile, 'personnel');
+                ktp_url = res.url;
                 if (oldKtp && oldKtp !== ktp_url) {
                     await API.deleteFile(oldKtp).catch(err => console.warn('Failed to delete old KTP:', err.message));
                 }
-                const res = await API.uploadFile(ktpFile, 'personnel');
-                ktp_url = res.url;
             }
             if (npwpFile) {
                 const oldNpwp = id ? (this.data.find(x => x.id === id)?.npwp_url) : null;
+                const res = await API.uploadFile(npwpFile, 'personnel');
+                npwp_url = res.url;
                 if (oldNpwp && oldNpwp !== npwp_url) {
                     await API.deleteFile(oldNpwp).catch(err => console.warn('Failed to delete old NPWP:', err.message));
                 }
-                const res = await API.uploadFile(npwpFile, 'personnel');
-                npwp_url = res.url;
+            }
+            if (ttdFile) {
+                const oldTtd = id ? (this.data.find(x => x.id === id)?.ttd_image_url) : null;
+                const res = await API.uploadFile(ttdFile, 'personnel');
+                ttd_url = res.url;
+                if (oldTtd && oldTtd !== ttd_url) {
+                    await API.deleteFile(oldTtd).catch(err => console.warn('Failed to delete old TTD:', err.message));
+                }
             }
 
             const data = {
@@ -210,7 +249,8 @@ const PersonnelPage = {
                 tanggal_lahir: document.getElementById('f-tgllahir').value || null,
                 tahun_pengalaman: parseInt(document.getElementById('f-pengalaman').value) || null,
                 ktp_url,
-                npwp_url
+                npwp_url,
+                ttd_image_url: ttd_url
             };
 
             if (!data.nama) { throw new Error('Nama wajib diisi'); }
@@ -266,6 +306,7 @@ const PersonnelPage = {
                     <div style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
                         ${p.ktp_url ? `<a href="${p.ktp_url}" target="_blank" class="btn btn-secondary btn-sm"><i data-lucide="file"></i> KTP</a>` : ''}
                         ${p.npwp_url ? `<a href="${p.npwp_url}" target="_blank" class="btn btn-secondary btn-sm"><i data-lucide="file"></i> NPWP</a>` : ''}
+                        ${p.ttd_image_url ? `<a href="${Fmt.url(p.ttd_image_url)}" target="_blank" class="btn btn-secondary btn-sm" title="Lihat Tanda Tangan"><i data-lucide="signature"></i> TTD</a>` : ''}
                     </div>
                 </div>
             </div>

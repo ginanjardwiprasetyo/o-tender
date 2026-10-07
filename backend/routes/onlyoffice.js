@@ -7,12 +7,75 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { exec } = require('child_process');
 const db = require('../config/db');
-const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, BorderStyle, Table, TableRow, TableCell, WidthType, VerticalAlign } = require('docx');
+const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, BorderStyle, Table, TableRow, TableCell, WidthType, VerticalAlign, } = require('docx');
 
 // ─── helpers ────────────────────────────────────────────
 function onlyofficeUrl() {
   return (process.env.ONLYOFFICE_URL || 'http://localhost:8000').replace(/\/$/, '');
+}
+
+// HMAC untuk file/callback (DocumentServer tanpa session cookie)
+const OO_SECRET = process.env.AUTH_SECRET || crypto.createHash('sha256').update('otender-session-v1').digest('hex');
+function ooSig(id) {
+  return crypto.createHmac('sha256', OO_SECRET).update('oo:' + id).digest('hex').slice(0, 32);
+}
+function requireOoSig(req, res) {
+  if (req.query.t === ooSig(req.params.id)) return true;
+  res.status(403).send('Bad token');
+  return false;
+}
+
+// auto-start DocumentServer lokal bila mati (dev: localhost:8000)
+let _nextTry = 0;
+function sh(cmd) {
+  return new Promise((resolve) => {
+    exec(cmd, { cwd: path.join(__dirname, '..', '..'), timeout: 180000 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, stdout: String(stdout || ''), stderr: String(stderr || ''), err });
+    });
+  });
+}
+async function ensureOnlyOffice() {
+  const oo = onlyofficeUrl();
+  if (!/localhost|127\.0\.0\.1/.test(oo)) return true; // docker network: jangan coba start dari sini
+  try {
+    const r = await fetch(oo + '/healthcheck', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) return true;
+  } catch {}
+  if (Date.now() < _nextTry) return false;
+  _nextTry = Date.now() + 90000; // cooldown: jangan spam docker tiap health poll
+  (async () => {
+    // 1) daemon? (Colima)
+    if (!(await sh('docker info')).ok) {
+      console.log('[OnlyOffice] Docker daemon mati → colima start...');
+      const st = await sh('colima start');
+      if (!st.ok) {
+        console.error('[OnlyOffice] colima start gagal:', (st.stderr || st.err.message || '').slice(0, 300));
+        return;
+      }
+    }
+    // 2) compose plugin? kalau ada pakai itu
+    if ((await sh('docker compose version')).ok) {
+      const up = await sh('docker compose up -d onlyoffice');
+      if (up.ok) return console.log('[OnlyOffice] docker compose up -d onlyoffice ✓ (tunggu ~20-30 detik)');
+      console.error('[OnlyOffice] compose up gagal:', up.stderr.slice(0, 300));
+    }
+    // 3) fallback: docker run (tanpa plugin compose) — samakan dengan docker-compose.yml
+    const jwt = String(process.env.ONLYOFFICE_JWT_SECRET || 'mysecret').replace(/'/g, "");
+    const exists = (await sh('docker ps -a --filter name=^onlyoffice$ --format {{.Names}}')).stdout.includes('onlyoffice');
+    const cmd = exists
+      ? 'docker start onlyoffice'
+      : `docker run -d --name onlyoffice --restart unless-stopped -p 8000:80 ` +
+        `-e JWT_ENABLED=false -e JWT_SECRET='${jwt}' -e WOPI_ENABLED=false ` +
+        `-v onlyoffice_data:/var/lib/onlyoffice -v onlyoffice_logs:/var/log/onlyoffice ` +
+        `onlyoffice/documentserver:8.2`;
+    const run = await sh(cmd);
+    if (run.ok) console.log('[OnlyOffice] container onlyoffice dijalankan ✓ (tunggu ~20-30 detik)');
+    else console.error('[OnlyOffice] docker run gagal:', (run.stderr || run.err.message || '').slice(0, 300));
+  })();
+  return false;
 }
 function appPublicUrl(req) {
   if (process.env.APP_PUBLIC_URL) return process.env.APP_PUBLIC_URL.replace(/\/$/, '');
@@ -190,13 +253,14 @@ async function docxToHtml(buffer) {
 // ─── GET /api/onlyoffice/config/:id ─────────────────────
 router.get('/config/:id', async (req, res) => {
   try {
+    ensureOnlyOffice(); // fire-and-forget
     const { id } = req.params;
     const { rows } = await db.query('SELECT * FROM templates WHERE id=$1', [id]);
     if (!rows.length) return res.status(404).json({ success: false, error: 'Template tidak ditemukan' });
     const tpl = rows[0];
     const key = `${id}-${new Date(tpl.updated_at || Date.now()).getTime()}`;
-    const docUrl = `${appPublicUrl(req)}/api/onlyoffice/file/${id}?key=${key}`;
-    const callbackUrl = `${appPublicUrl(req)}/api/onlyoffice/callback/${id}`;
+    const docUrl = `${appPublicUrl(req)}/api/onlyoffice/file/${id}?key=${key}&t=${ooSig(id)}`;
+    const callbackUrl = `${appPublicUrl(req)}/api/onlyoffice/callback/${id}?t=${ooSig(id)}`;
     const ooUrl = onlyofficeUrl();
     res.json({
       success: true,
@@ -231,6 +295,7 @@ router.get('/config/:id', async (req, res) => {
 // ─── GET /api/onlyoffice/file/:id ───────────────────────
 router.get('/file/:id', async (req, res) => {
   try {
+    if (!requireOoSig(req, res)) return;
     const { id } = req.params;
     const { rows } = await db.query('SELECT * FROM templates WHERE id=$1', [id]);
     if (!rows.length) return res.status(404).send('Not found');
@@ -248,6 +313,7 @@ router.get('/file/:id', async (req, res) => {
 // ─── POST /api/onlyoffice/callback/:id ──────────────────
 router.post('/callback/:id', async (req, res) => {
   try {
+    if (!requireOoSig(req, res)) return;
     const { id } = req.params;
     const { status, url, key } = req.body || {};
     if ((status === 2 || status === 6) && url) {
@@ -284,8 +350,12 @@ router.get('/health', async (req, res) => {
   try {
     const oo = onlyofficeUrl();
     const r = await fetch(oo + '/healthcheck', { signal: AbortSignal.timeout(3000) }).catch(()=>null);
-    res.json({ success: true, documentServerUrl: oo, reachable: !!(r && r.ok), status: r ? r.status : 'unreachable' });
+    const reachable = !!(r && r.ok);
+    let starting = false;
+    if (!reachable) starting = !(await ensureOnlyOffice());
+    res.json({ success: true, documentServerUrl: oo, reachable, starting, status: r ? r.status : 'unreachable' });
   } catch (e) { res.json({ success: false, error: e.message }); }
 });
 
 module.exports = router;
+module.exports.ensureOnlyOffice = ensureOnlyOffice;

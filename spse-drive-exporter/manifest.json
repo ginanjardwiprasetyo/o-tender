@@ -1,0 +1,60 @@
+{
+    "manifest_version": 3,
+    "name": "SPSE Exporter to Google Drive",
+    "version": "1.6",
+    "description": "Mengunduh otomatis semua berkas [Download] di SPSE dan mengunggahnya ke Google Drive.",
+    "web_accessible_resources": [
+        {
+            "resources": ["icons/*"],
+            "matches": ["https://spse.inaproc.id/*"]
+        }
+    ],
+    "permissions": [
+        "identity",
+        "activeTab",
+        "scripting",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://spse.inaproc.id/*",
+        "https://storage.googleapis.com/*",
+        "https://*.googleusercontent.com/*",
+        "https://www.googleapis.com/*"
+    ],
+    "oauth2": {
+        "client_id": "1033921094847-gl4et2mlg2l80v0oisfqquic52qc5u1s.apps.googleusercontent.com",
+        "scopes": [
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/drive.readonly"
+        ]
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://spse.inaproc.id/*/dokumen/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "SPSE Exporter to Google Drive",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "32": "icons/icon32.png",
+            "48": "icons/icon48.png"
+        }
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    }
+}

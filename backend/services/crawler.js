@@ -3,6 +3,14 @@
  * Crawls LKPP INAPROC API and stores data in Supabase
  */
 const axios = require('axios');
+const https = require('https');
+const crypto = require('crypto');
+// Allow legacy TLS (TLS 1.0/1.1 and weak ciphers) for outdated LPSE sites like sukoharjokab
+axios.defaults.httpsAgent = new https.Agent({
+    rejectUnauthorized: false,
+    secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+    ciphers: 'DEFAULT:@SECLEVEL=0'
+});
 const db = require('../config/db');
 const { getSlug, getBaseUrl, getLPSEList } = require('../utils/lpse-mapper');
 const { exec } = require('child_process');
@@ -57,7 +65,6 @@ async function runScraper(type, url, yearStr) {
         const slug = new URL(url).pathname.split('/')[1];
         const jalur = [];
         if (process.env.FLARESOLVERR_URL) jalur.push(['FLARE', () => flareListScraper(url)]);
-        if (process.env.SCRAPER_API_KEY) jalur.push(['ANT', () => antListScraper(url)]);
         jalur.push(['HTTP', () => httpListScraper(url)]);
         for (const [nama, fn] of jalur) {
             try {
@@ -193,7 +200,7 @@ async function flareListScraper(listUrl) {
     const solution = await flareSolverrGet(listUrl);
     if (!solution || !solution.response) return null;
     const html = solution.response;
-    if (antLooksBlocked(html)) return null;
+    if (looksBlocked(html)) return null;
 
     const $ = cheerio.load(html);
     const out = [];
@@ -256,70 +263,10 @@ async function flareListScraper(listUrl) {
     return out.length ? out : null;
 }
 
-// ============================================================
-// ScrapingAnt — transport untuk IP datacenter
-// ============================================================
-async function antGet(url, { browser = true, snippet = null, timeout = 90000 } = {}) {
-    const key = process.env.SCRAPER_API_KEY;
-    if (!key) throw new Error('SCRAPER_API_KEY belum di-set');
-    const params = {
-        url,
-        browser: 'true',
-        proxy_type: 'residential',
-        proxy_country: 'ID'
-    };
-    if (!browser) delete params.browser;
-    if (snippet) params.js_snippet = snippet;
-    const r = await axios.get('https://api.scrapingant.com/v2/general', {
-        params, timeout, maxRedirects: 0, validateStatus: s => s < 500,
-        headers: { 'x-api-key': key, Accept: 'text/html,application/json,*/*' },
-    });
-    const body = typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
-    if (r.status !== 200) throw new Error(`Ant HTTP ${r.status}: ${body.slice(0, 160)}`);
-    return body;
-}
-
-function antLooksBlocked(html) {
+function looksBlocked(html) {
     const txt = String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
     return /just a moment|verifikasi singkat|akses ditolak|anda tidak diizinkan/i.test(txt);
 }
-
-/** Daftar tender via ScrapingAnt. Return array hasil atau null. */
-async function antListScraper(listUrl) {
-    const html = await antGet(listUrl, { browser: true, snippet: ANT_LIST_SNIPPET });
-    if (antLooksBlocked(html)) return null;
-    return parseAntListHtml(html);
-}
-
-/** Parse HTML hasil render ScrapingAnt → array hasil (dipakai test juga). */
-function parseAntListHtml(html) {
-    const $ = cheerio.load(html);
-    const raw = $('#__ant').text().trim();
-    if (raw) {
-        try {
-            const rows = JSON.parse(raw);
-            if (Array.isArray(rows) && rows.length && !String(rows[0]).startsWith('ERR:')) {
-                const mapped = mapListRows(rows);
-                if (mapped.length) return mapped;
-            }
-        } catch {}
-    }
-    // Fallback: parsing DOM (kolom tersembunyi tidak ada → pagu 0)
-    const out = [];
-    $('table.dataTable tbody tr').each((i, tr) => {
-        const c = $(tr).find('td').map((j, td) => $(td).text().replace(/\s+/g, ' ').trim()).get();
-        if (c.length >= 5 && /^[\d]+$/.test(c[0])) {
-            out.push({
-                'Kode Tender': c[0], 'kode_tender': c[0], 'Nama Paket': c[1] || '',
-                'Instansi': c[2] || '', 'Pagu': 0, 'HPS': parseCurrency(c[4]),
-                'Status_Tender': c[3] || '', 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
-                'SBU': '-', 'Batas Upload': '-',
-            });
-        }
-    });
-    return out.length ? out : null;
-}
-
 /** Array 16 kolom (format dt/lelang) → bentuk hasil yang dipakai crawler. */
 function mapListRows(rows) {
     const results = [];
@@ -426,28 +373,40 @@ async function httpDetailScraper(pengumumanUrl) {
         return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
     }
 
-    // GET satu halaman: axios bila tidak ada API key, ScrapingAnt bila ada
-    // (IP GitHub kena 403 Cloudflare). Ant non-browser dulu (1 kredit),
-    // diulang dengan browser bila kena challenge.
-    const useAnt = !!process.env.SCRAPER_API_KEY;
+    // GET satu halaman: axios bila tidak ada FlareSolverr
+    // (IP GitHub kena 403 Cloudflare). FlareSolverr akan di-fallback bila HTTP gagal.
+    const useFlare = !!process.env.FLARESOLVERR_URL;
     async function getPage(url, referer) {
-        if (!useAnt) {
-            const r = await axios.get(url, {
-                timeout: 20000,
-                headers: { ...headers, Cookie: cookieHeader(), Referer: referer },
-                maxRedirects: 5,
-            });
-            extractCookies(r.headers['set-cookie']);
-            return r.data;
+        if (!useFlare) {
+            try {
+                const r = await axios.get(url, {
+                    timeout: 20000,
+                    headers: { ...headers, Cookie: cookieHeader(), Referer: referer },
+                    maxRedirects: 5,
+                });
+                extractCookies(r.headers['set-cookie']);
+                return r.data;
+            } catch (e) {
+                console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
+                return null;
+            }
         }
-        let html = await antGet(url, { browser: false });
-        if (antLooksBlocked(html)) html = await antGet(url, { browser: true });
-        if (antLooksBlocked(html)) return null;
+        let html = null;
+        try {
+            const solution = await flareSolverrGet(url);
+            if (solution && solution.response) {
+                solution.cookies.forEach(c => { cookies[c.name] = c.value; });
+                html = solution.response;
+            }
+        } catch (e) {
+            console.warn(`[Crawler] FlareSolverr detail gagal (${url}):`, e.message);
+        }
+        if (html && looksBlocked(html)) return null;
         return html;
     }
 
-    // Visit homepage first to get session cookies (dilewati via Ant — cookie tidak lintas request)
-    if (!useAnt) {
+    // Visit homepage first to get session cookies (dilewati via Flare — cookie tidak lintas request)
+    if (!useFlare) {
         try {
             const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
             extractCookies(homeResp.headers['set-cookie']);
@@ -462,7 +421,7 @@ async function httpDetailScraper(pengumumanUrl) {
 
     // Check for WAF block
     const bodyText = $('body').text().toLowerCase();
-    if (bodyText.includes('akses ditolak') || bodyText.includes('anda tidak diizinkan membuka') || antLooksBlocked(html)) {
+    if (bodyText.includes('akses ditolak') || bodyText.includes('anda tidak diizinkan membuka') || looksBlocked(html)) {
         return null;
     }
 
@@ -1118,5 +1077,4 @@ class CrawlerService {
 const instance = new CrawlerService();
 instance.httpDetailScraper = httpDetailScraper;
 instance.httpListScraper = httpListScraper;
-instance.parseAntListHtml = parseAntListHtml;
 module.exports = instance;

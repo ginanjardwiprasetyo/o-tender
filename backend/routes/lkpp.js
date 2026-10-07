@@ -49,7 +49,7 @@ router.get('/tenders', async (req, res) => {
         
         // Filter for construction tenders only (exclude consultancy)
         // Trust the LKPP API for year filtering — it already returns the right year
-        const filtered = data.filter(t => {
+        const isKonstruksi = (t) => {
             const possibleCats = [
                 t['Kategori Pekerjaan'], t['kategori_pekerjaan'],
                 t['Kategori'], t['kategori'],
@@ -57,7 +57,7 @@ router.get('/tenders', async (req, res) => {
             ].filter(v => v !== undefined && v !== null);
             const kategori = possibleCats.join(' ').toLowerCase();
             const nama = String(t['Nama Paket'] || t.nama_paket || t.nama || '').toLowerCase();
-            const isKonstruksi = kategori.includes('konstruksi') || 
+            const adaKonstruksi = kategori.includes('konstruksi') || 
                                  nama.includes('pembangunan') || 
                                  nama.includes('rehabilitasi') ||
                                  nama.includes('renovasi') ||
@@ -70,8 +70,9 @@ router.get('/tenders', async (req, res) => {
                                  nama.includes('drainase') ||
                                  nama.includes('air bersih');
             const isKonsultansi = kategori.includes('konsultansi');
-            return isKonstruksi && !isKonsultansi;
-        });
+            return adaKonstruksi && !isKonsultansi;
+        };
+        const filtered = data.filter(isKonstruksi);
         
         // Resolve slug: prefer lpse_name param, then data, then empty fallback
         let lpseName = lpse_name || '';
@@ -82,19 +83,39 @@ router.get('/tenders', async (req, res) => {
 
         // If LKPP API has few/no results, always try scraping SPSE as fallback
         let finalResults = [...filtered];
-        if (filtered.length === 0) {
+        let source = 'API';
+        if (finalResults.length === 0) {
             console.log(`[LKPP] API returned no construction tenders for ${kd_lpse} (${lpseName}). Trying scraper fallback...`);
             try {
                 const scraped = await scrapeTenderList(slugGuess, tahun);
                 if (scraped && scraped.length > 0) {
                     console.log(`[LKPP] Scraper fallback found ${scraped.length} tenders for ${slugGuess}`);
                     finalResults = scraped;
+                    source = 'Scraper';
                 } else {
                     console.log(`[LKPP] Scraper fallback also returned no results for ${slugGuess}`);
                 }
             } catch (scrapeErr) {
                 console.warn(`[LKPP] Scraper fallback failed for ${slugGuess}:`, scrapeErr.message);
                 // Continue with empty results from API
+            }
+        }
+
+        // Fallback terakhir: data crawl tersimpan (list JSON SPSE diblokir WAF utk HTTP)
+        if (finalResults.length === 0) {
+            try {
+                const { rows: dbRows } = await db.query(
+                    `SELECT * FROM crawled_tenders WHERE kd_lpse = $1 AND tahun_anggaran = $2
+                     ORDER BY crawled_at DESC LIMIT 300`,
+                    [parseInt(kd_lpse), parseInt(tahun)]
+                );
+                finalResults = dbRows.filter(isKonstruksi);
+                if (finalResults.length > 0) {
+                    source = 'Database (Data Crawl)';
+                    console.log(`[LKPP] DB fallback found ${finalResults.length} crawled tenders for kd_lpse=${kd_lpse}`);
+                }
+            } catch (dbErr) {
+                console.warn(`[LKPP] DB fallback failed:`, dbErr.message);
             }
         }
 
@@ -131,10 +152,10 @@ router.get('/tenders', async (req, res) => {
         res.json({ 
             success: true, 
             data: finalResults,
-            total_raw: data.length,
+            total_raw: Math.max(data.length, finalResults.length),
             total_filtered: finalResults.length,
             slug: slugGuess,
-            source: finalResults.length > filtered.length ? 'API + Scraper' : 'API'
+            source
         });
     } catch (err) {
         console.error('[LKPP Error]', err.message);
