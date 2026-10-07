@@ -64,8 +64,8 @@ async function runScraper(type, url, yearStr) {
     if (type === 'list') {
         const slug = new URL(url).pathname.split('/')[1];
         const jalur = [];
-        if (process.env.FLARESOLVERR_URL) jalur.push(['FLARE', () => flareListScraper(url)]);
         jalur.push(['HTTP', () => httpListScraper(url)]);
+        if (process.env.FLARESOLVERR_URL) jalur.push(['FLARE', () => flareListScraper(url)]);
         for (const [nama, fn] of jalur) {
             try {
                 const rows = await fn();
@@ -79,7 +79,7 @@ async function runScraper(type, url, yearStr) {
                 listDiag.push(`${slug}:${nama}:${e.response ? 'HTTP' + e.response.status : (e.code || e.message).slice(0, 40)}`);
             }
         }
-        console.warn(`[Crawler] List HTTP/Ant gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright`);
+        console.warn(`[Crawler] List HTTP/Flare gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright`);
     }
 
     const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
@@ -373,46 +373,47 @@ async function httpDetailScraper(pengumumanUrl) {
         return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
     }
 
-    // GET satu halaman: axios bila tidak ada FlareSolverr
-    // (IP GitHub kena 403 Cloudflare). FlareSolverr akan di-fallback bila HTTP gagal.
     const useFlare = !!process.env.FLARESOLVERR_URL;
     async function getPage(url, referer) {
-        if (!useFlare) {
-            try {
-                const r = await axios.get(url, {
-                    timeout: 20000,
-                    headers: { ...headers, Cookie: cookieHeader(), Referer: referer },
-                    maxRedirects: 5,
-                });
-                extractCookies(r.headers['set-cookie']);
-                return r.data;
-            } catch (e) {
-                console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
-                return null;
-            }
-        }
         let html = null;
         try {
-            const solution = await flareSolverrGet(url);
-            if (solution && solution.response) {
-                solution.cookies.forEach(c => { cookies[c.name] = c.value; });
-                html = solution.response;
-            }
+            const r = await axios.get(url, {
+                timeout: 20000,
+                headers: { ...headers, Cookie: cookieHeader(), Referer: referer },
+                maxRedirects: 5,
+            });
+            extractCookies(r.headers['set-cookie']);
+            html = r.data;
         } catch (e) {
-            console.warn(`[Crawler] FlareSolverr detail gagal (${url}):`, e.message);
+            console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
         }
+
+        if (html && !looksBlocked(html)) {
+            return html;
+        }
+
+        if (useFlare) {
+            try {
+                const solution = await flareSolverrGet(url);
+                if (solution && solution.response) {
+                    solution.cookies.forEach(c => { cookies[c.name] = c.value; });
+                    html = solution.response;
+                }
+            } catch (e) {
+                console.warn(`[Crawler] FlareSolverr detail gagal (${url}):`, e.message);
+            }
+        }
+        
         if (html && looksBlocked(html)) return null;
         return html;
     }
 
-    // Visit homepage first to get session cookies (dilewati via Flare — cookie tidak lintas request)
-    if (!useFlare) {
-        try {
-            const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
-            extractCookies(homeResp.headers['set-cookie']);
-        } catch {}
-        await new Promise(r => setTimeout(r, 500));
-    }
+    // Visit homepage first to get session cookies
+    try {
+        const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
+        extractCookies(homeResp.headers['set-cookie']);
+    } catch {}
+    await new Promise(r => setTimeout(r, 500));
 
     // Fetch pengumuman page
     const html = await getPage(pengumumanUrl, homeUrl);
