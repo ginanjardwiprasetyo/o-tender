@@ -187,11 +187,33 @@ async function scrape() {
             const urlObj = new URL(url);
             const homeUrl = urlObj.origin + '/' + urlObj.pathname.split('/')[1] + '/lelang';
             await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-            await page.waitForTimeout(2000);
-            
+
+            // Tunggu Cloudflare challenge selesai (maks 20 detik)
+            for (let i = 0; i < 20; i++) {
+                await page.waitForTimeout(1000);
+                const t = await page.title().catch(() => '');
+                if (!/just a moment|verifikasi singkat/i.test(t)) break;
+            }
+
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000, referer: homeUrl });
-            
-            const pageText = await page.innerText('body');
+
+            // Tunggu lagi kalau masih challenge setelah pindah halaman
+            for (let i = 0; i < 15; i++) {
+                const t = await page.title().catch(() => '');
+                if (!/just a moment|verifikasi singkat/i.test(t)) break;
+                await page.waitForTimeout(1000);
+            }
+
+            const pageTitle = await page.title().catch(() => '');
+            const pageText = await page.innerText('body').catch(() => '');
+
+            // Deteksi Cloudflare challenge / akses diblokir
+            if (/just a moment|verifikasi singkat/i.test(pageTitle) ||
+                /just a moment|verifikasi singkat/i.test(pageText.slice(0, 500))) {
+                console.log(JSON.stringify({ error: 'Cloudflare_Challenge: IP datacenter diblokir' }));
+                await browser.close();
+                return;
+            }
             if (pageText.toLowerCase().includes('akses ditolak') || pageText.toLowerCase().includes('anda tidak diizinkan membuka')) {
                 console.log(JSON.stringify({ error: 'Akses Ditolak (Diblokir WAF SPSE)' }));
                 await browser.close();

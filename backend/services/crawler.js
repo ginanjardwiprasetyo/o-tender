@@ -1014,7 +1014,13 @@ class CrawlerService {
                             if (freeMemMb >= 100) {
                                 this.log(`Playwright fallback for ${kode} (${freeMemMb}MB free)...`);
                                 await tryFreeMemory();
-                                res = await runScraper('detail', pengumumanUrl, String(year));
+                                const pwRes = await runScraper('detail', pengumumanUrl, String(year));
+                                // Abaikan jika Playwright mengembalikan error (Cloudflare / WAF)
+                                if (pwRes && !pwRes.error) {
+                                    res = pwRes;
+                                } else if (pwRes && pwRes.error) {
+                                    this.log(`PW blocked ${kode}: ${pwRes.error}`);
+                                }
                             } else {
                                 this.log(`Skip ${kode}: HTTP failed, memory too low (${freeMemMb}MB) for Playwright`);
                             }
@@ -1042,7 +1048,8 @@ class CrawlerService {
                                     this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} Deadline=${normDeadline || '-'}`);
                                 }
                             } else {
-                                this.log(`Data empty ${kode}: SBU="${res.sbu}" Pagu="${res.pagu}"`);
+                                // Semua metode berhasil akses tapi data benar-benar kosong — skip tanpa log error
+                                this.log(`Detail ${kode}: tidak ada SBU/Pagu/Deadline di halaman, skip.`);
                             }
 
                             if (this.status.newTendersMap && this.status.newTendersMap[kode]) {
