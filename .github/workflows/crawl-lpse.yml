@@ -1,10 +1,20 @@
 # Crawl LPSE otomatis — runner GitHub (7GB RAM), gratis karena repo public.
-# Cloudflare memblokir IP datacenter, jadi bila runner GitHub selalu kena challenge
-# "Just a moment...", set repo variable CRAWLER_RUNNER = "self-hosted" → job jalan
-# di mesin sendiri (IP rumah, terbukti lolos). Tanpa variabel tetap ubuntu-24.04.
-# Render tetap DISABLE_CRAWLER=true (hanya SIRUP + notifikasi di sana).
+# Cloudflare memblokir IP datacenter, jadi semua traffic di-route lewat Tailscale Exit Node
+# (komputer/VPS milik sendiri) agar IP yang terlihat adalah IP residential/non-datacenter.
+#
+# === SETUP TAILSCALE EXIT NODE ===
+# 1. Di mesin exit node (komputer/VPS kamu), jalankan:
+#      sudo tailscale up --advertise-exit-node
+# 2. Di Tailscale Admin Console (https://login.tailscale.com/admin/machines),
+#    klik mesin -> Edit route settings -> aktifkan "Use as exit node"
+# 3. Buat Auth Key: https://login.tailscale.com/admin/settings/keys
+#    -> Generate auth key (Ephemeral + Reusable) -> salin hasilnya
+# 4. Di repo GitHub -> Settings -> Secrets -> New repository secret:
+#      Nama: TAILSCALE_AUTHKEY  | Nilai: auth key dari langkah 3
+# 5. Di repo GitHub -> Settings -> Variables -> New repository variable:
+#      Nama: TAILSCALE_EXIT_NODE | Nilai: hostname Tailscale mesin kamu (cek di admin console)
+#
 # Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
-# Menit bukan 00 karena antrian GitHub paling padat di awal jam (telat berjam-jam).
 name: Crawl LPSE
 
 on:
@@ -12,12 +22,8 @@ on:
     - cron: '13 23 * * *' # 06:13 WIB
     - cron: '7 9 * * *'   # 16:07 WIB
   workflow_dispatch: {}
-  # TEMP: trigger langsung saat file ini berubah (uji headed Chrome)
-  push:
-    branches: [main]
-    paths: ['.github/workflows/crawl-lpse.yml', 'backend/services/crawler.js']
 
-# Satu run saja — trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
+# Satu run saja - trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
 concurrency:
   group: crawl-lpse
   cancel-in-progress: true
@@ -65,14 +71,14 @@ jobs:
         working-directory: backend
         run: npx playwright install --with-deps chrome
 
-      # Challenge Cloudflare "Just a moment..." jarang lolos di mode headless —
+      # Challenge Cloudflare "Just a moment..." jarang lolos di mode headless -
       # jalankan Chrome non-headless lewat Xvfb (Linux saja).
       - name: Install Xvfb (browser non-headless)
         if: runner.os == 'Linux'
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
 
-      # FlareSolverr: Proxy solver khusus Cloudflare untuk meloloskan challenge "Just a moment..." di runner GitHub
+      # FlareSolverr: solver Cloudflare (berjalan lokal, pakai IP exit node via Tailscale)
       - name: Start FlareSolverr
         if: runner.os == 'Linux'
         continue-on-error: true
@@ -81,22 +87,37 @@ jobs:
             --name=flaresolverr \
             -p 8191:8191 \
             -e LOG_LEVEL=info \
-            --restart unless-stopped \
             ghcr.io/flaresolverr/flaresolverr:latest
 
           echo "Waiting for FlareSolverr to be ready..."
           for i in {1..30}; do
-            if curl -s http://localhost:8191/ >/dev/null 2>&1; then
+            if curl -s http://localhost:8191/ > /dev/null 2>&1; then
               echo "FlareSolverr ready on http://localhost:8191"
               break
             fi
             sleep 1
           done
 
+      # Tailscale: route semua traffic keluar lewat exit node (IP residential/VPS) agar lolos Cloudflare
+      # Bila TAILSCALE_EXIT_NODE belum di-set, step ini di-skip dan traffic tetap pakai IP GitHub.
+      - name: Connect Tailscale Exit Node
+        if: runner.os == 'Linux' && vars.TAILSCALE_EXIT_NODE != ''
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          args: --exit-node=${{ vars.TAILSCALE_EXIT_NODE }} --exit-node-allow-lan-access=true --accept-routes
+
+      - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
+        if: runner.os == 'Linux'
+        run: |
+          echo -n "IP publik runner: "
+          curl -s https://api.ipify.org
+          echo ""
+
       - name: Crawl LPSE
         working-directory: backend
         run: |
-          if command -v xvfb-run >/dev/null 2>&1; then
+          if command -v xvfb-run > /dev/null 2>&1; then
             xvfb-run -a node scripts/crawl-now.js
           else
             node scripts/crawl-now.js
