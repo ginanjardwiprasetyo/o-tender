@@ -43,6 +43,10 @@ async function tryFreeMemory() {
     }
 }
 
+// Ringkasan jalur list per LPSE — ditulis ke crawl_logs.error bila 0 tender,
+// supaya alasan kegagalan dari GitHub Actions kelihatan tanpa buka log Actions.
+const listDiag = [];
+
 async function runScraper(type, url, yearStr) {
     // Try to free memory first
     await tryFreeMemory();
@@ -50,22 +54,28 @@ async function runScraper(type, url, yearStr) {
     // Jalur list HTTP dulu (tanpa browser) — cuma butuh cookie + token CSRF.
     // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
     if (type === 'list') {
+        const slug = new URL(url).pathname.split('/')[1];
         try {
             const rows = await httpListScraper(url);
             if (rows && rows.length) {
-                console.log(`[Crawler] List via HTTP OK: ${rows.length} baris (${new URL(url).pathname.split('/')[1]})`);
+                listDiag.push(`${slug}:HTTP:${rows.length}`);
+                console.log(`[Crawler] List via HTTP OK: ${rows.length} baris (${slug})`);
                 return rows;
             }
+            listDiag.push(`${slug}:HTTP:${rows === null ? 'challenge/no-token' : 'kosong'}`);
             console.warn(`[Crawler] List HTTP ${rows === null ? 'gagal/challenge' : 'kosong'} → fallback Playwright`);
         } catch (e) {
+            listDiag.push(`${slug}:HTTP:${e.response ? 'HTTP' + e.response.status : e.code || e.message}`);
             console.warn(`[Crawler] List HTTP error: ${e.message} → fallback Playwright`);
         }
     }
 
+    const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
     const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
     if (freeMemMb < 70) {
         const warnMsg = `Memory too low (${freeMemMb}MB free), skipping Playwright ${type}`;
         console.warn(`[Crawler] ${warnMsg}`);
+        if (type === 'list') listDiag.push(`${slug}:PW:skip-lowmem-${freeMemMb}MB`);
         return type === 'list' ? [] : null;
     }
     const cmd = `node --max-old-space-size=192 --expose-gc ${path.join(__dirname, 'playwright_scraper.js')} --type ${type} --url "${url}" --year ${yearStr}`;
@@ -75,10 +85,14 @@ async function runScraper(type, url, yearStr) {
     try {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
         if (lines.length > 0) {
-            return JSON.parse(lines[lines.length - 1]);
+            const parsed = JSON.parse(lines[lines.length - 1]);
+            if (type === 'list') listDiag.push(`${slug}:PW:${Array.isArray(parsed) ? parsed.length : 'bad'}`);
+            return parsed;
         }
+        if (type === 'list') listDiag.push(`${slug}:PW:empty-output`);
         return type === 'list' ? [] : null;
     } catch(e) {
+        if (type === 'list') listDiag.push(`${slug}:PW:parse-error`);
         throw new Error("Failed to parse scraper output");
     }
 }
@@ -428,6 +442,7 @@ class CrawlerService {
             logs: []
         };
         this.shouldStop = false;
+        listDiag.length = 0;
         this.log('Memulai proses crawl seluruh LPSE...');
 
         try {
@@ -502,8 +517,9 @@ class CrawlerService {
             this.log(`Crawl selesai! Total Tender: ${this.status.totalTenders}, Konstruksi: ${this.status.totalKonstruksi}`);
 
             await db.query(
-                `UPDATE crawl_logs SET finished_at = NOW(), total_lpse = $1, total_tenders = $2, total_konstruksi = $3, status = 'success' WHERE id = $4`,
-                [this.status.totalLpse, this.status.totalTenders, this.status.totalKonstruksi, this.status.logId]
+                `UPDATE crawl_logs SET finished_at = NOW(), total_lpse = $1, total_tenders = $2, total_konstruksi = $3, status = 'success', error = $5 WHERE id = $4`,
+                [this.status.totalLpse, this.status.totalTenders, this.status.totalKonstruksi, this.status.logId,
+                 this.status.totalTenders ? null : listDiag.slice(0, 12).join(' | ').slice(0, 900) || null]
             );
 
         } catch (error) {
