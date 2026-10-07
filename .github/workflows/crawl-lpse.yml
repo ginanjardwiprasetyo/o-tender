@@ -1,4 +1,7 @@
 # Crawl LPSE otomatis — runner GitHub (7GB RAM), gratis karena repo public.
+# Cloudflare memblokir IP datacenter, jadi bila runner GitHub selalu kena challenge
+# "Just a moment...", set repo variable CRAWLER_RUNNER = "self-hosted" → job jalan
+# di mesin sendiri (IP rumah, terbukti lolos). Tanpa variabel tetap ubuntu-24.04.
 # Render tetap DISABLE_CRAWLER=true (hanya SIRUP + notifikasi di sana).
 # Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
 # Menit bukan 00 karena antrian GitHub paling padat di awal jam (telat berjam-jam).
@@ -20,7 +23,7 @@ permissions:
 
 jobs:
   crawl:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CRAWLER_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -38,15 +41,40 @@ jobs:
       - name: Cache Playwright browser
         uses: actions/cache@v5
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('backend/package-lock.json') }}
+          path: ${{ runner.os == 'macOS' && '~/Library/Caches/ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
 
-      - name: Install Chromium (Playwright)
+      - name: Install Chromium (Linux)
+        if: runner.os == 'Linux'
         working-directory: backend
         run: npx playwright install --with-deps chromium
 
+      - name: Install Chromium (macOS)
+        if: runner.os == 'macOS'
+        working-directory: backend
+        run: npx playwright install chromium
+
+      # Chrome asli dipakai channel:'chrome' agar sec-ch-ua tidak bocor "HeadlessChrome".
+      - name: Install Google Chrome (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        working-directory: backend
+        run: npx playwright install --with-deps chrome
+
+      # Challenge Cloudflare "Just a moment..." jarang lolos di mode headless —
+      # jalankan Chrome non-headless lewat Xvfb (Linux saja).
+      - name: Install Xvfb (browser non-headless)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+
       - name: Crawl LPSE
         working-directory: backend
-        run: node scripts/crawl-now.js
+        run: |
+          if command -v xvfb-run >/dev/null 2>&1; then
+            xvfb-run -a node scripts/crawl-now.js
+          else
+            node scripts/crawl-now.js
+          fi
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

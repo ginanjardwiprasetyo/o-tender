@@ -52,7 +52,6 @@ function extractSbu(text) {
 
 async function scrape() {
     const launchOpts = {
-        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -73,15 +72,24 @@ async function scrape() {
         ]
     };
     // Chrome asli (ada di runner GitHub & mesin lokal) tidak membocorkan "HeadlessChrome"
-    // di sec-ch-ua — sidik jari itu yang bikin WAF SPSE balas 403 "Akses Ditolak".
-    let browser;
+    // di sec-ch-ua. Bila ada DISPLAY (xvfb di Actions) jalan non-headless — challenge
+    // Cloudflare "Just a moment..." jauh lebih sering lolos tanpa mode headless.
+    let browser = null;
     let pakaiChrome = false;
-    try {
-        browser = await chromium.launch({ ...launchOpts, channel: 'chrome' });
-        pakaiChrome = true;
-    } catch {
-        browser = await chromium.launch(launchOpts);
+    let headed = false;
+    for (const opt of [
+        { channel: 'chrome', headless: !process.env.DISPLAY },
+        { channel: 'chrome', headless: true },
+        { headless: true }
+    ]) {
+        try {
+            browser = await chromium.launch({ ...launchOpts, ...opt });
+            pakaiChrome = !!opt.channel;
+            headed = !opt.headless;
+            break;
+        } catch {}
     }
+    if (!browser) throw new Error('Gagal menjalankan browser Chromium/Chrome');
 
     // Tanpa userAgent palsu: UA & Client Hints harus konsisten dengan browser yang dipakai.
     const context = await browser.newContext();
@@ -161,13 +169,13 @@ async function scrape() {
                     });
                 }
                 if (!results.length) {
-                    console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} dt=${dtInfo.join(',')} rows=${interceptData.length} (semua baris < 11 kolom)`);
+                    console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} headed=${headed} dt=${dtInfo.join(',')} rows=${interceptData.length} (semua baris < 11 kolom)`);
                 }
                 console.log(JSON.stringify(results));
                 await browser.close();
                 return;
             } else {
-                console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} dt=${dtInfo.join(',') || 'none'} rows=${interceptData ? interceptData.length : 'n/a'} page="${(await pageHead()).slice(0, 220)}"`);
+                console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} headed=${headed} dt=${dtInfo.join(',') || 'none'} rows=${interceptData ? interceptData.length : 'n/a'} page="${(await pageHead()).slice(0, 220)}"`);
                 console.log(JSON.stringify([]));
                 await browser.close();
                 return;
