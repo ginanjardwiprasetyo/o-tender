@@ -12,6 +12,10 @@ on:
     - cron: '13 23 * * *' # 06:13 WIB
     - cron: '33 10 * * *' # TEMP: uji trigger, kembalikan ke '7 9 * * *'
   workflow_dispatch: {}
+  # TEMP: trigger langsung saat file ini berubah (uji headed Chrome)
+  push:
+    branches: [main]
+    paths: ['.github/workflows/crawl-lpse.yml']
 
 # Satu run saja — trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
 concurrency:
