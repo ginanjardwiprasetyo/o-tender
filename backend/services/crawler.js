@@ -55,19 +55,22 @@ async function runScraper(type, url, yearStr) {
     // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
     if (type === 'list') {
         const slug = new URL(url).pathname.split('/')[1];
-        try {
-            const rows = await httpListScraper(url);
-            if (rows && rows.length) {
-                listDiag.push(`${slug}:HTTP:${rows.length}`);
-                console.log(`[Crawler] List via HTTP OK: ${rows.length} baris (${slug})`);
-                return rows;
+        const jalur = [['HTTP', () => httpListScraper(url)]];
+        if (process.env.SCRAPER_API_KEY) jalur.push(['ANT', () => antListScraper(url)]);
+        for (const [nama, fn] of jalur) {
+            try {
+                const rows = await fn();
+                if (rows && rows.length) {
+                    listDiag.push(`${slug}:${nama}:${rows.length}`);
+                    console.log(`[Crawler] List via ${nama} OK: ${rows.length} baris (${slug})`);
+                    return rows;
+                }
+                listDiag.push(`${slug}:${nama}:${rows === null ? 'blocked' : 'kosong'}`);
+            } catch (e) {
+                listDiag.push(`${slug}:${nama}:${e.response ? 'HTTP' + e.response.status : (e.code || e.message).slice(0, 40)}`);
             }
-            listDiag.push(`${slug}:HTTP:${rows === null ? 'challenge/no-token' : 'kosong'}`);
-            console.warn(`[Crawler] List HTTP ${rows === null ? 'gagal/challenge' : 'kosong'} → fallback Playwright`);
-        } catch (e) {
-            listDiag.push(`${slug}:HTTP:${e.response ? 'HTTP' + e.response.status : e.code || e.message}`);
-            console.warn(`[Crawler] List HTTP error: ${e.message} → fallback Playwright`);
         }
+        console.warn(`[Crawler] List HTTP/Ant gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright`);
     }
 
     const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
@@ -144,11 +147,112 @@ const HTTP_HEADERS = {
 };
 
 /**
- * Daftar tender tanpa browser: GET halaman list (cookie + authenticityToken),
- * lalu POST /dt/lelang — endpoint DataTables server-side yang sama dengan yang
- * di-intercept Playwright (16 kolom, pagu di index 4, kategori di 8, HPS di 10).
- * Return: array hasil, [] bila tidak ada data, null bila gagal (challenge WAF/CF).
+ * Salin baris DataTables apa adanya (16 kolom, termasuk pagu di index 4)
+ * karena HTML tabel yang dirender hanya punya 5 kolom tampak.
+ * Eksekusi setelah halaman load oleh ScrapingAnt (param js_snippet, base64).
  */
+const ANT_LIST_SNIPPET = Buffer.from(`
+(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    let out = [];
+    for (let i = 0; i < 20; i++) {
+        try {
+            const t = window.jQuery('table.dataTable').DataTable();
+            out = t.rows().data().toArray();
+        } catch (e) { out = ['ERR:' + e.message]; break; }
+        if (out.length) break;
+        await wait(500);
+    }
+    const pre = document.createElement('pre');
+    pre.id = '__ant';
+    pre.textContent = JSON.stringify(out);
+    document.body.appendChild(pre);
+})();
+`).toString('base64');
+
+// ============================================================
+// ScrapingAnt — transport untuk IP datacenter (GitHub Actions
+// kena 403 Cloudflare di HTTP maupun browser).
+// ============================================================
+async function antGet(url, { browser = true, snippet = null, timeout = 75000 } = {}) {
+    const key = process.env.SCRAPER_API_KEY;
+    if (!key) throw new Error('SCRAPER_API_KEY belum di-set');
+    const params = { url, browser: 'true' };
+    if (!browser) delete params.browser;
+    if (snippet) params.js_snippet = snippet;
+    const r = await axios.get('https://api.scrapingant.com/v2/general', {
+        params, timeout, maxRedirects: 0, validateStatus: s => s < 500,
+        headers: { 'x-api-key': key, Accept: 'text/html,application/json,*/*' },
+    });
+    const body = typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
+    if (r.status !== 200) throw new Error(`Ant HTTP ${r.status}: ${body.slice(0, 160)}`);
+    return body;
+}
+
+function antLooksBlocked(html) {
+    const txt = String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    return /just a moment|verifikasi singkat|akses ditolak|anda tidak diizinkan/i.test(txt);
+}
+
+/** Daftar tender via ScrapingAnt. Return array hasil atau null. */
+async function antListScraper(listUrl) {
+    const html = await antGet(listUrl, { browser: true, snippet: ANT_LIST_SNIPPET });
+    if (antLooksBlocked(html)) return null;
+    return parseAntListHtml(html);
+}
+
+/** Parse HTML hasil render ScrapingAnt → array hasil (dipakai test juga). */
+function parseAntListHtml(html) {
+    const $ = cheerio.load(html);
+    const raw = $('#__ant').text().trim();
+    if (raw) {
+        try {
+            const rows = JSON.parse(raw);
+            if (Array.isArray(rows) && rows.length && !String(rows[0]).startsWith('ERR:')) {
+                const mapped = mapListRows(rows);
+                if (mapped.length) return mapped;
+            }
+        } catch {}
+    }
+    // Fallback: parsing DOM (kolom tersembunyi tidak ada → pagu 0)
+    const out = [];
+    $('table.dataTable tbody tr').each((i, tr) => {
+        const c = $(tr).find('td').map((j, td) => $(td).text().replace(/\s+/g, ' ').trim()).get();
+        if (c.length >= 5 && /^[\d]+$/.test(c[0])) {
+            out.push({
+                'Kode Tender': c[0], 'kode_tender': c[0], 'Nama Paket': c[1] || '',
+                'Instansi': c[2] || '', 'Pagu': 0, 'HPS': parseCurrency(c[4]),
+                'Status_Tender': c[3] || '', 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
+                'SBU': '-', 'Batas Upload': '-',
+            });
+        }
+    });
+    return out.length ? out : null;
+}
+
+/** Array 16 kolom (format dt/lelang) → bentuk hasil yang dipakai crawler. */
+function mapListRows(rows) {
+    const results = [];
+    for (const row of rows) {
+        if (!Array.isArray(row) || row.length < 11) continue;
+        const kode = String(row[0]).trim();
+        const nama = String(row[1] || '').replace(/<[^>]*>?/gm, '').trim();
+        results.push({
+            'Kode Tender': kode,
+            'kode_tender': kode,
+            'Nama Paket': nama,
+            'Instansi': row[2] || '',
+            'Pagu': parseCurrency(row[4]),
+            'HPS': parseCurrency(row[10] || row[4]),
+            'Status_Tender': row[3] || '',
+            'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
+            'SBU': '-',
+            'Batas Upload': '-',
+        });
+    }
+    return results;
+}
+
 async function httpListScraper(listUrl) {
     const u = new URL(listUrl);
     const slug = u.pathname.split('/').filter(Boolean)[0];
@@ -205,26 +309,7 @@ async function httpListScraper(listUrl) {
 
     const rows = r2.data && r2.data.data;
     if (!Array.isArray(rows)) return null;
-
-    const results = [];
-    for (const row of rows) {
-        if (!Array.isArray(row) || row.length < 11) continue;
-        const kode = String(row[0]).trim();
-        const nama = String(row[1] || '').replace(/<[^>]*>?/gm, '').trim();
-        results.push({
-            'Kode Tender': kode,
-            'kode_tender': kode,
-            'Nama Paket': nama,
-            'Instansi': row[2] || '',
-            'Pagu': parseCurrency(row[4]),
-            'HPS': parseCurrency(row[10] || row[4]),
-            'Status_Tender': row[3] || '',
-            'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
-            'SBU': '-',
-            'Batas Upload': '-',
-        });
-    }
-    return results;
+    return mapListRows(rows);
 }
 
 async function httpDetailScraper(pengumumanUrl) {
@@ -251,26 +336,43 @@ async function httpDetailScraper(pengumumanUrl) {
         return Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join('; ');
     }
 
-    // Visit homepage first to get session cookies
-    try {
-        const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
-        extractCookies(homeResp.headers['set-cookie']);
-    } catch {}
+    // GET satu halaman: axios bila tidak ada API key, ScrapingAnt bila ada
+    // (IP GitHub kena 403 Cloudflare). Ant non-browser dulu (1 kredit),
+    // diulang dengan browser bila kena challenge.
+    const useAnt = !!process.env.SCRAPER_API_KEY;
+    async function getPage(url, referer) {
+        if (!useAnt) {
+            const r = await axios.get(url, {
+                timeout: 20000,
+                headers: { ...headers, Cookie: cookieHeader(), Referer: referer },
+                maxRedirects: 5,
+            });
+            extractCookies(r.headers['set-cookie']);
+            return r.data;
+        }
+        let html = await antGet(url, { browser: false });
+        if (antLooksBlocked(html)) html = await antGet(url, { browser: true });
+        if (antLooksBlocked(html)) return null;
+        return html;
+    }
 
-    await new Promise(r => setTimeout(r, 500));
+    // Visit homepage first to get session cookies (dilewati via Ant — cookie tidak lintas request)
+    if (!useAnt) {
+        try {
+            const homeResp = await axios.get(homeUrl, { timeout: 10000, headers, maxRedirects: 5 });
+            extractCookies(homeResp.headers['set-cookie']);
+        } catch {}
+        await new Promise(r => setTimeout(r, 500));
+    }
 
     // Fetch pengumuman page
-    const resp = await axios.get(pengumumanUrl, {
-        timeout: 20000,
-        headers: { ...headers, 'Cookie': cookieHeader(), 'Referer': homeUrl },
-    });
-    extractCookies(resp.headers['set-cookie']);
-    const html = resp.data;
+    const html = await getPage(pengumumanUrl, homeUrl);
+    if (!html) return null;
     const $ = cheerio.load(html);
 
     // Check for WAF block
     const bodyText = $('body').text().toLowerCase();
-    if (bodyText.includes('akses ditolak') || bodyText.includes('anda tidak diizinkan membuka')) {
+    if (bodyText.includes('akses ditolak') || bodyText.includes('anda tidak diizinkan membuka') || antLooksBlocked(html)) {
         return null;
     }
 
@@ -323,12 +425,8 @@ async function httpDetailScraper(pengumumanUrl) {
     let schedules = [];
     let jadwalHtml = '';
     try {
-        const jadwalResp = await axios.get(jadwalUrl, {
-            timeout: 20000,
-            headers: { ...headers, 'Cookie': cookieHeader(), 'Referer': pengumumanUrl },
-        });
-        extractCookies(jadwalResp.headers['set-cookie']);
-        jadwalHtml = jadwalResp.data;
+        jadwalHtml = await getPage(jadwalUrl, pengumumanUrl);
+        if (jadwalHtml) {
         const $$ = cheerio.load(jadwalHtml);
         $$('table tr').each((i, row) => {
             const cells = $$(row).find('td');
@@ -356,6 +454,7 @@ async function httpDetailScraper(pengumumanUrl) {
             const jBody = $$('body').text();
             const m = jBody.match(/(?:Batas\s*(?:Akhir\s+)?Upload|Upload\s+Dokumen\s+Penawaran|Pemasukan\s+Penawaran)[\s:]*([^\n]+)/i);
             if (m) batas_upload = m[1].trim();
+        }
         }
     } catch (e) {}
 
@@ -929,4 +1028,5 @@ class CrawlerService {
 const instance = new CrawlerService();
 instance.httpDetailScraper = httpDetailScraper;
 instance.httpListScraper = httpListScraper;
+instance.parseAntListHtml = parseAntListHtml;
 module.exports = instance;
