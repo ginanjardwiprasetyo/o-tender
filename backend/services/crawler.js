@@ -47,6 +47,21 @@ async function runScraper(type, url, yearStr) {
     // Try to free memory first
     await tryFreeMemory();
 
+    // Jalur list HTTP dulu (tanpa browser) — cuma butuh cookie + token CSRF.
+    // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
+    if (type === 'list') {
+        try {
+            const rows = await httpListScraper(url);
+            if (rows && rows.length) {
+                console.log(`[Crawler] List via HTTP OK: ${rows.length} baris (${new URL(url).pathname.split('/')[1]})`);
+                return rows;
+            }
+            console.warn(`[Crawler] List HTTP ${rows === null ? 'gagal/challenge' : 'kosong'} → fallback Playwright`);
+        } catch (e) {
+            console.warn(`[Crawler] List HTTP error: ${e.message} → fallback Playwright`);
+        }
+    }
+
     const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
     if (freeMemMb < 70) {
         const warnMsg = `Memory too low (${freeMemMb}MB free), skipping Playwright ${type}`;
@@ -75,6 +90,13 @@ const parseCurrency = (val) => {
     if (/^-?[0-9]+(\.[0-9]+)?$/.test(str)) {
         return Math.round(parseFloat(str));
     }
+    // Satuan format list SPSE: "11,3 M" (miliar), "750 jt", "1,5 T"
+    const unit = str.match(/([\d.,]+)\s*(jt|rb|m|t)\b/i);
+    if (unit) {
+        const n = parseFloat(unit[1].replace(/\./g, '').replace(',', '.'));
+        const f = { t: 1e12, m: 1e9, jt: 1e6, rb: 1e3 }[unit[2].toLowerCase()];
+        if (!isNaN(n) && f) return Math.round(n * f);
+    }
     let clean = str.replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '');
     clean = clean.split(',')[0];
     return parseInt(clean, 10) || 0;
@@ -91,24 +113,111 @@ function extractSbuCodesLocal(text) {
     return arr.length ? arr.join(', ') : '-';
 }
 
+// Header rambut browser — dipakai semua jalur HTTP (list + detail).
+const HTTP_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"macOS"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+};
+
+/**
+ * Daftar tender tanpa browser: GET halaman list (cookie + authenticityToken),
+ * lalu POST /dt/lelang — endpoint DataTables server-side yang sama dengan yang
+ * di-intercept Playwright (16 kolom, pagu di index 4, kategori di 8, HPS di 10).
+ * Return: array hasil, [] bila tidak ada data, null bila gagal (challenge WAF/CF).
+ */
+async function httpListScraper(listUrl) {
+    const u = new URL(listUrl);
+    const slug = u.pathname.split('/').filter(Boolean)[0];
+
+    const resp = await axios.get(listUrl, { timeout: 20000, headers: HTTP_HEADERS, maxRedirects: 5 });
+    const html = resp.data;
+    const cookie = (resp.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+
+    const pageText = String(html).replace(/<[^>]*>/g, ' ');
+    if (/just a moment|cf-browser-verification|akses ditolak|anda tidak diizinkan/i.test(pageText)) {
+        return null; // challenge Cloudflare / WAF
+    }
+
+    let token = (String(html).match(/authenticity[Tt]oken["'\s:=]+([a-f0-9]{32,})/) || [])[1] || '';
+    if (!token) {
+        const m = cookie.match(/___AT=([a-f0-9]+)/);
+        if (m) token = m[1];
+    }
+    if (!token) return null;
+
+    // URL POST & query persis seperti yang dikirim browser (4 param tetap).
+    const q = new URLSearchParams();
+    for (const k of ['kategoriId', 'rekanan', 'tahun', 'instansiId']) {
+        q.set(k, u.searchParams.get(k) || '');
+    }
+    const postUrl = `${u.origin}/${slug}/dt/lelang?${q.toString()}`;
+
+    const body = new URLSearchParams({
+        draw: '1', start: '0', length: '25',
+        'search[value]': '', 'search[regex]': 'false',
+        'order[0][column]': '5', 'order[0][dir]': 'desc',
+        authenticityToken: token,
+    });
+    for (let i = 0; i < 6; i++) {
+        body.set(`columns[${i}][data]`, String(i));
+        body.set(`columns[${i}][name]`, '');
+        body.set(`columns[${i}][searchable]`, 'true');
+        body.set(`columns[${i}][orderable]`, 'true');
+        body.set(`columns[${i}][search][value]`, '');
+        body.set(`columns[${i}][search][regex]`, 'false');
+    }
+
+    const r2 = await axios.post(postUrl, body, {
+        timeout: 20000,
+        headers: {
+            ...HTTP_HEADERS,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            Cookie: cookie,
+            Referer: listUrl,
+        },
+    });
+
+    const rows = r2.data && r2.data.data;
+    if (!Array.isArray(rows)) return null;
+
+    const results = [];
+    for (const row of rows) {
+        if (!Array.isArray(row) || row.length < 11) continue;
+        const kode = String(row[0]).trim();
+        const nama = String(row[1] || '').replace(/<[^>]*>?/gm, '').trim();
+        results.push({
+            'Kode Tender': kode,
+            'kode_tender': kode,
+            'Nama Paket': nama,
+            'Instansi': row[2] || '',
+            'Pagu': parseCurrency(row[4]),
+            'HPS': parseCurrency(row[10] || row[4]),
+            'Status_Tender': row[3] || '',
+            'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
+            'SBU': '-',
+            'Batas Upload': '-',
+        });
+    }
+    return results;
+}
+
 async function httpDetailScraper(pengumumanUrl) {
     const urlObj = new URL(pengumumanUrl);
     const homeUrl = urlObj.origin + '/' + urlObj.pathname.split('/')[1] + '/lelang';
 
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"macOS"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-    };
+    const headers = HTTP_HEADERS;
 
     let cookies = {};
 
@@ -803,4 +912,5 @@ class CrawlerService {
 
 const instance = new CrawlerService();
 instance.httpDetailScraper = httpDetailScraper;
+instance.httpListScraper = httpListScraper;
 module.exports = instance;
