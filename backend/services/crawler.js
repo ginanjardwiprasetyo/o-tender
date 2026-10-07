@@ -55,8 +55,10 @@ async function runScraper(type, url, yearStr) {
     // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
     if (type === 'list') {
         const slug = new URL(url).pathname.split('/')[1];
-        const jalur = [['HTTP', () => httpListScraper(url)]];
+        const jalur = [];
+        if (process.env.FLARESOLVERR_URL) jalur.push(['FLARE', () => flareListScraper(url)]);
         if (process.env.SCRAPER_API_KEY) jalur.push(['ANT', () => antListScraper(url)]);
+        jalur.push(['HTTP', () => httpListScraper(url)]);
         for (const [nama, fn] of jalur) {
             try {
                 const rows = await fn();
@@ -171,13 +173,101 @@ const ANT_LIST_SNIPPET = Buffer.from(`
 `).toString('base64');
 
 // ============================================================
-// ScrapingAnt — transport untuk IP datacenter (GitHub Actions
-// kena 403 Cloudflare di HTTP maupun browser).
+// FlareSolverr — Proxy solver Cloudflare (Docker container)
 // ============================================================
-async function antGet(url, { browser = true, snippet = null, timeout = 75000 } = {}) {
+async function flareSolverrGet(url) {
+    const flareUrl = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
+    const res = await axios.post(flareUrl, {
+        cmd: 'request.get',
+        url: url,
+        maxTimeout: 60000
+    }, { timeout: 70000 });
+
+    if (res.data && res.data.status === 'ok' && res.data.solution) {
+        return res.data.solution;
+    }
+    throw new Error(res.data ? res.data.message : 'FlareSolverr request failed');
+}
+
+async function flareListScraper(listUrl) {
+    const solution = await flareSolverrGet(listUrl);
+    if (!solution || !solution.response) return null;
+    const html = solution.response;
+    if (antLooksBlocked(html)) return null;
+
+    const $ = cheerio.load(html);
+    const out = [];
+    $('table.dataTable tbody tr').each((i, tr) => {
+        const c = $(tr).find('td').map((j, td) => $(td).text().replace(/\s+/g, ' ').trim()).get();
+        if (c.length >= 5 && /^[\d]+$/.test(c[0])) {
+            out.push({
+                'Kode Tender': c[0], 'kode_tender': c[0], 'Nama Paket': c[1] || '',
+                'Instansi': c[2] || '', 'Pagu': 0, 'HPS': parseCurrency(c[4]),
+                'Status_Tender': c[3] || '', 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
+                'SBU': '-', 'Batas Upload': '-',
+            });
+        }
+    });
+
+    if (!out.length) {
+        const u = new URL(listUrl);
+        const slug = u.pathname.split('/').filter(Boolean)[0];
+        let token = (String(html).match(/authenticity[Tt]oken["'\s:=]+([a-f0-9]{32,})/) || [])[1] || '';
+        const cookieStr = (solution.cookies || []).map(c => `${c.name}=${c.value}`).join('; ');
+
+        if (token && cookieStr) {
+            const q = new URLSearchParams();
+            for (const k of ['kategoriId', 'rekanan', 'tahun', 'instansiId']) {
+                q.set(k, u.searchParams.get(k) || '');
+            }
+            const postUrl = `${u.origin}/${slug}/dt/lelang?${q.toString()}`;
+            const body = new URLSearchParams({
+                draw: '1', start: '0', length: '25',
+                'search[value]': '', 'search[regex]': 'false',
+                'order[0][column]': '5', 'order[0][dir]': 'desc',
+                authenticityToken: token,
+            });
+            for (let i = 0; i < 6; i++) {
+                body.set(`columns[${i}][data]`, String(i));
+                body.set(`columns[${i}][name]`, '');
+                body.set(`columns[${i}][searchable]`, 'true');
+                body.set(`columns[${i}][orderable]`, 'true');
+                body.set(`columns[${i}][search][value]`, '');
+                body.set(`columns[${i}][search][regex]`, 'false');
+            }
+            try {
+                const r2 = await axios.post(postUrl, body, {
+                    timeout: 20000,
+                    headers: {
+                        ...HTTP_HEADERS,
+                        'User-Agent': solution.userAgent || HTTP_HEADERS['User-Agent'],
+                        Cookie: cookieStr,
+                        Referer: listUrl,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    }
+                });
+                const rows = r2.data && r2.data.data;
+                if (Array.isArray(rows) && rows.length) return mapListRows(rows);
+            } catch {}
+        }
+    }
+
+    return out.length ? out : null;
+}
+
+// ============================================================
+// ScrapingAnt — transport untuk IP datacenter
+// ============================================================
+async function antGet(url, { browser = true, snippet = null, timeout = 90000 } = {}) {
     const key = process.env.SCRAPER_API_KEY;
     if (!key) throw new Error('SCRAPER_API_KEY belum di-set');
-    const params = { url, browser: 'true' };
+    const params = {
+        url,
+        browser: 'true',
+        proxy_type: 'residential',
+        proxy_country: 'ID'
+    };
     if (!browser) delete params.browser;
     if (snippet) params.js_snippet = snippet;
     const r = await axios.get('https://api.scrapingant.com/v2/general', {
