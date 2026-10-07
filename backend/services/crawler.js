@@ -196,6 +196,22 @@ async function flareSolverrGet(url) {
     throw new Error(res.data ? res.data.message : 'FlareSolverr request failed');
 }
 
+async function flareSolverrPost(url, postData) {
+    const flareUrl = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
+    const res = await axios.post(flareUrl, {
+        cmd: 'request.post',
+        url: url,
+        postData: postData,
+        maxTimeout: 60000
+    }, { timeout: 70000 });
+
+    if (res.data && res.data.status === 'ok' && res.data.solution) {
+        return res.data.solution;
+    }
+    throw new Error(res.data ? res.data.message : 'FlareSolverr post failed');
+}
+
+
 async function flareListScraper(listUrl) {
     const solution = await flareSolverrGet(listUrl);
     if (!solution || !solution.response) return null;
@@ -243,20 +259,23 @@ async function flareListScraper(listUrl) {
                 body.set(`columns[${i}][search][regex]`, 'false');
             }
             try {
-                const r2 = await axios.post(postUrl, body, {
-                    timeout: 20000,
-                    headers: {
-                        ...HTTP_HEADERS,
-                        'User-Agent': solution.userAgent || HTTP_HEADERS['User-Agent'],
-                        Cookie: cookieStr,
-                        Referer: listUrl,
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-                    }
-                });
-                const rows = r2.data && r2.data.data;
-                if (Array.isArray(rows) && rows.length) return mapListRows(rows);
-            } catch {}
+                // Gunakan FlareSolverr untuk POST agar lolos dari Cloudflare WAF
+                const sol2 = await flareSolverrPost(postUrl, body.toString());
+                if (sol2 && sol2.response) {
+                    const pageText = sol2.response.replace(/<[^>]*>/g, '');
+                    // Parse text response back to JSON (FlareSolverr wraps JSON in HTML sometimes)
+                    let jsonText = pageText;
+                    try {
+                        const match = pageText.match(/\{.*\}/);
+                        if (match) jsonText = match[0];
+                        const r2 = JSON.parse(jsonText);
+                        const rows = r2 && r2.data;
+                        if (Array.isArray(rows) && rows.length) return mapListRows(rows);
+                    } catch (e) {}
+                }
+            } catch (e) {
+                console.warn(`[Crawler] FlareSolverr list POST gagal (${postUrl}):`, e.message);
+            }
         }
     }
 
@@ -385,7 +404,10 @@ async function httpDetailScraper(pengumumanUrl) {
             extractCookies(r.headers['set-cookie']);
             html = r.data;
         } catch (e) {
-            console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
+            // Jangan spam log 403 (karena INAPROC memang memblokir IP server), ini hanya percobaan cepat
+            if (!e.response || e.response.status !== 403) {
+                console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
+            }
         }
 
         if (html && !looksBlocked(html)) {
