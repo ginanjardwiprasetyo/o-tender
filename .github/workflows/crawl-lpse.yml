@@ -7,12 +7,13 @@
 #      sudo tailscale up --advertise-exit-node
 # 2. Di Tailscale Admin Console (https://login.tailscale.com/admin/machines),
 #    klik mesin -> Edit route settings -> aktifkan "Use as exit node"
-# 3. Buat Auth Key: https://login.tailscale.com/admin/settings/keys
-#    -> Generate auth key (Ephemeral + Reusable) -> salin hasilnya
-# 4. Di repo GitHub -> Settings -> Secrets -> New repository secret:
-#      Nama: TAILSCALE_AUTHKEY  | Nilai: auth key dari langkah 3
+# 3. Buat OAuth Client: https://login.tailscale.com/admin/settings/oauth
+#    -> Generate OAuth client -> Scopes: Devices (Write) -> Add tag: "tag:crawler"
+# 4. Di repo GitHub -> Settings -> Secrets -> New repository secrets:
+#      TAILSCALE_OAUTH_CLIENT_ID (Client ID)
+#      TAILSCALE_OAUTH_SECRET    (Client Secret)
 # 5. Di repo GitHub -> Settings -> Variables -> New repository variable:
-#      Nama: TAILSCALE_EXIT_NODE | Nilai: hostname Tailscale mesin kamu (cek di admin console)
+#      TAILSCALE_EXIT_NODE | Nilai: hostname Tailscale mesin kamu (cek di admin console)
 #
 # Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
 name: Crawl LPSE
@@ -113,7 +114,9 @@ jobs:
         if: runner.os == 'Linux' && vars.TAILSCALE_EXIT_NODE != ''
         uses: tailscale/github-action@v3
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:crawler
           args: --exit-node=${{ vars.TAILSCALE_EXIT_NODE }} --exit-node-allow-lan-access=true --accept-routes
 
       - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
