@@ -60,7 +60,7 @@ async function runScraper(type, url, yearStr) {
     await tryFreeMemory();
 
     // Jalur list HTTP dulu (tanpa browser) — cuma butuh cookie + token CSRF.
-    // Playwright dan Camoufox (Firefox stealth) sebagai cadangan bila kena challenge Cloudflare.
+    // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
     if (type === 'list') {
         const slug = new URL(url).pathname.split('/')[1];
         const jalur = [];
@@ -79,75 +79,34 @@ async function runScraper(type, url, yearStr) {
                 listDiag.push(`${slug}:${nama}:${e.response ? 'HTTP' + e.response.status : (e.code || e.message).slice(0, 40)}`);
             }
         }
-        console.warn(`[Crawler] List HTTP/Flare gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright/Camoufox`);
+        console.warn(`[Crawler] List HTTP/Flare gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright`);
     }
 
     const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
     const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
     if (freeMemMb < 70) {
-        const warnMsg = `Memory too low (${freeMemMb}MB free), skipping browser ${type}`;
+        const warnMsg = `Memory too low (${freeMemMb}MB free), skipping Playwright ${type}`;
         console.warn(`[Crawler] ${warnMsg}`);
         if (type === 'list') listDiag.push(`${slug}:PW:skip-lowmem-${freeMemMb}MB`);
         return type === 'list' ? [] : null;
     }
-
-    // Coba Playwright dulu
-    const pwResult = await runPlaywright(type, url, yearStr, slug);
-    if (pwResult && (Array.isArray(pwResult) ? pwResult.length > 0 : !pwResult.error)) {
-        return pwResult;
-    }
-
-    // Fallback ke Camoufox (Firefox-based stealth browser)
-    console.log(`[Crawler] Playwright gagal untuk ${type} ${slug || url.slice(-20)}, mencoba Camoufox...`);
-    return await runCamoufox(type, url, yearStr, slug);
-}
-
-async function runPlaywright(type, url, yearStr, slug) {
     const cmd = `node --max-old-space-size=192 --expose-gc ${path.join(__dirname, 'playwright_scraper.js')} --type ${type} --url "${url}" --year ${yearStr}`;
+    const { stdout, stderr } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
+    // Diagnostik scraper (NO_DATA dsb) ditulis ke stderr — tampilkan agar kelihatan di log Actions
+    String(stderr || '').split('\n').filter(l => l.trim()).forEach(l => console.log(`[scraper:${type}] ${l}`));
     try {
-        const { stdout, stderr } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
-        String(stderr || '').split('\n').filter(l => l.trim()).forEach(l => console.log(`[scraper:${type}] ${l}`));
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
         if (lines.length > 0) {
             const parsed = JSON.parse(lines[lines.length - 1]);
             if (type === 'list') listDiag.push(`${slug}:PW:${Array.isArray(parsed) ? parsed.length : 'bad'}`);
             return parsed;
         }
-    } catch (e) {
-        if (type === 'list') listDiag.push(`${slug}:PW:error`);
-        console.warn(`[Crawler] Playwright ${type} error:`, e.message.slice(0, 80));
+        if (type === 'list') listDiag.push(`${slug}:PW:empty-output`);
+        return type === 'list' ? [] : null;
+    } catch(e) {
+        if (type === 'list') listDiag.push(`${slug}:PW:parse-error`);
+        throw new Error("Failed to parse scraper output");
     }
-    if (type === 'list') listDiag.push(`${slug}:PW:empty-output`);
-    return type === 'list' ? [] : null;
-}
-
-async function runCamoufox(type, url, yearStr, slug) {
-    const pyScript = path.join(__dirname, 'camoufox_scraper.py');
-    const cmd = `python3 "${pyScript}" --type ${type} --url "${url}" --year ${yearStr}`;
-    try {
-        const { stdout, stderr } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 150000 });
-        String(stderr || '').split('\n').filter(l => l.trim()).forEach(l => console.log(`[camoufox:${type}] ${l}`));
-        const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
-        if (lines.length > 0) {
-            const parsed = JSON.parse(lines[lines.length - 1]);
-            if (type === 'list') {
-                const count = Array.isArray(parsed) ? parsed.length : 'bad';
-                listDiag.push(`${slug}:CF:${count}`);
-                if (Array.isArray(parsed) && parsed.length) {
-                    console.log(`[Crawler] List via Camoufox OK: ${parsed.length} baris (${slug})`);
-                }
-            }
-            return parsed;
-        }
-    } catch (e) {
-        if (e.message && e.message.includes('camoufox_not_installed')) {
-            console.warn(`[Crawler] Camoufox tidak terinstal, skip.`);
-        } else {
-            console.warn(`[Crawler] Camoufox ${type} error:`, e.message.slice(0, 80));
-        }
-        if (type === 'list') listDiag.push(`${slug}:CF:error`);
-    }
-    return type === 'list' ? [] : null;
 }
 
 const parseCurrency = (val) => {
@@ -1049,34 +1008,23 @@ class CrawlerService {
                             this.log(`HTTP ${kode}: ${httpErr.message}`);
                         }
 
-                        // Fall back to Playwright → Camoufox jika HTTP gagal
+                        // Fall back to Playwright if HTTP failed and memory permits
                         if (!res) {
                             const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
                             if (freeMemMb >= 100) {
                                 this.log(`Playwright fallback for ${kode} (${freeMemMb}MB free)...`);
                                 await tryFreeMemory();
-                                const pwRes = await runPlaywright('detail', pengumumanUrl, String(year), '');
+                                const pwRes = await runScraper('detail', pengumumanUrl, String(year));
+                                // Abaikan jika Playwright mengembalikan error (Cloudflare / WAF)
                                 if (pwRes && !pwRes.error) {
                                     res = pwRes;
-                                } else {
-                                    if (pwRes && pwRes.error) {
-                                        this.log(`PW blocked ${kode}: ${pwRes.error}`);
-                                    }
-                                    // Terakhir: Camoufox (Firefox stealth)
-                                    this.log(`Camoufox fallback for ${kode}...`);
-                                    await tryFreeMemory();
-                                    const cfRes = await runCamoufox('detail', pengumumanUrl, String(year), '');
-                                    if (cfRes && !cfRes.error) {
-                                        res = cfRes;
-                                    } else if (cfRes && cfRes.error) {
-                                        this.log(`CF blocked ${kode}: ${cfRes.error}`);
-                                    }
+                                } else if (pwRes && pwRes.error) {
+                                    this.log(`PW blocked ${kode}: ${pwRes.error}`);
                                 }
                             } else {
-                                this.log(`Skip ${kode}: HTTP failed, memory too low (${freeMemMb}MB) for browser`);
+                                this.log(`Skip ${kode}: HTTP failed, memory too low (${freeMemMb}MB) for Playwright`);
                             }
                         }
-
 
                         if (res) {
                             const parsedPagu = parseCurrency(res.pagu);
