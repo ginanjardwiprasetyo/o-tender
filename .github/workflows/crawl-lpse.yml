@@ -10,7 +10,7 @@ name: Crawl LPSE
 on:
   schedule:
     - cron: '13 23 * * *' # 06:13 WIB
-    - cron: '7 9 * * *'   # 16:07 WIB
+    - cron: '33 10 * * *' # TEMP: uji trigger, kembalikan ke '7 9 * * *'
   workflow_dispatch: {}
 
 # Satu run saja — trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
