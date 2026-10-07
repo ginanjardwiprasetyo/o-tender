@@ -78,6 +78,15 @@ jobs:
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
 
+      # Camoufox: Firefox-based stealth browser (80-90% bypass Cloudflare dari datacenter IP)
+      - name: Install Camoufox
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          pip3 install camoufox --break-system-packages --quiet
+          python3 -m camoufox fetch
+
+
       # FlareSolverr: solver Cloudflare (berjalan lokal, pakai IP exit node via Tailscale)
       - name: Start FlareSolverr
         if: runner.os == 'Linux'
