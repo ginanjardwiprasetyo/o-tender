@@ -51,7 +51,7 @@ function extractSbu(text) {
 }
 
 async function scrape() {
-    const browser = await chromium.launch({
+    const launchOpts = {
         headless: true,
         args: [
             '--no-sandbox',
@@ -71,17 +71,33 @@ async function scrape() {
             '--disable-component-update',
             '--js-flags=--max-old-space-size=192 --expose-gc --always-compact'
         ]
-    });
-    
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
-    });
+    };
+    // Chrome asli (ada di runner GitHub & mesin lokal) tidak membocorkan "HeadlessChrome"
+    // di sec-ch-ua — sidik jari itu yang bikin WAF SPSE balas 403 "Akses Ditolak".
+    let browser;
+    let pakaiChrome = false;
+    try {
+        browser = await chromium.launch({ ...launchOpts, channel: 'chrome' });
+        pakaiChrome = true;
+    } catch {
+        browser = await chromium.launch(launchOpts);
+    }
+
+    // Tanpa userAgent palsu: UA & Client Hints harus konsisten dengan browser yang dipakai.
+    const context = await browser.newContext();
     const page = await context.newPage();
 
     try {
         if (type === 'list') {
             let interceptData = null;
-            
+            const dtInfo = [];
+            let navStatus = 0;
+            const pageHead = async () => {
+                const t = await page.title().catch(() => '');
+                const b = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ').trim();
+                return `${t} | ${b}`;
+            };
+
             page.on('response', async response => {
                 const resUrl = response.url();
                 if (resUrl.includes('dt/lelang') || resUrl.includes('lelang/data')) {
@@ -89,19 +105,28 @@ async function scrape() {
                         const json = await response.json();
                         if (json && json.data) {
                             interceptData = json.data;
+                            dtInfo.push(`${response.status()}:rows=${json.data.length}`);
+                        } else {
+                            dtInfo.push(`${response.status()}:no-data`);
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        dtInfo.push(`${response.status()}:non-json`);
+                    }
                 }
             });
 
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            
-            // Wait for intercept or max 15 seconds
-            for(let i=0; i<15; i++) {
-                if (interceptData) break;
+            const nav = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            navStatus = nav ? nav.status() : 0;
+
+            // IP datacenter (GitHub Actions) bisa kena challenge Cloudflare dulu —
+            // tunggu sampai lolos, tapi stop lebih awal kalau kena hard block WAF.
+            for (let i = 0; i < 30 && !interceptData; i++) {
                 await page.waitForTimeout(1000);
+                if (i === 9 || i === 19) {
+                    if (/akses ditolak|anda tidak diizinkan/i.test(await pageHead())) break;
+                }
             }
-            
+
             if (interceptData) {
                 const results = [];
                 for (let row of interceptData) {
@@ -135,10 +160,14 @@ async function scrape() {
                         'Batas Upload': '-'
                     });
                 }
+                if (!results.length) {
+                    console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} dt=${dtInfo.join(',')} rows=${interceptData.length} (semua baris < 11 kolom)`);
+                }
                 console.log(JSON.stringify(results));
                 await browser.close();
                 return;
             } else {
+                console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} dt=${dtInfo.join(',') || 'none'} rows=${interceptData ? interceptData.length : 'n/a'} page="${(await pageHead()).slice(0, 220)}"`);
                 console.log(JSON.stringify([]));
                 await browser.close();
                 return;

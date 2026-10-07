@@ -54,7 +54,9 @@ async function runScraper(type, url, yearStr) {
         return type === 'list' ? [] : null;
     }
     const cmd = `node --max-old-space-size=192 --expose-gc ${path.join(__dirname, 'playwright_scraper.js')} --type ${type} --url "${url}" --year ${yearStr}`;
-    const { stdout } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
+    const { stdout, stderr } = await execPromise(cmd, { maxBuffer: 10 * 1024 * 1024, timeout: 120000 });
+    // Diagnostik scraper (NO_DATA dsb) ditulis ke stderr — tampilkan agar kelihatan di log Actions
+    String(stderr || '').split('\n').filter(l => l.trim()).forEach(l => console.log(`[scraper:${type}] ${l}`));
     try {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
         if (lines.length > 0) {
@@ -155,6 +157,7 @@ async function httpDetailScraper(pengumumanUrl) {
     let hps = '';
     let nama_paket = '';
     let instansi = '';
+    const details = {};
 
     $('table tr').each((i, row) => {
         const cells = $(row).find('th, td');
@@ -163,6 +166,8 @@ async function httpDetailScraper(pengumumanUrl) {
             const label = texts[j].toLowerCase();
             const value = j + 1 < texts.length ? texts[j + 1] : '';
             if (!value) continue;
+            // simpan pasangan label→value (kunci berawal huruf besar) utk halaman detail frontend
+            if (texts[j].length <= 60 && value !== texts[j]) details[texts[j]] = value;
             if (label.includes('sbu') || label.includes('sertifikat badan usaha')) sbu = extractSbu(value);
             else if (label.includes('nilai pagu') || label === 'pagu') pagu = value;
             else if (label.includes('nilai hps') || label === 'hps') hps = value;
@@ -176,7 +181,7 @@ async function httpDetailScraper(pengumumanUrl) {
     const kualifIdx = fullText.indexOf('Syarat Kualifikasi');
     let qualSection = '';
     if (kualifIdx >= 0) {
-        qualSection = fullText.substring(kualifIdx + 'Syarat Kualifikasi'.length, kualifIdx + 4000);
+        qualSection = fullText.substring(kualifIdx + 'Syarat Kualifikasi'.length, kualifIdx + 4000).trim();
         // merge SBU dari tabel + qualSection + fullText via KBLI mapping ("KBLI 41012" -> BG002)
         const combined = [sbu !== '-' ? sbu : '', qualSection, fullText.substring(0, 8000)].join(' ');
         const resolved = resolveSbu(combined);
@@ -187,6 +192,7 @@ async function httpDetailScraper(pengumumanUrl) {
         const resolved = resolveSbu(fullText.substring(0, 8000));
         if (resolved.length) sbu = resolved.join(', ');
     }
+    if (qualSection) details['Syarat Kualifikasi'] = qualSection;
 
     // Fetch jadwal page for schedule info (batas upload & aanwijzing)
     const jadwalUrl = pengumumanUrl.replace('/pengumumanlelang', '/jadwal');
@@ -237,7 +243,7 @@ async function httpDetailScraper(pengumumanUrl) {
         if (m) aanwijzing_date = m[1].trim();
     }
 
-    return { sbu, pagu, hps, nama_paket, instansi, batas_upload, aanwijzing_date, schedules };
+    return { sbu, pagu, hps, nama_paket, instansi, batas_upload, aanwijzing_date, schedules, details };
 }
 
 class CrawlerService {
@@ -795,4 +801,6 @@ class CrawlerService {
     }
 }
 
-module.exports = new CrawlerService();
+const instance = new CrawlerService();
+instance.httpDetailScraper = httpDetailScraper;
+module.exports = instance;
