@@ -25,6 +25,7 @@ on:
   schedule:
     - cron: '13 23 * * *' # 06:13 WIB
     - cron: '7 4 * * *'   # 11:07 WIB (dulu 16:07, dimajukan - lihat catatan delay di atas)
+    - cron: '15 15 8 10 *' # SEKALI HARI INI 22:15 WIB (ganti run 16:07 yang di-drop GitHub) - hapus baris ini besok
   workflow_dispatch: {}
 
 # Satu run saja - trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
