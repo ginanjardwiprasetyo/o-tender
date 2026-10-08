@@ -193,7 +193,7 @@ async function flareSolverrGet(url) {
     if (res.data && res.data.status === 'ok' && res.data.solution) {
         return res.data.solution;
     }
-    throw new Error(res.data ? res.data.message : 'FlareSolverr request failed');
+    throw new Error((res.data && res.data.message) || `FlareSolverr status=${res.data && res.data.status}`);
 }
 
 async function flareSolverrPost(url, postData) {
@@ -208,7 +208,7 @@ async function flareSolverrPost(url, postData) {
     if (res.data && res.data.status === 'ok' && res.data.solution) {
         return res.data.solution;
     }
-    throw new Error(res.data ? res.data.message : 'FlareSolverr post failed');
+    throw new Error((res.data && res.data.message) || `FlareSolverr status=${res.data && res.data.status}`);
 }
 
 
@@ -406,7 +406,10 @@ async function httpDetailScraper(pengumumanUrl) {
         } catch (e) {
             // Jangan spam log 403 (karena INAPROC memang memblokir IP server), ini hanya percobaan cepat
             if (!e.response || e.response.status !== 403) {
-                console.warn(`[Crawler] HTTP getPage gagal (${url}):`, e.message);
+                // AggregateError (semua alamat gagal konek) punya message='' — fallback ke name+jumlah alamat
+                const why = e.message
+                    || (e.errors ? `${e.name}: ${e.errors.length} alamat gagal terhubung` : (e.code || e.name));
+                console.warn(`[Crawler] HTTP getPage gagal (${url}): ${why}${e.response ? ' HTTP' + e.response.status : ''}`);
             }
         }
 
@@ -426,7 +429,10 @@ async function httpDetailScraper(pengumumanUrl) {
             }
         }
         
-        if (html && looksBlocked(html)) return null;
+        if (html && looksBlocked(html)) {
+            console.warn(`[Crawler] Detail diblokir WAF/CF (halaman challenge, bukan isi): ${url}`);
+            return null;
+        }
         return html;
     }
 
@@ -890,7 +896,11 @@ class CrawlerService {
                         const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
                         const maxHps = this.status.waTargetMaxHps || 0;
                         const matchesHps = maxHps === 0 || hpsVal <= maxHps;
-                        if (matchesTarget && matchesHps) {
+                        if (!matchesTarget) {
+                            this.log(`Skip notif ${tenderKodeStr}: SBU [${tenderSbu}] tidak match target [${this.status.waTargetSbu.join(',') || '*'}]`);
+                        } else if (!matchesHps) {
+                            this.log(`Skip notif ${tenderKodeStr}: HPS ${hpsVal} > batas ${maxHps}`);
+                        } else {
                             const deadlineOk = isDeadlineFuture(batasUpload);
                             if (!deadlineOk) {
                                 this.log(`Skip notif ${tenderKodeStr}: batas upload sudah lewat (${batasUpload || '-'})`);
@@ -899,10 +909,13 @@ class CrawlerService {
                                 const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                 const aanwizingDate = extractAanwizingDate(t.Jadwal || t.schedules || null) || '-';
                                 const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${t['Nama Paket'] || t.nama_paket || ''}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
-                                sendWhatsAppMessage(null, msg).catch(() => {});
+                                sendWhatsAppMessage(null, msg)
+                                    .then(r => { if (!r || !r.success) this.log(`WA GAGAL ${tenderKodeStr}: ${(r && r.error) || 'respons tidak valid'}`); })
+                                    .catch(e => this.log(`WA ERROR ${tenderKodeStr}: ${e.message}`));
                             }
                         }
                     } else {
+                        this.log(`Notif ${tenderKodeStr}: SBU belum ada di list, notif ditunda sampai Deep Scan.`);
                         this.status.newTendersMap = this.status.newTendersMap || {};
                         this.status.newTendersMap[tenderKodeStr] = {
                             nama_paket: t['Nama Paket'] || t.nama_paket || '',
@@ -1068,14 +1081,20 @@ class CrawlerService {
 
                             if (this.status.newTendersMap && this.status.newTendersMap[kode]) {
                                 const tenderInfo = this.status.newTendersMap[kode];
-                                if (hasSbu) {
+                                if (!hasSbu) {
+                                    this.log(`Notif ${kode}: SBU tidak terbaca di halaman detail, notif dibatalkan.`);
+                                } else {
                                     const sbus = res.sbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
                                     const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
                                     const finalHps = parsedHps || tenderInfo.hps || 0;
                                     const maxHps = this.status.waTargetMaxHps || 0;
                                     const matchesHps = maxHps === 0 || finalHps <= maxHps;
 
-                                    if (matchesTarget && matchesHps) {
+                                    if (!matchesTarget) {
+                                        this.log(`Skip notif ${kode}: SBU [${res.sbu}] tidak match target [${this.status.waTargetSbu.join(',') || '*'}]`);
+                                    } else if (!matchesHps) {
+                                        this.log(`Skip notif ${kode}: HPS ${finalHps} > batas ${maxHps}`);
+                                    } else {
                                         const normDeadline = res.batas_upload ? res.batas_upload.replace(/\s+/g, ' ').trim() : '-';
                                         const deadlineOk = isDeadlineFuture(normDeadline);
                                         if (!deadlineOk) {
@@ -1085,7 +1104,9 @@ class CrawlerService {
                                             const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                             const aanwizingDate = res.aanwijzing_date || extractAanwizingDate(res.schedules) || '-';
                                             const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(parsedPagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(parsedHps || tenderInfo.hps)}\n*Batas Upload:* ${normDeadline}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
-                                            sendWhatsAppMessage(null, msg).catch(() => {});
+                                            sendWhatsAppMessage(null, msg)
+                                                .then(r => { if (!r || !r.success) this.log(`WA GAGAL ${kode}: ${(r && r.error) || 'respons tidak valid'}`); })
+                                                .catch(e => this.log(`WA ERROR ${kode}: ${e.message}`));
                                         }
                                     }
                                 }
