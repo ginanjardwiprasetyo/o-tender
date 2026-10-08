@@ -89,6 +89,7 @@ const TenderDetailPage = {
             extBtn.href = `${baseUrl}/lelang/${kode}/pengumumanlelang`;
         }
 
+        let fromDb = false;
         try {
             // Check status first and update UI immediately
             const followRes = await API.checkFollowed(kode);
@@ -98,7 +99,17 @@ const TenderDetailPage = {
             const btn = document.getElementById('btn-follow-tender');
             if (btn) btn.onclick = () => this.follow();
 
-            // Then do the slow scraping
+            // Render from DB immediately — scrape bisa 504 (timeout gateway), page tetap tampil
+            try {
+                const res = await API.getCrawledTenders({ search: kode, limit: 5 });
+                const row = (res.data || []).find(r => String(r.kode_tender) === String(kode));
+                if (row) {
+                    this.renderContent(kode, slug, this._dbFallback(row, slug));
+                    fromDb = true;
+                }
+            } catch { /* fallback optional */ }
+
+            // Then do the slow scraping (overwrites fallback with live data)
             const { data } = await API.scrapeTender(slug, kode);
             this.renderContent(kode, slug, data);
 
@@ -115,6 +126,11 @@ const TenderDetailPage = {
             }
 
         } catch (e) {
+            // Data dari DB sudah tampil — scrape gagal tidak perlu memblokir halaman
+            if (fromDb) {
+                console.error('Scrape error (fallback DB aktif):', e);
+                return;
+            }
             console.error('Scrape error:', e);
             const errorMsg = e.error || e.message || 'Gagal memuat data dari SPSE. Mungkin akses sedang dibatasi.';
             const container = document.getElementById('td-container');
@@ -128,6 +144,24 @@ const TenderDetailPage = {
             }
             lucide.createIcons();
         }
+    },
+
+    // Bentuk data DB → struktur yang dimakan renderContent (scrape 504 / gagal)
+    _dbFallback(row, slug) {
+        const base = `https://spse.inaproc.id/${slug}/lelang/${row.kode_tender}`;
+        return {
+            details: {
+                'Kode Tender': row.kode_tender,
+                'Nama Tender': row.nama_paket,
+                'Nilai Pagu Paket': Number(row.pagu) || 0,
+                'Nilai HPS Paket': Number(row.hps) || 0
+            },
+            schedules: [],
+            sbu: row.sbu,
+            uploadDate: row.batas_upload,
+            pengumumanUrl: `${base}/pengumumanlelang`,
+            jadwalUrl: `${base}/jadwal`
+        };
     },
 
     renderContent(kode, slug, data) {

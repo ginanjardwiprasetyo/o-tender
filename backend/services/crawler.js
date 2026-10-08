@@ -851,8 +851,8 @@ class CrawlerService {
                     DO UPDATE SET 
                         nama_paket       = EXCLUDED.nama_paket,
                         instansi         = EXCLUDED.instansi,
-                        pagu             = EXCLUDED.pagu,
-                        hps              = EXCLUDED.hps,
+                        pagu = CASE WHEN EXCLUDED.pagu > 0 THEN EXCLUDED.pagu ELSE crawled_tenders.pagu END,
+                        hps  = CASE WHEN EXCLUDED.hps  > 0 THEN EXCLUDED.hps  ELSE crawled_tenders.hps  END,
                         status_tender    = EXCLUDED.status_tender,
                         kategori         = EXCLUDED.kategori,
                         metode_pemilihan = EXCLUDED.metode_pemilihan,
@@ -940,10 +940,10 @@ class CrawlerService {
     }
 
     async deepScanMissingData(year, targetKds = null) {
-        // Find all tenders from this year that are missing SBU or batas_upload
+        // Find all tenders from this year that are missing SBU, batas_upload, or HPS (HPS=0 usually means list API kosong)
         let query = `
             SELECT kode_tender, slug, batas_upload FROM crawled_tenders 
-            WHERE tahun_anggaran = $1 AND (sbu IS NULL OR sbu = '-' OR batas_upload IS NULL OR batas_upload = '-')
+            WHERE tahun_anggaran = $1 AND (sbu IS NULL OR sbu = '-' OR batas_upload IS NULL OR batas_upload = '-' OR hps IS NULL OR hps = 0)
         `;
         const params = [year];
         
@@ -979,7 +979,7 @@ class CrawlerService {
             return;
         }
 
-        this.log(`Ditemukan ${filteredRows.length} tender tanpa SBU/Deadline yang masih aktif. Melengkapi data dari halaman detail...`);
+        this.log(`Ditemukan ${filteredRows.length} tender tanpa SBU/Deadline/HPS yang masih aktif. Melengkapi data dari halaman detail...`);
 
         // Group by slug to batch requests
         const bySlug = {};
@@ -1072,7 +1072,7 @@ class CrawlerService {
                                 if (result.rowCount === 0) {
                                     this.log(`WARN: UPDATE matched 0 rows for kode=${kode.trim()} slug=${slug}`);
                                 } else {
-                                    this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} Deadline=${normDeadline || '-'}`);
+                                    this.log(`Saved ${kode}: SBU=${res.sbu || '-'} Pagu=${parsedPagu || '-'} HPS=${parsedHps || '-'} Deadline=${normDeadline || '-'}`);
                                 }
                             } else {
                                 // Semua metode berhasil akses tapi data benar-benar kosong — skip tanpa log error
