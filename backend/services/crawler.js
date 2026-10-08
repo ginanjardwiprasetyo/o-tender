@@ -977,7 +977,11 @@ class CrawlerService {
         }
 
         const MAX_RETRIES = 2;
+        const MAX_CONSEC_FAIL = 3; // ponytail: 3 gagal berturut per LPSE -> sisa paketnya dilewati
+        const MAX_PW_BLOCKS = 3;   // ponytail: 3x PW blocked -> fallback Playwright mati sisa run
         let processed = 0;
+        let pwBlocks = 0;
+        let pwDisabled = false;
         const totalSlugs = Object.keys(bySlug).length;
 
         for (const [slug, kodes] of Object.entries(bySlug)) {
@@ -989,11 +993,13 @@ class CrawlerService {
             this.log(`[${processed}/${totalSlugs}] Melengkapi ${kodes.length} paket di ${slug}...`);
             
             const baseUrl = getBaseUrl(slug);
+            let consecFail = 0;
 
             for (const kode of kodes) {
                 if (this.shouldStop) break;
 
                 let lastError = null;
+                let ok = false;
                 for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 
                     try {
@@ -1011,7 +1017,7 @@ class CrawlerService {
                         // Fall back to Playwright if HTTP failed and memory permits
                         if (!res) {
                             const freeMemMb = Math.round(os.freemem() / 1024 / 1024);
-                            if (freeMemMb >= 100) {
+                            if (!pwDisabled && freeMemMb >= 100) {
                                 this.log(`Playwright fallback for ${kode} (${freeMemMb}MB free)...`);
                                 await tryFreeMemory();
                                 const pwRes = await runScraper('detail', pengumumanUrl, String(year));
@@ -1020,13 +1026,21 @@ class CrawlerService {
                                     res = pwRes;
                                 } else if (pwRes && pwRes.error) {
                                     this.log(`PW blocked ${kode}: ${pwRes.error}`);
+                                    pwBlocks++;
+                                    if (pwBlocks >= MAX_PW_BLOCKS) {
+                                        pwDisabled = true;
+                                        this.log(`${pwBlocks}x PW blocked - Playwright fallback dimatikan untuk sisa run.`);
+                                    }
                                 }
+                            } else if (pwDisabled) {
+                                this.log(`Skip PW ${kode}: fallback sudah dimatikan (${pwBlocks}x blocked).`);
                             } else {
                                 this.log(`Skip ${kode}: HTTP failed, memory too low (${freeMemMb}MB) for Playwright`);
                             }
                         }
 
                         if (res) {
+                            ok = true;
                             const parsedPagu = parseCurrency(res.pagu);
                             const parsedHps = parseCurrency(res.hps);
                             const hasSbu = res.sbu && res.sbu !== '-';
@@ -1096,6 +1110,12 @@ class CrawlerService {
 
                 if (lastError) {
                     console.error(`[DeepScan] Error ${slug} ${kode}:`, lastError.message);
+                }
+                if (ok) {
+                    consecFail = 0;
+                } else if (++consecFail >= MAX_CONSEC_FAIL) {
+                    this.log(`${consecFail} gagal berturut di ${slug} - sisa paket LPSE ini dilewati.`);
+                    break;
                 }
             }
             await tryFreeMemory();

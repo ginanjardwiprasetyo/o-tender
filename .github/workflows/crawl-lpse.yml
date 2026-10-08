@@ -8,12 +8,13 @@
 # 2. Di Tailscale Admin Console (https://login.tailscale.com/admin/machines),
 #    klik mesin -> Edit route settings -> aktifkan "Use as exit node"
 # 3. Buat OAuth Client: https://login.tailscale.com/admin/settings/oauth
-#    -> Generate OAuth client -> Scopes: Devices (Write) -> Add tag: "tag:crawler"
+#    -> Generate OAuth client -> Scopes: "Auth keys (write)" + "Devices (Write)" -> Add tag: "tag:crawler"
+#    (tanpa scope "Auth keys", `tailscale up` gagal dengan 404 "not found")
 # 4. Di repo GitHub -> Settings -> Secrets -> New repository secrets:
 #      TAILSCALE_OAUTH_CLIENT_ID (Client ID)
 #      TAILSCALE_OAUTH_SECRET    (Client Secret)
 # 5. Di repo GitHub -> Settings -> Variables -> New repository variable:
-#      TAILSCALE_EXIT_NODE | Nilai: hostname Tailscale mesin kamu (cek di admin console)
+#      TAILSCALE_EXIT_NODE | Nilai: hostname (redmi-9) atau IP Tailscale (100.x.x.x) mesin kamu
 #
 # Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
 name: Crawl LPSE
@@ -40,6 +41,21 @@ jobs:
       EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE || secrets.TAILSCALE_EXIT_NODE }}
     steps:
       - uses: actions/checkout@v5
+
+      # Fail cepat sebelum install browser (~5 menit) kalau exit node belum dikonfigurasi.
+      - name: Validasi konfigurasi exit node
+        if: runner.os == 'Linux'
+        run: |
+          TRIMMED="$(echo "${EXIT_NODE:-}" | xargs)"
+          if [ -z "$TRIMMED" ]; then
+            echo "::error::TAILSCALE_EXIT_NODE kosong - isi di Settings > Secrets and variables > Actions > Variables (lihat header file ini). Tanpa exit node, traffic keluar dari IP datacenter GitHub dan kena blokir Cloudflare."
+            exit 1
+          fi
+          echo "EXIT_NODE=$TRIMMED" >> "$GITHUB_ENV"
+          # IP sebelum Tailscale tersambung - pembanding untuk step Verify.
+          BASELINE_IP=$(curl -s --max-time 10 https://api.ipify.org || true)
+          echo "BASELINE_IP=$BASELINE_IP" >> "$GITHUB_ENV"
+          echo "Exit node: $TRIMMED | baseline IP: ${BASELINE_IP:-?}"
 
       - uses: actions/setup-node@v5
         with:
@@ -91,7 +107,8 @@ jobs:
 
 
       # Tailscale: route semua traffic keluar lewat exit node (IP residential/VPS) agar lolos Cloudflare.
-      # Dilepas dulu sebelum FlareSolverr biar container-nya ikut keluar lewat exit node.
+      # Dua fase: (1) connect tanpa --exit-node dulu - saat login peer list masih kosong,
+      # (2) set exit node di step berikutnya setelah netmap tersinkron.
       - name: Connect Tailscale Exit Node
         if: runner.os == 'Linux' && env.EXIT_NODE != ''
         uses: tailscale/github-action@v3
@@ -99,7 +116,22 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:crawler
-          args: --exit-node=${{ env.EXIT_NODE }} --exit-node-allow-lan-access=true --accept-routes
+          args: --accept-routes
+
+      - name: Aktifkan exit node
+        if: runner.os == 'Linux' && env.EXIT_NODE != ''
+        run: |
+          OUT=""
+          for i in $(seq 1 12); do
+            if OUT=$(sudo -E tailscale set --exit-node="$EXIT_NODE" --exit-node-allow-lan-access=true 2>&1); then
+              echo "Exit node aktif: $EXIT_NODE"
+              exit 0
+            fi
+            echo "Percobaan $i/12: $OUT"
+            sleep 5
+          done
+          echo "::error::Gagal set exit node '$EXIT_NODE': $OUT. Cek: (1) nilai TAILSCALE_EXIT_NODE = IP atau hostname exit node, (2) mesin exit node sudah di-approve 'Use as exit node' di Admin Console."
+          exit 1
 
       - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
         if: runner.os == 'Linux'
@@ -108,11 +140,25 @@ jobs:
             echo "::error::TAILSCALE_EXIT_NODE kosong - isi di Settings > Secrets and variables > Actions > Variables (lihat header file ini). Tanpa exit node, traffic keluar dari IP datacenter GitHub dan kena blokir Cloudflare."
             exit 1
           fi
-          IP=$(curl -s https://api.ipify.org)
-          ORG=$(curl -s https://ipinfo.io/org)
+          ONLINE=$(sudo -E tailscale status --json 2>/dev/null | jq -r '.ExitNodeStatus.Online // false')
+          if [ "$ONLINE" != "true" ]; then
+            echo "::error::Exit node '$EXIT_NODE' offline / Tailscale tidak tersambung (tailscale status). Cek log step 'Connect Tailscale Exit Node' - kemungkinan OAuth client kehilangan scope 'Auth keys'."
+            exit 1
+          fi
+          IP=$(curl -s --max-time 15 https://api.ipify.org || curl -s --max-time 15 https://ifconfig.me || curl -s --max-time 15 https://icanhazip.com)
+          IP=$(echo "$IP" | xargs)
+          if [ -z "$IP" ]; then
+            echo "::error::Tidak bisa fetch IP publik (ipify/ifconfig/icanhazip gagal semua) - jaringan runner bermasalah."
+            exit 1
+          fi
+          ORG=$(curl -s --max-time 15 https://ipinfo.io/org)
           echo "IP publik runner: $IP ($ORG)"
-          if echo "$ORG" | grep -qiE 'microsoft|azure'; then
-            echo "::error::Exit node Tailscale tidak aktif ($EXIT_NODE) - traffic masih keluar dari IP datacenter $ORG. Cek: (1) nilai TAILSCALE_EXIT_NODE harus IP Tailscale exit node, (2) mesin exit node sudah di-approve 'Use as exit node' di Admin Console."
+          if [ -n "$BASELINE_IP" ] && [ "$IP" = "$BASELINE_IP" ]; then
+            echo "::error::IP publik sama dengan baseline GitHub ($IP) - traffic TIDAK lewat exit node '$EXIT_NODE'."
+            exit 1
+          fi
+          if echo "$ORG" | grep -qiE 'microsoft|azure|amazon|google'; then
+            echo "::error::Exit node Tailscale tidak aktif ($EXIT_NODE) - traffic masih keluar dari IP datacenter $ORG. Cek: (1) nilai TAILSCALE_EXIT_NODE harus IP/hostname exit node, (2) mesin exit node sudah di-approve 'Use as exit node' di Admin Console."
             exit 1
           fi
 
