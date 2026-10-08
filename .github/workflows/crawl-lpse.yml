@@ -57,6 +57,33 @@ jobs:
           echo "BASELINE_IP=$BASELINE_IP" >> "$GITHUB_ENV"
           echo "Exit node: $TRIMMED | baseline IP: ${BASELINE_IP:-?}"
 
+      # Diagnosis langsung ke API Tailscale - `tailscale up` cuma bilang 404 "not found"
+      # yang ambigu (bisa salah scope / salah tag / kredensial mati). Step ini menyebutkan
+      # HTTP code + body persis sebelum action-nya jalan.
+      - name: Diagnose OAuth client
+        if: runner.os == 'Linux'
+        env:
+          OID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          OSEC: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+        run: |
+          TOKEN=$(curl -s --max-time 15 -X POST https://api.tailscale.com/api/v2/oauth/token \
+            -d "client_id=$OID" -d "client_secret=$OSEC" -d "grant_type=client_credentials")
+          ACCESS=$(echo "$TOKEN" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS" ]; then
+            echo "::error::OAuth token gagal (client ID/secret salah atau client dihapus): $TOKEN"
+            exit 1
+          fi
+          RES=$(curl -s --max-time 15 -w '\n%{http_code}' -X POST https://api.tailscale.com/api/v2/tailnet/-/keys \
+            -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:crawler"]}}},"expirySeconds":3600}')
+          CODE=$(echo "$RES" | tail -n1)
+          BODY=$(echo "$RES" | sed '$d')
+          if [ "$CODE" != "200" ]; then
+            echo "::error::POST /keys = HTTP $CODE: $BODY | 404 = OAuth client BELUM punya scope 'Auth keys (write)'; 400 'tags ... not permitted' = tag:crawler belum di-ownership client ini. Fix: Admin Console -> OAuth client -> Edit (ellipsis) -> tambah scope + tag:crawler."
+            exit 1
+          fi
+          echo "OAuth client OK: token + auth key (tag:crawler) berhasil."
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
