@@ -36,6 +36,8 @@ jobs:
   crawl:
     runs-on: ${{ vars.CRAWLER_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
+    env:
+      EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE || secrets.TAILSCALE_EXIT_NODE }}
     steps:
       - uses: actions/checkout@v5
 
@@ -88,6 +90,28 @@ jobs:
           python3 -m camoufox fetch
 
 
+      # Tailscale: route semua traffic keluar lewat exit node (IP residential/VPS) agar lolos Cloudflare.
+      # Dilepas dulu sebelum FlareSolverr biar container-nya ikut keluar lewat exit node.
+      - name: Connect Tailscale Exit Node
+        if: runner.os == 'Linux' && env.EXIT_NODE != ''
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:crawler
+          args: --exit-node=${{ env.EXIT_NODE }} --exit-node-allow-lan-access=true --accept-routes
+
+      - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
+        if: runner.os == 'Linux'
+        run: |
+          if [ -z "$EXIT_NODE" ]; then
+            echo "::error::TAILSCALE_EXIT_NODE kosong - isi di Settings > Secrets and variables > Actions > Variables (lihat header file ini). Tanpa exit node, traffic keluar dari IP datacenter GitHub dan kena blokir Cloudflare."
+            exit 1
+          fi
+          echo -n "IP publik runner: "
+          curl -s https://api.ipify.org
+          echo ""
+
       # FlareSolverr: solver Cloudflare (berjalan lokal, pakai IP exit node via Tailscale)
       - name: Start FlareSolverr
         if: runner.os == 'Linux'
@@ -108,22 +132,6 @@ jobs:
             sleep 1
           done
 
-      # Tailscale: route semua traffic keluar lewat exit node (IP residential/VPS) agar lolos Cloudflare
-      - name: Connect Tailscale Exit Node
-        if: runner.os == 'Linux'
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-          tags: tag:crawler
-          args: --exit-node=${{ vars.TAILSCALE_EXIT_NODE || secrets.TAILSCALE_EXIT_NODE }} --exit-node-allow-lan-access=true --accept-routes
-
-      - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
-        if: runner.os == 'Linux'
-        run: |
-          echo -n "IP publik runner: "
-          curl -s https://api.ipify.org
-          echo ""
 
       - name: Crawl LPSE
         working-directory: backend
