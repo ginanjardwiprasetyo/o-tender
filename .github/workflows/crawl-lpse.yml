@@ -16,13 +16,15 @@
 # 5. Di repo GitHub -> Settings -> Variables -> New repository variable:
 #      TAILSCALE_EXIT_NODE | Nilai: hostname (redmi-9) atau IP Tailscale (100.x.x.x) mesin kamu
 #
-# Cron pakai UTC: 23:13 UTC = 06:13 WIB, 09:07 UTC = 16:07 WIB.
+# Cron pakai UTC: 23:13 UTC = 06:13 WIB, 04:07 UTC = 11:07 WIB.
+# Schedule GitHub telat 4-9 jam (terbukti 1-6 Okt: 16:07 WIB baru jalan 21:00-01:18),
+# jadi jam 16 dimajukan ke 11:07 agar hasilnya jatuh sore, bukan larut malam.
 name: Crawl LPSE
 
 on:
   schedule:
     - cron: '13 23 * * *' # 06:13 WIB
-    - cron: '7 9 * * *'   # 16:07 WIB
+    - cron: '7 4 * * *'   # 11:07 WIB (dulu 16:07, dimajukan - lihat catatan delay di atas)
   workflow_dispatch: {}
 
 # Satu run saja - trigger saat sedang jalan otomatis membatalkan run lama (latest wins)
