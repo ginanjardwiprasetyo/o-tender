@@ -108,9 +108,13 @@ jobs:
             echo "::error::TAILSCALE_EXIT_NODE kosong - isi di Settings > Secrets and variables > Actions > Variables (lihat header file ini). Tanpa exit node, traffic keluar dari IP datacenter GitHub dan kena blokir Cloudflare."
             exit 1
           fi
-          echo -n "IP publik runner: "
-          curl -s https://api.ipify.org
-          echo ""
+          IP=$(curl -s https://api.ipify.org)
+          ORG=$(curl -s https://ipinfo.io/org)
+          echo "IP publik runner: $IP ($ORG)"
+          if echo "$ORG" | grep -qiE 'microsoft|azure'; then
+            echo "::error::Exit node Tailscale tidak aktif ($EXIT_NODE) - traffic masih keluar dari IP datacenter $ORG. Cek: (1) nilai TAILSCALE_EXIT_NODE harus IP Tailscale exit node, (2) mesin exit node sudah di-approve 'Use as exit node' di Admin Console."
+            exit 1
+          fi
 
       # FlareSolverr: solver Cloudflare (berjalan lokal, pakai IP exit node via Tailscale)
       - name: Start FlareSolverr
