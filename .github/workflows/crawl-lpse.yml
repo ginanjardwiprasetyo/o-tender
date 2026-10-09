@@ -182,7 +182,15 @@ jobs:
             echo "::error::TAILSCALE_EXIT_NODE kosong - isi di Settings > Secrets and variables > Actions > Variables (lihat header file ini). Tanpa exit node, traffic keluar dari IP datacenter GitHub dan kena blokir Cloudflare."
             exit 1
           fi
-          ONLINE=$(sudo -E tailscale status --json 2>/dev/null | jq -r '.ExitNodeStatus.Online // false')
+          # Netmap Tailscale baru sinkron beberapa detik setelah `tailscale up`,
+          # dan exit node bisa blip offline sesaat — tunggu max 2,5 menit dulu.
+          ONLINE=false
+          for i in $(seq 1 10); do
+            ONLINE=$(sudo -E tailscale status --json 2>/dev/null | jq -r '.ExitNodeStatus.Online // false')
+            if [ "$ONLINE" = "true" ]; then break; fi
+            echo "Exit node belum online (percobaan $i/10), tunggu 15s..."
+            sleep 15
+          done
           if [ "$ONLINE" != "true" ]; then
             echo "::error::Exit node '$EXIT_NODE' offline / Tailscale tidak tersambung (tailscale status). Cek log step 'Connect Tailscale Exit Node' - kemungkinan OAuth client kehilangan scope 'Auth keys'."
             exit 1
