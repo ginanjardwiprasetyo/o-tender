@@ -225,6 +225,7 @@ async function scrape() {
                 let pagu = '';
                 let hps = '';
                 let nama_paket = '';
+                let namaFromTender = '';
                 let instansi = '';
                 let batas_upload = '';
                 let details = {};
@@ -253,11 +254,17 @@ async function scrape() {
                             if (lbl.includes('sbu') || lbl.includes('sertifikat badan usaha')) sbu = value;
                             else if (lbl.includes('nilai pagu') || lbl === 'pagu') pagu = value;
                             else if (lbl.includes('nilai hps') || lbl === 'hps') hps = value;
-                            else if (lbl.includes('nama paket') || lbl.includes('nama tender')) nama_paket = value;
+                            else if (lbl.includes('nama tender')) namaFromTender = value;
+                            else if (lbl.includes('nama paket')) nama_paket = value;
                             else if (lbl.includes('instansi') || lbl.includes('k/l/pd')) instansi = value;
                         });
                     });
                 });
+
+                // sama dengan httpDetailScraper: 'nama paket' bisa salah dari header tabel nested
+                if (namaFromTender) nama_paket = namaFromTender;
+                nama_paket = nama_paket.replace(/^,\s*/, '').trim();
+                if (nama_paket) details['Nama Paket'] = nama_paket;
                 
                 // Extract Syarat Kualifikasi from body text
                 const bodyText = document.body.innerText;

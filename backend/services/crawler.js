@@ -461,6 +461,7 @@ async function httpDetailScraper(pengumumanUrl) {
     let nama_paket = '';
     let instansi = '';
     const details = {};
+    let namaFromTender = '';
 
     $('table tr').each((i, row) => {
         const cells = $(row).find('th, td');
@@ -474,10 +475,17 @@ async function httpDetailScraper(pengumumanUrl) {
             if (label.includes('sbu') || label.includes('sertifikat badan usaha')) sbu = extractSbu(value);
             else if (label.includes('nilai pagu') || label === 'pagu') pagu = value;
             else if (label.includes('nilai hps') || label === 'hps') hps = value;
-            else if (label.includes('nama paket') || label.includes('nama tender')) nama_paket = value;
+            // Header tabel nested "Rencana Umum Pengadaan" = | Nama Paket | Sumber Dana |
+            // jadi 'nama paket' bisa salah dapet 'Sumber Dana' — utamakan 'nama tender'
+            else if (label.includes('nama tender')) namaFromTender = value;
+            else if (label.includes('nama paket')) nama_paket = value;
             else if (label.includes('instansi') || label.includes('k/l/pd')) instansi = value;
         }
     });
+    if (namaFromTender) nama_paket = namaFromTender;
+    nama_paket = nama_paket.replace(/^,\s*/, '').trim();
+    if (nama_paket) details['Nama Paket'] = nama_paket;
+    if (details['Nama Tender']) details['Nama Tender'] = details['Nama Tender'].replace(/^,\s*/, '').trim();
 
     // Extract Syarat Kualifikasi for SBU (include KBLI→SBU fallback)
     const fullText = $('body').text();
@@ -798,6 +806,8 @@ class CrawlerService {
                 // 1. Year filter (safety check)
                 const taText = String(t['Tahun Anggaran'] || t.tahun_anggaran || t.raw_data?.tahun_anggaran || '');
                 const cell1Text = String(t['Nama Paket'] || t.nama_paket || '');
+                // LPSE konsolidasi kadang serve nama berawal koma: ",Konsolidasi ..."
+                const namaPaket = cell1Text.replace(/^,\s*/, '').trim();
                 const hasWrongYear = (taText && taText !== String(year)) || 
                                    (cell1Text.includes('TA ') && !cell1Text.includes(`TA ${year}`));
                 if (hasWrongYear && !cell1Text.includes(`TA ${year}`)) continue;
@@ -874,7 +884,7 @@ class CrawlerService {
                     String(t['Kode Tender'] || t.kode_tender || ''),
                     kdLpseInt,
                     nama_lpse,
-                    t['Nama Paket'] || t.nama_paket || '',
+                    namaPaket,
                     instansi,
                     paguVal,
                     hpsVal,
@@ -908,7 +918,7 @@ class CrawlerService {
                                 const { sendWhatsAppMessage } = require('../utils/whatsapp');
                                 const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                 const aanwizingDate = extractAanwizingDate(t.Jadwal || t.schedules || null) || '-';
-                                const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${t['Nama Paket'] || t.nama_paket || ''}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
+                                const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${namaPaket}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
                                 sendWhatsAppMessage(null, msg)
                                     .then(r => { if (!r || !r.success) this.log(`WA GAGAL ${tenderKodeStr}: ${(r && r.error) || 'respons tidak valid'}`); })
                                     .catch(e => this.log(`WA ERROR ${tenderKodeStr}: ${e.message}`));
@@ -918,7 +928,7 @@ class CrawlerService {
                         this.log(`Notif ${tenderKodeStr}: SBU belum ada di list, notif ditunda sampai Deep Scan.`);
                         this.status.newTendersMap = this.status.newTendersMap || {};
                         this.status.newTendersMap[tenderKodeStr] = {
-                            nama_paket: t['Nama Paket'] || t.nama_paket || '',
+                            nama_paket: namaPaket,
                             instansi: instansi,
                             pagu: paguVal,
                             hps: hpsVal,
