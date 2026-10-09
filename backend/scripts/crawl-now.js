@@ -7,7 +7,7 @@ const db = require('../config/db');
 const year = parseInt(process.argv[2]) || new Date().getFullYear();
 
 // ponytail: retry DNS/connect sementara (EAI_AGAIN di GitHub runner)
-async function waitDb(attempts = 5, delayMs = 5000) {
+async function waitDb(attempts = 12, delayMs = 10000) {
     for (let i = 1; i <= attempts; i++) {
         try {
             await db.query('SELECT 1');

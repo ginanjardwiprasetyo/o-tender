@@ -163,6 +163,19 @@ jobs:
           echo "::error::Gagal set exit node '$EXIT_NODE': $OUT. Cek: (1) nilai TAILSCALE_EXIT_NODE = IP atau hostname exit node, (2) mesin exit node sudah di-approve 'Use as exit node' di Admin Console."
           exit 1
 
+      # DNS lewat exit node kadang timeout (router ISP forwarding DNS mati saat
+      # reconnect) -> EAI_AGAIN. Paksa resolver publik, query-nya tetap keluar
+      # lewat exit node karena semua traffic sudah di-route Tailscale.
+      - name: Set DNS publik (hindari EAI_AGAIN)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          IFACE=$(ip route show default | awk '{print $5; exit}')
+          echo "iface=$IFACE"
+          sudo resolvectl dns "$IFACE" 1.1.1.1 8.8.8.8 || true
+          sudo resolvectl domain "$IFACE" '~.' || true
+          resolvectl status "$IFACE" | grep -i dns || true
+
       - name: Verify public IP (pastikan pakai IP exit node, bukan IP GitHub)
         if: runner.os == 'Linux'
         run: |
