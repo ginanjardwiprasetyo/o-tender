@@ -205,9 +205,12 @@ jobs:
           fi
 
       # FlareSolverr: solver Cloudflare (berjalan lokal, pakai IP exit node via Tailscale)
+      # Batasi 5 menit: docker pull bisa gantung 1 jam lewat exit node → keburu timeout job
+      # dan crawl tak jalan. Tanpa FlareSolverr crawler fallback HTTP/Playwright.
       - name: Start FlareSolverr
         if: runner.os == 'Linux'
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           docker run -d \
             --name=flaresolverr \
