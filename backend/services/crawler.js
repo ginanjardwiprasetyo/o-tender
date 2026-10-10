@@ -268,7 +268,7 @@ async function httpListScraper(listUrl) {
     const postUrl = `${u.origin}/${slug}/dt/lelang?${q.toString()}`;
 
     const body = new URLSearchParams({
-        draw: '1', start: '0', length: '25',
+        draw: '1', start: '0', length: '1000',
         'search[value]': '', 'search[regex]': 'false',
         'order[0][column]': '5', 'order[0][dir]': 'desc',
         authenticityToken: token,

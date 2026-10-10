@@ -98,6 +98,7 @@ async function scrape() {
     try {
         if (type === 'list') {
             let interceptData = null;
+            let interceptSeen = 0;
             const dtInfo = [];
             let navStatus = 0;
             const pageHead = async () => {
@@ -112,7 +113,9 @@ async function scrape() {
                     try {
                         const json = await response.json();
                         if (json && json.data) {
-                            interceptData = json.data;
+                            interceptSeen++;
+                            // simpan response terpanjang (default halaman pertama = 25 baris)
+                            if (!interceptData || json.data.length > interceptData.length) interceptData = json.data;
                             dtInfo.push(`${response.status()}:rows=${json.data.length}`);
                         } else {
                             dtInfo.push(`${response.status()}:no-data`);
@@ -133,6 +136,18 @@ async function scrape() {
                 if (i === 9 || i === 19) {
                     if (/akses ditolak|anda tidak diizinkan/i.test(await pageHead())) break;
                 }
+            }
+
+            // DataTables default ambil 25 baris/halaman, padahal ada LPSE dengan
+            // 80+ paket — tarik sekali semua baris, ambil response terpanjang.
+            if (interceptData && interceptData.length >= 25) {
+                const before = interceptSeen;
+                await page.evaluate(() => {
+                    const jq = window.jQuery;
+                    const t = jq && jq('table.dataTable');
+                    if (t && t.length) t.DataTable().page.len(1000).draw();
+                }).catch(() => {});
+                for (let i = 0; i < 8 && interceptSeen === before; i++) await page.waitForTimeout(500);
             }
 
             if (interceptData) {
