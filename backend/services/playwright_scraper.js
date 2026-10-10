@@ -100,12 +100,20 @@ async function scrape() {
             let interceptData = null;
             let interceptSeen = 0;
             const dtInfo = [];
+            const seenPaths = new Set();
             let navStatus = 0;
             const pageHead = async () => {
                 const t = await page.title().catch(() => '');
                 const b = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ').trim();
                 return `${t} | ${b}`;
             };
+
+            page.on('response', response => {
+                try {
+                    const p = new URL(response.url()).pathname;
+                    if (p.length < 90) seenPaths.add(p);
+                } catch {}
+            });
 
             page.on('response', async response => {
                 const resUrl = response.url();
@@ -129,25 +137,37 @@ async function scrape() {
             const nav = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             navStatus = nav ? nav.status() : 0;
 
-            // IP datacenter (GitHub Actions) bisa kena challenge Cloudflare dulu —
-            // tunggu sampai lolos, tapi stop lebih awal kalau kena hard block WAF.
-            for (let i = 0; i < 30 && !interceptData; i++) {
-                await page.waitForTimeout(1000);
-                if (i === 9 || i === 19) {
-                    if (/akses ditolak|anda tidak diizinkan/i.test(await pageHead())) break;
+            const waitForRows = async () => {
+                for (let i = 0; i < 30 && !interceptData; i++) {
+                    await page.waitForTimeout(1000);
+                    if (i === 9 || i === 19) {
+                        if (/akses ditolak|anda tidak diizinkan/i.test(await pageHead())) break;
+                    }
                 }
+            };
+            await waitForRows();
+            // ponytail: AJAX list kadang tak pernah terkirim (NO_DATA dt=none) — satu reload cukup
+            if (!interceptData) {
+                console.error(`[list] tak ada data list, reload sekali (nav=${navStatus})`);
+                const nav2 = await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+                if (nav2) navStatus = nav2.status();
+                await waitForRows();
             }
 
             // DataTables default ambil 25 baris/halaman, padahal ada LPSE dengan
             // 80+ paket — tarik sekali semua baris, ambil response terpanjang.
             if (interceptData && interceptData.length >= 25) {
-                const before = interceptSeen;
+                const beforeRows = interceptData.length;
+                const seen = interceptSeen;
                 await page.evaluate(() => {
                     const jq = window.jQuery;
                     const t = jq && jq('table.dataTable');
                     if (t && t.length) t.DataTable().page.len(1000).draw();
-                }).catch(() => {});
-                for (let i = 0; i < 8 && interceptSeen === before; i++) await page.waitForTimeout(500);
+                }).catch(e => console.error(`[list] len1000 gagal: ${e.message}`));
+                for (let i = 0; i < 20 && interceptSeen === seen; i++) await page.waitForTimeout(500);
+                if (interceptData.length === beforeRows) {
+                    console.error(`[list] len1000 tak menambah baris (rows=${beforeRows}, dt=${dtInfo.join(',')})`);
+                }
             }
 
             if (interceptData) {
@@ -190,7 +210,7 @@ async function scrape() {
                 await browser.close();
                 return;
             } else {
-                console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} headed=${headed} dt=${dtInfo.join(',') || 'none'} rows=${interceptData ? interceptData.length : 'n/a'} page="${(await pageHead()).slice(0, 220)}"`);
+                console.error(`[list] NO_DATA nav=${navStatus} chrome=${pakaiChrome} headed=${headed} dt=${dtInfo.join(',') || 'none'} rows=${interceptData ? interceptData.length : 'n/a'} paths=${[...seenPaths].slice(0, 14).join(',')} page="${(await pageHead()).slice(0, 220)}"`);
                 console.log(JSON.stringify([]));
                 await browser.close();
                 return;

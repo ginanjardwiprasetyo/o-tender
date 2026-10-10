@@ -111,7 +111,16 @@ async function runScraper(type, url, yearStr) {
         const lines = stdout.split('\n').filter(l => l.trim().startsWith('{') || l.trim().startsWith('['));
         if (lines.length > 0) {
             const parsed = JSON.parse(lines[lines.length - 1]);
-            if (type === 'list') listDiag.push(`${slug}:PW:${Array.isArray(parsed) ? parsed.length : 'bad'}`);
+            if (type === 'list') {
+                if (!Array.isArray(parsed)) {
+                    // scraper list melempar {"error":...} — jangan dipakai sebagai data
+                    const msg = String((parsed && parsed.error) || 'bukan-array').slice(0, 80);
+                    listDiag.push(`${slug}:PW:${msg}`);
+                    console.warn(`[Crawler] Playwright list gagal (${slug}): ${msg}`);
+                    return [];
+                }
+                listDiag.push(`${slug}:PW:${parsed.length}`);
+            }
             return parsed;
         }
         if (type === 'list') listDiag.push(`${slug}:PW:empty-output`);
