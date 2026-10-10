@@ -135,6 +135,15 @@ jobs:
           python3 -m camoufox fetch
 
 
+      # Pull image SEBELUM exit node aktif. Sesudahnya semua traffic keluar lewat IP
+      # rumah (279MB via Tailscale = 5-13 menit, terukur 154-814s di run sebelumnya).
+      # `docker run` pakai image lokal, jadi step Start FlareSolverr tinggal nyalain.
+      - name: Pre-pull FlareSolverr
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        timeout-minutes: 5
+        run: docker pull ghcr.io/flaresolverr/flaresolverr:latest
+
       # Tailscale: route semua traffic keluar lewat exit node (IP residential/VPS) agar lolos Cloudflare.
       # Dua fase: (1) connect tanpa --exit-node dulu - saat login peer list masih kosong,
       # (2) set exit node di step berikutnya setelah netmap tersinkron.
