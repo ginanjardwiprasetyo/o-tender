@@ -126,15 +126,6 @@ jobs:
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
 
-      # Camoufox: Firefox-based stealth browser (80-90% bypass Cloudflare dari datacenter IP)
-      - name: Install Camoufox
-        if: runner.os == 'Linux'
-        continue-on-error: true
-        run: |
-          pip3 install camoufox --break-system-packages --quiet
-          python3 -m camoufox fetch
-
-
       # Pull image SEBELUM exit node aktif. Sesudahnya semua traffic keluar lewat IP
       # rumah (279MB via Tailscale = 5-13 menit, terukur 154-814s di run sebelumnya).
       # `docker run` pakai image lokal, jadi step Start FlareSolverr tinggal nyalain.

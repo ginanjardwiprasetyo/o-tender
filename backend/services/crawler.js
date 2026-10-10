@@ -734,6 +734,16 @@ class CrawlerService {
             this.status.totalTenders += tenders.length;
             console.log(`[Crawler] Found ${tenders.length} total packages for ${nama_lpse} (API: ${apiTenders.length}, Scraped: ${scrapedTenders.length})`);
             
+            // ponytail: batch DB per LPSE - dulu 2 query per tender (SELECT existing +
+            // INSERT) = 440 round-trip x ~0,5s lewat exit node ≈ 150s dari total crawl.
+            // Sekarang 1 SELECT ANY() + 1 INSERT multi-row, isi barisnya tetap sama.
+            const { rows: existingRows } = await db.query(
+                'SELECT kode_tender FROM crawled_tenders WHERE kd_lpse = $1 AND kode_tender = ANY($2)',
+                [kdLpseInt, tenders.map(t => String(t['Kode Tender'] || t.kode_tender || ''))]
+            );
+            const existingSet = new Set(existingRows.map(r => String(r.kode_tender)));
+
+            const rows = [];
             for (const t of tenders) {
                 // 1. Year filter (safety check)
                 const taText = String(t['Tahun Anggaran'] || t.tahun_anggaran || t.raw_data?.tahun_anggaran || '');
@@ -780,15 +790,33 @@ class CrawlerService {
                 try { rawData = JSON.parse(JSON.stringify(t)); } catch { rawData = null; }
 
                 const tenderKodeStr = String(t['Kode Tender'] || t.kode_tender || '');
-                const { rows: existing } = await db.query('SELECT kode_tender FROM crawled_tenders WHERE kode_tender = $1 AND kd_lpse = $2', [tenderKodeStr, kdLpseInt]);
-                const isNew = existing.length === 0;
+                rows.push({
+                    isNew: !existingSet.has(tenderKodeStr),
+                    tenderKodeStr, namaPaket, instansi, paguVal, hpsVal, batasUpload, t,
+                    params: [
+                        tenderKodeStr, kdLpseInt, nama_lpse, namaPaket, instansi,
+                        paguVal, hpsVal, 'Pekerjaan Konstruksi',
+                        t['Metode Pemilihan'] || t.metode_pemilihan || '-',
+                        t['Status_Tender'] || t['Status Tender'] || t.status_tender || '-',
+                        t.lokasi_paket ? JSON.stringify(t.lokasi_paket) : null,
+                        parseInt(year), slug, rawData, t.SBU || null, batasUpload
+                    ],
+                });
+            }
 
+            if (rows.length) {
+                const params = [];
+                const tuples = rows.map((r, i) => {
+                    for (const v of r.params) params.push(v);
+                    const base = i * 16;
+                    return `(${Array.from({ length: 16 }, (_, j) => `$${base + j + 1}`).join(', ')})`;
+                }).join(', ');
                 await db.query(`
                     INSERT INTO crawled_tenders (
                         kode_tender, kd_lpse, nama_lpse, nama_paket, instansi, 
                         pagu, hps, kategori, metode_pemilihan, status_tender, 
                         lokasi, tahun_anggaran, slug, raw_data, sbu, batas_upload
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    ) VALUES ${tuples}
                     ON CONFLICT (kode_tender, kd_lpse) 
                     DO UPDATE SET 
                         nama_paket       = EXCLUDED.nama_paket,
@@ -812,26 +840,13 @@ class CrawlerService {
                             ELSE crawled_tenders.batas_upload 
                         END,
                         crawled_at = NOW()
-                `, [
-                    String(t['Kode Tender'] || t.kode_tender || ''),
-                    kdLpseInt,
-                    nama_lpse,
-                    namaPaket,
-                    instansi,
-                    paguVal,
-                    hpsVal,
-                    'Pekerjaan Konstruksi',
-                    t['Metode Pemilihan'] || t.metode_pemilihan || '-',
-                    t['Status_Tender'] || t['Status Tender'] || t.status_tender || '-',
-                    t.lokasi_paket ? JSON.stringify(t.lokasi_paket) : null,
-                    parseInt(year),
-                    slug,
-                    rawData,
-                    t.SBU || null,
-                    batasUpload
-                ]);
+                `, params);
+            }
 
-                if (isNew) {
+            for (const r of rows) {
+                if (!r.isNew) continue;
+                {
+                    const { t, tenderKodeStr, namaPaket, instansi, paguVal, hpsVal, batasUpload } = r;
                     const tenderSbu = t.SBU || '-';
                     if (tenderSbu !== '-') {
                         const sbus = tenderSbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -852,7 +867,7 @@ class CrawlerService {
                                 const aanwizingDate = extractAanwizingDate(t.Jadwal || t.schedules || null) || '-';
                                 const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${namaPaket}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
                                 sendWhatsAppMessage(null, msg)
-                                    .then(r => { if (!r || !r.success) this.log(`WA GAGAL ${tenderKodeStr}: ${(r && r.error) || 'respons tidak valid'}`); })
+                                    .then(res => { if (!res || !res.success) this.log(`WA GAGAL ${tenderKodeStr}: ${(res && res.error) || 'respons tidak valid'}`); })
                                     .catch(e => this.log(`WA ERROR ${tenderKodeStr}: ${e.message}`));
                             }
                         }
@@ -869,6 +884,7 @@ class CrawlerService {
                     }
                 }
             }
+            rows.length = 0;
             // Free large arrays from memory
             apiTenders = null;
             scrapedTenders = null;
