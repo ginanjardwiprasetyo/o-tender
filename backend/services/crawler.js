@@ -54,6 +54,9 @@ async function tryFreeMemory() {
 // Ringkasan jalur list per LPSE — ditulis ke crawl_logs.error bila 0 tender,
 // supaya alasan kegagalan dari GitHub Actions kelihatan tanpa buka log Actions.
 const listDiag = [];
+// ponytail: hitung timeout HTTP list berturut-turut (semua list di 1 host yang sama,
+// spse.inaproc.id) - kalau sudah 2x, sisa LPSE langsung Playwright tanpa bayar timeout.
+let listHttpTimeouts = 0;
 
 async function runScraper(type, url, yearStr) {
     // Try to free memory first
@@ -65,23 +68,31 @@ async function runScraper(type, url, yearStr) {
         const slug = new URL(url).pathname.split('/')[1];
         // ponytail: FLARE dihapus dari jalur list - 0/22 sukses di log Actions,
         // selalu `blocked` lalu tetap jatuh ke Playwright (+17s sia-sia x 11 LPSE).
-        const jalur = [['HTTP', () => httpListScraper(url)]];
+        const diagStart = listDiag.length;
+        const jalur = [];
+        if (listHttpTimeouts < 2) {
+            jalur.push(['HTTP', () => httpListScraper(url)]);
+        } else {
+            listDiag.push(`${slug}:HTTP:skip-after-${listHttpTimeouts}x-timeout`);
+        }
         for (const [nama, fn] of jalur) {
             try {
                 const rows = await fn();
                 if (rows && rows.length) {
+                    listHttpTimeouts = 0;
                     listDiag.push(`${slug}:${nama}:${rows.length}`);
                     console.log(`[Crawler] List via ${nama} OK: ${rows.length} baris (${slug})`);
                     return rows;
                 }
                 listDiag.push(`${slug}:${nama}:${rows === null ? 'blocked' : 'kosong'}`);
             } catch (e) {
-                listDiag.push(`${slug}:${nama}:${e.response ? 'HTTP' + e.response.status : (e.code || e.message).slice(0, 40)}`);
+                const code = e.code || (e.response ? 'HTTP' + e.response.status : e.message.slice(0, 40));
+                if (code === 'ETIMEDOUT' || code === 'ECONNABORTED' || code === 'ECONNRESET') listHttpTimeouts++;
+                listDiag.push(`${slug}:${nama}:${code}`);
             }
         }
-        // Semua jalur dicatat (bukan cuma terakhir) - biar ketahuan HTTP gagal di
-        // challenge CF / no-token / HTTP berapa di log Actions.
-        console.warn(`[Crawler] List gagal (${listDiag.slice(-jalur.length).join(' | ')}) → fallback Playwright`);
+        // Jalur yang dicoba dicetak semua - biar kelihatan di log Actions kenapa gagal.
+        console.warn(`[Crawler] List gagal (${listDiag.slice(diagStart).join(' | ')}) → fallback Playwright`);
     }
 
     const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
@@ -231,7 +242,9 @@ async function httpListScraper(listUrl) {
     const u = new URL(listUrl);
     const slug = u.pathname.split('/').filter(Boolean)[0];
 
-    const resp = await axios.get(listUrl, { timeout: 20000, headers: HTTP_HEADERS, maxRedirects: 5 });
+    // ponytail: 8s bukan 20s - endpoint list responsnya ~0,3s, timeout 20s x 11 LPSE
+    // pernah buang 3,7 menit waktu jalan (ETIMEDOUT lewat exit node).
+    const resp = await axios.get(listUrl, { timeout: 8000, headers: HTTP_HEADERS, maxRedirects: 5 });
     const html = resp.data;
     const cookie = (resp.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
 
@@ -546,6 +559,7 @@ class CrawlerService {
         };
         this.shouldStop = false;
         listDiag.length = 0;
+        listHttpTimeouts = 0;
         this.log('Memulai proses crawl seluruh LPSE...');
 
         try {
