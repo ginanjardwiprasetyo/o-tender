@@ -5,6 +5,9 @@
 const { getLPSEList, getBaseUrl } = require('../utils/lpse-mapper');
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+// ponytail: WAJIB ada timeout - tanpa ini fetch menggantung ber-menit-menit di runner
+// (jalur ke spse.inaproc.id memang hang, bukan cepat gagal).
+const TO = (ms) => AbortSignal.timeout(ms);
 const HEADERS = {
     'User-Agent': UA,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -43,6 +46,7 @@ async function postList(baseUrl, slug, listUrl, cookie, token, length) {
             Referer: listUrl,
         },
         body,
+        signal: TO(8000),
     });
     const j = await res.json().catch(() => null);
     return { status: res.status, rows: Array.isArray(j && j.data) ? j.data.length : null };
@@ -55,12 +59,12 @@ async function probe(slug) {
     const t0 = Date.now();
     let html = '', cookie = '';
     try {
-        const r = await fetch(listUrl, { headers: HEADERS });
+        const r = await fetch(listUrl, { headers: HEADERS, signal: TO(8000) });
         out.get_status = r.status;
         cookie = (r.headers.getSetCookie ? r.headers.getSetCookie() : []).map(c => c.split(';')[0]).join('; ');
         html = await r.text();
     } catch (e) {
-        out.get_err = (e.cause && e.cause.code) || e.code || e.message;
+        out.get_err = (e.cause && e.cause.code) || e.code || e.name || e.message;
     }
     out.get_ms = Date.now() - t0;
     if (!html) return out;
@@ -81,14 +85,15 @@ async function probe(slug) {
         out.rows_1000 = b.rows;
         out.kurang = (b.rows || 0) - (a.rows || 0);
     } catch (e) {
-        out.post_err = (e.cause && e.cause.code) || e.code || e.message;
+        out.post_err = (e.cause && e.cause.code) || e.code || e.name || e.message;
         out.post_ms = Date.now() - t1;
     }
     return out;
 }
 
 (async () => {
-    console.log(`[probe] exit-node IP: ${await fetch('https://api.ipify.org').then(r => r.text()).catch(() => '?')}`);
+    console.log('[probe] mulai - membaca IP exit node...');
+    console.log(`[probe] exit-node IP: ${await fetch('https://api.ipify.org', { signal: TO(5000) }).then(r => r.text()).catch(e => e.name)}`);
     const lpse = await getLPSEList();
     let t25 = 0, t1000 = 0, ok = 0;
     for (const l of lpse) {
