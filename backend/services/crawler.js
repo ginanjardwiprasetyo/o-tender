@@ -63,9 +63,9 @@ async function runScraper(type, url, yearStr) {
     // Playwright tetap cadangan bila kena challenge Cloudflare/WAF.
     if (type === 'list') {
         const slug = new URL(url).pathname.split('/')[1];
-        const jalur = [];
-        jalur.push(['HTTP', () => httpListScraper(url)]);
-        if (process.env.FLARESOLVERR_URL) jalur.push(['FLARE', () => flareListScraper(url)]);
+        // ponytail: FLARE dihapus dari jalur list - 0/22 sukses di log Actions,
+        // selalu `blocked` lalu tetap jatuh ke Playwright (+17s sia-sia x 11 LPSE).
+        const jalur = [['HTTP', () => httpListScraper(url)]];
         for (const [nama, fn] of jalur) {
             try {
                 const rows = await fn();
@@ -79,7 +79,9 @@ async function runScraper(type, url, yearStr) {
                 listDiag.push(`${slug}:${nama}:${e.response ? 'HTTP' + e.response.status : (e.code || e.message).slice(0, 40)}`);
             }
         }
-        console.warn(`[Crawler] List HTTP/Flare gagal (${listDiag[listDiag.length - 1]}) → fallback Playwright`);
+        // Semua jalur dicatat (bukan cuma terakhir) - biar ketahuan HTTP gagal di
+        // challenge CF / no-token / HTTP berapa di log Actions.
+        console.warn(`[Crawler] List gagal (${listDiag.slice(-jalur.length).join(' | ')}) → fallback Playwright`);
     }
 
     const slug = type === 'list' ? new URL(url).pathname.split('/')[1] : '';
@@ -184,11 +186,12 @@ const ANT_LIST_SNIPPET = Buffer.from(`
 // ============================================================
 async function flareSolverrGet(url) {
     const flareUrl = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
+    // 30s bukan 60s: fallback detail harus gagal cepat, solver CF butuh 10-25s waktu normal.
     const res = await axios.post(flareUrl, {
         cmd: 'request.get',
         url: url,
-        maxTimeout: 60000
-    }, { timeout: 70000 });
+        maxTimeout: 30000
+    }, { timeout: 35000 });
 
     if (res.data && res.data.status === 'ok' && res.data.solution) {
         return res.data.solution;
@@ -196,91 +199,6 @@ async function flareSolverrGet(url) {
     throw new Error((res.data && res.data.message) || `FlareSolverr status=${res.data && res.data.status}`);
 }
 
-async function flareSolverrPost(url, postData) {
-    const flareUrl = process.env.FLARESOLVERR_URL || 'http://localhost:8191/v1';
-    const res = await axios.post(flareUrl, {
-        cmd: 'request.post',
-        url: url,
-        postData: postData,
-        maxTimeout: 60000
-    }, { timeout: 70000 });
-
-    if (res.data && res.data.status === 'ok' && res.data.solution) {
-        return res.data.solution;
-    }
-    throw new Error((res.data && res.data.message) || `FlareSolverr status=${res.data && res.data.status}`);
-}
-
-
-async function flareListScraper(listUrl) {
-    const solution = await flareSolverrGet(listUrl);
-    if (!solution || !solution.response) return null;
-    const html = solution.response;
-    if (looksBlocked(html)) return null;
-
-    const $ = cheerio.load(html);
-    const out = [];
-    $('table.dataTable tbody tr').each((i, tr) => {
-        const c = $(tr).find('td').map((j, td) => $(td).text().replace(/\s+/g, ' ').trim()).get();
-        if (c.length >= 5 && /^[\d]+$/.test(c[0])) {
-            out.push({
-                'Kode Tender': c[0], 'kode_tender': c[0], 'Nama Paket': c[1] || '',
-                'Instansi': c[2] || '', 'Pagu': 0, 'HPS': parseCurrency(c[4]),
-                'Status_Tender': c[3] || '', 'Kategori Pekerjaan': 'Pekerjaan Konstruksi',
-                'SBU': '-', 'Batas Upload': '-',
-            });
-        }
-    });
-
-    if (!out.length) {
-        const u = new URL(listUrl);
-        const slug = u.pathname.split('/').filter(Boolean)[0];
-        let token = (String(html).match(/authenticity[Tt]oken["'\s:=]+([a-f0-9]{32,})/) || [])[1] || '';
-        const cookieStr = (solution.cookies || []).map(c => `${c.name}=${c.value}`).join('; ');
-
-        if (token && cookieStr) {
-            const q = new URLSearchParams();
-            for (const k of ['kategoriId', 'rekanan', 'tahun', 'instansiId']) {
-                q.set(k, u.searchParams.get(k) || '');
-            }
-            const postUrl = `${u.origin}/${slug}/dt/lelang?${q.toString()}`;
-            const body = new URLSearchParams({
-                draw: '1', start: '0', length: '25',
-                'search[value]': '', 'search[regex]': 'false',
-                'order[0][column]': '5', 'order[0][dir]': 'desc',
-                authenticityToken: token,
-            });
-            for (let i = 0; i < 6; i++) {
-                body.set(`columns[${i}][data]`, String(i));
-                body.set(`columns[${i}][name]`, '');
-                body.set(`columns[${i}][searchable]`, 'true');
-                body.set(`columns[${i}][orderable]`, 'true');
-                body.set(`columns[${i}][search][value]`, '');
-                body.set(`columns[${i}][search][regex]`, 'false');
-            }
-            try {
-                // Gunakan FlareSolverr untuk POST agar lolos dari Cloudflare WAF
-                const sol2 = await flareSolverrPost(postUrl, body.toString());
-                if (sol2 && sol2.response) {
-                    const pageText = sol2.response.replace(/<[^>]*>/g, '');
-                    // Parse text response back to JSON (FlareSolverr wraps JSON in HTML sometimes)
-                    let jsonText = pageText;
-                    try {
-                        const match = pageText.match(/\{.*\}/);
-                        if (match) jsonText = match[0];
-                        const r2 = JSON.parse(jsonText);
-                        const rows = r2 && r2.data;
-                        if (Array.isArray(rows) && rows.length) return mapListRows(rows);
-                    } catch (e) {}
-                }
-            } catch (e) {
-                console.warn(`[Crawler] FlareSolverr list POST gagal (${postUrl}):`, e.message);
-            }
-        }
-    }
-
-    return out.length ? out : null;
-}
 
 function looksBlocked(html) {
     const txt = String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
