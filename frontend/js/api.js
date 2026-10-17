@@ -54,11 +54,13 @@ const API = {
     updatePersonnel(id, data) { return this.request(`/personnel/${id}`, { method: 'PUT', body: data }); },
     deletePersonnel(id) { return this.request(`/personnel/${id}`, { method: 'DELETE' }); },
     addEducation(pid, data) { return this.request(`/personnel/${pid}/education`, { method: 'POST', body: data }); },
+    updateEducation(id, data) { return this.request(`/personnel/education/${id}`, { method: 'PUT', body: data }); },
     deleteEducation(id) { return this.request(`/personnel/education/${id}`, { method: 'DELETE' }); },
     addExperience(pid, data) { return this.request(`/personnel/${pid}/experience`, { method: 'POST', body: data }); },
     updateExperience(id, data) { return this.request(`/personnel/experience/${id}`, { method: 'PUT', body: data }); },
     deleteExperience(id) { return this.request(`/personnel/experience/${id}`, { method: 'DELETE' }); },
     addSka(pid, data) { return this.request(`/personnel/${pid}/ska`, { method: 'POST', body: data }); },
+    updateSka(id, data) { return this.request(`/personnel/ska/${id}`, { method: 'PUT', body: data }); },
     deleteSka(id) { return this.request(`/personnel/ska/${id}`, { method: 'DELETE' }); },
 
     // ─── Tenders ──────────────────────────────────────
@@ -85,7 +87,12 @@ const API = {
     // ─── Followed Tenders ─────────────────────────────
     getFollowedTenders() { return this.request('/followed'); },
     getFollowedStats() { return this.request('/followed/stats'); },
-    getFollowedUpcoming() { return this.request('/followed/upcoming'); },
+    getFollowedUpcoming(days, past) {
+        const q = [];
+        if (days) q.push(`days=${days}`);
+        if (past) q.push(`past=${past}`);
+        return this.request('/followed/upcoming' + (q.length ? `?${q.join('&')}` : ''));
+    },
     checkFollowed(kode) { return this.request(`/followed/check/${kode}`); },
     syncFollowedTender(data) { return this.request('/followed/sync', { method: 'POST', body: data }); },
     syncFollowedStatus() { return this.request('/followed/sync-status', { method: 'POST' }); },
@@ -114,19 +121,71 @@ const API = {
     deleteCompany(id) { return this.request(`/companies/${id}`, { method: 'DELETE' }); },
 
     // ─── Uploads ──────────────────────────────────────
-    async uploadFile(file, category) {
+    // ponytail: XHR (bukan fetch) agar dapat upload.onprogress; default tampil MB pasti di tombol Simpan modal
+    async uploadFile(file, category, onProgress) {
+        const mb = (s) => (s / 1024 / 1024).toFixed(1).replace('.', ',');
+        const setLabel = (html) => { const b = document.querySelector('#modal-footer .btn-primary'); if (b) b.innerHTML = html; };
+        const update = onProgress || ((pct, loaded, total) =>
+            setLabel(`<span class="spinner-sm"></span> Mengunggah... ${mb(loaded)}/${mb(total)} MB (${pct}%)`));
+        // Kompres gambar dulu (bisa dimatikan di Pengaturan); PDF diteruskan apa adanya
+        let payload = file;
+        if (localStorage.getItem('tb_compress') !== '0' && file.type.startsWith('image/')) {
+            if (!onProgress) setLabel('<span class="spinner-sm"></span> Memampatkan gambar...');
+            payload = await this.compressImage(file);
+        }
+        const MAX = 50 * 1024 * 1024; // samakan dengan multer backend
+        if (payload.size > MAX) throw new Error(`File kebesaran (${mb(payload.size)} MB, maks ${mb(MAX)} MB) — kompres/perkecil dulu`);
+        update(0, 0, payload.size);
         const formData = new FormData();
         formData.append('category', category);
-        formData.append('file', file);
-        const url = `${this.base}/uploads`;
-        const res = await fetch(url, { method: 'POST', body: formData });
-        const json = await res.json();
-        if (!json.success) throw new Error(json.error || 'Upload gagal');
+        formData.append('file', payload, payload.name);
+        const json = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${this.base}/uploads`);
+            xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(Math.round(e.loaded / e.total * 100), e.loaded, e.total); };
+            xhr.onload = () => {
+                let j = null;
+                try { j = JSON.parse(xhr.responseText); } catch {}
+                if (xhr.status >= 200 && xhr.status < 300 && j && j.success) resolve(j);
+                else reject(new Error((j && j.error) || `Upload gagal (HTTP ${xhr.status})`));
+            };
+            xhr.onerror = () => reject(new Error('Upload gagal (jaringan)'));
+            xhr.send(formData);
+        });
+        // ponytail: 100% = baru sampai server; jeda sesudahnya = server teruskan ke storage + simpan → label fase berikut agar tak terlihat stuck
+        if (onProgress) update(100, payload.size, payload.size);
+        else setLabel(`<span class="spinner-sm"></span> Meneruskan ke penyimpanan... (${mb(payload.size)} MB)`);
         return json;
+    },
+    // Kompres gambar via Canvas bawaan browser (tanpa lib): max 2560px, JPEG q0.92 / PNG lossless;
+    // hasil dipakai hanya jika lebih kecil — dijamin tak pernah lebih besar dari aslinya
+    async compressImage(file) {
+        try {
+            if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
+            const bmp = await createImageBitmap(file);
+            try {
+                const s = Math.min(1, 2560 / Math.max(bmp.width, bmp.height));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(bmp.width * s));
+                c.height = Math.max(1, Math.round(bmp.height * s));
+                c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+                const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+                const blob = await new Promise(r => c.toBlob(r, type, 0.92));
+                if (!blob || blob.size >= file.size) return file;
+                return new File([blob], file.name.replace(/\.\w+$/, type === 'image/png' ? '.png' : '.jpg'), { type });
+            } finally { bmp.close(); }
+        } catch { return file; }
     },
     deleteFile(url) {
         return this.request('/uploads', { method: 'DELETE', body: { url } });
     },
+
+    // ─── Documents (server-side generate) ─────────────
+    syncTemplate(id, gdoc_id) { return this.request(`/templates/${id}/sync`, { method: 'POST', body: { gdoc_id } }); },
+    previewDocument(payload) { return this.request('/documents/preview', { method: 'POST', body: payload }); },
+    getDocRecords() { return this.request('/documents/records'); },
+    deleteDocRecord(id) { return this.request(`/documents/records/${id}`, { method: 'DELETE' }); },
+    generateDocument(payload) { return this.request('/documents/generate', { method: 'POST', body: payload }); },
 
     // ─── Schedules ────────────────────────────────────
     getSchedules() { return this.request('/schedules'); },
@@ -137,7 +196,7 @@ const API = {
     createTemplate(data) { return this.request('/templates', { method: 'POST', body: data }); },
     updateTemplate(id, data) { return this.request(`/templates/${id}`, { method: 'PUT', body: data }); },
     deleteTemplate(id) { return this.request(`/templates/${id}`, { method: 'DELETE' }); },
-    seedTemplates() { return this.request('/templates/seed', { method: 'POST' }); },
+    syncFolder() { return this.request('/templates/sync-folder', { method: 'POST', body: {} }); },
 
     // ─── Letters ──────────────────────────────────────
     getLetters(params) {
@@ -150,11 +209,17 @@ const API = {
     createLetter(data) { return this.request('/letters', { method: 'POST', body: data }); },
     updateLetter(id, data) { return this.request(`/letters/${id}`, { method: 'PUT', body: data }); },
     deleteLetter(id) { return this.request(`/letters/${id}`, { method: 'DELETE' }); },
-    getNextLetterNumber(company_id, kode_surat, tahun, bulan) {
+    getNextLetterNumber(company_id, kode_surat, tahun, bulan, pa) {
         let url = `/letters/next-number?company_id=${company_id}&kode_surat=${encodeURIComponent(kode_surat)}&tahun=${tahun}`;
         if (bulan) url += `&bulan=${bulan}`;
+        if (pa) url += `&pa=${encodeURIComponent(pa)}`;
         return this.request(url);
     },
+    // ─── Equipment files (1 alat N lampiran, boleh berbagi) ──
+    getEquipmentFiles(id) { return this.request(`/equipments/${id}/files`); },
+    getAllEquipmentFiles() { return this.request('/equipments/files/all'); },
+    addEquipmentFile(id, data) { return this.request(`/equipments/${id}/files`, { method: 'POST', body: data }); },
+    deleteEquipmentFile(fileId) { return this.request(`/equipments/files/${fileId}`, { method: 'DELETE' }); },
 
     // ─── Settings ─────────────────────────────────────
     getSettings() { return this.request('/settings'); },

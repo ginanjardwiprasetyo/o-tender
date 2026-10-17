@@ -238,6 +238,8 @@ router.post('/follow', async (req, res) => {
         if (!tender.kode_tender || !tender.nama_tender) {
             return res.status(400).json({ success: false, error: 'Data tender tidak lengkap' });
         }
+        // ponytail: nama dari crawl kadang berawalan koma/nomor ("...,1 Paket") — bersihkan saat follow
+        if (tender.nama_tender) tender.nama_tender = String(tender.nama_tender).replace(/^,\s*/, '').replace(/^\d+[.\s]\s*/, '').trim();
         
         // Cek duplikat
         const { rows: existing } = await db.query(

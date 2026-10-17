@@ -113,15 +113,15 @@ const SirupBrowsePage = {
             </div>
 
             <!-- Live Log -->
-            <div id="sirup-log-container" class="hidden" style="margin-top:20px; padding:14px; background:#0f172a; border-radius:10px; border:1px solid #1e293b;">
+            <div id="sirup-log-container" class="hidden" style="margin-top:20px; padding:14px; background:var(--bg-base); border-radius:8px; border:1px solid var(--border);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span class="spinner-sm" style="width:10px; height:10px;"></span>
-                        <span style="font-size:0.75rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Live Crawl Log</span>
+                        <span style="font-size:0.75rem; font-weight:700; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em;">Live Crawl Log</span>
                     </div>
-                    <button onclick="document.getElementById('sirup-log-container').classList.add('hidden')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:1rem;">&times;</button>
+                    <button onclick="document.getElementById('sirup-log-container').classList.add('hidden')" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:1rem;">&times;</button>
                 </div>
-                <div id="sirup-logs" style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:#cbd5e1; max-height:150px; overflow-y:auto; line-height:1.6;"></div>
+                <div id="sirup-logs" style="font-family:'JetBrains Mono','Geist Mono',monospace; font-size:0.72rem; color:var(--text-2); max-height:150px; overflow-y:auto; line-height:1.6;"></div>
             </div>
         </div>
 

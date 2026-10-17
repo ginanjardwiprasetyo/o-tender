@@ -1,0 +1,56 @@
+/**
+ * TenderBuild — Google Drive client (Service Account).
+ * Kredensial: GOOGLE_SA_JSON (inline, untuk Docker/Render) atau GOOGLE_SA_KEYFILE (path file, lokal).
+ */
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { google } = require('googleapis');
+
+let drive = null;
+
+function getDrive() {
+    if (drive) return drive;
+    const inlineJson = process.env.GOOGLE_SA_JSON;
+    const keyFile = process.env.GOOGLE_SA_KEYFILE
+        ? path.resolve(__dirname, '..', process.env.GOOGLE_SA_KEYFILE)
+        : null;
+    if (!inlineJson && !keyFile) throw new Error('Kredensial Google belum dikonfigurasi (GOOGLE_SA_JSON / GOOGLE_SA_KEYFILE)');
+    const auth = new google.auth.GoogleAuth({
+        ...(inlineJson ? { credentials: JSON.parse(inlineJson) } : { keyFile }),
+        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    });
+    drive = google.drive({ version: 'v3', auth });
+    return drive;
+}
+
+/** Export Google Doc → HTML ({{variabel}} dipertahankan sebagai teks). */
+async function exportDocHtml(gdocId) {
+    return fetchHtml(gdocId);
+}
+
+const GDOC_MIME = 'application/vnd.google-apps.document';
+
+/** Ambil HTML dari Google Docs native. File DOCX sengaja ditolak (minta pemilik Save as Google Docs dulu). */
+async function fetchHtml(fileId) {
+    const d = getDrive();
+    const meta = await d.files.get({ fileId, fields: 'id,name,mimeType,modifiedTime' });
+    if (meta.data.mimeType !== GDOC_MIME) {
+        throw new Error(`File "${meta.data.name}" bukan Google Docs — buka di Docs lalu File → Save as Google Docs`);
+    }
+    const res = await d.files.export({ fileId, mimeType: 'text/html' }, { responseType: 'text' });
+    return { name: meta.data.name, modifiedTime: meta.data.modifiedTime, html: String(res.data) };
+}
+
+/** Daftar Google Docs native dalam satu folder (untuk picker/sync template). */
+async function listDocs(folderId) {
+    const d = getDrive();
+    const res = await d.files.list({
+        q: `'${folderId}' in parents and trashed=false and mimeType='${GDOC_MIME}'`,
+        fields: 'files(id,name,modifiedTime)',
+        orderBy: 'name',
+        pageSize: 100,
+    });
+    return res.data.files || [];
+}
+
+module.exports = { getDrive, exportDocHtml, fetchHtml, listDocs };

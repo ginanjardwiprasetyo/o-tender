@@ -15,15 +15,17 @@ function toRoman(num) {
 }
 
 // GET next letter number
-// /api/letters/next-number?company_id=123&kode_surat=SK&tahun=2026&bulan=5
+// /api/letters/next-number?company_id=123&kode_surat=SDG&tahun=2026&bulan=5&pa=PA
+// Format: 001/PA/SDG/UGM/X/2026 (urutazer per company+kode+tahun → SDG beda mulai 001 lagi)
 router.get('/next-number', async (req, res) => {
     try {
-        const { company_id, kode_surat, tahun, bulan } = req.query;
+        const { company_id, kode_surat, tahun, bulan, pa } = req.query;
         if (!company_id || !kode_surat || !tahun) {
             return res.status(400).json({ success: false, error: 'company_id, kode_surat, and tahun are required' });
         }
 
         const blnNum = bulan ? parseInt(bulan) : (new Date().getMonth() + 1);
+        const segPA = (pa || 'PA').toUpperCase().trim() || 'PA';
 
         // Get max nomor_urut for the given year, company, and kode_surat
         const { rows: maxRow } = await db.query(
@@ -42,9 +44,9 @@ router.get('/next-number', async (req, res) => {
         const singkatan = compRow[0].singkatan || compRow[0].nama_perusahaan || 'PERUSAHAAN';
         const romawiBulan = toRoman(blnNum);
         
-        // Format: 005/SK/CV.GM/V/2026
+        // Format: 001/PA/SDG/UGM/X/2026
         const padUrut = String(nextUrut).padStart(3, '0');
-        const generatedFormat = `${padUrut}/${kode_surat}/${singkatan}/${romawiBulan}/${tahun}`;
+        const generatedFormat = `${padUrut}/${segPA}/${kode_surat}/${singkatan}/${romawiBulan}/${tahun}`;
 
         res.json({ 
             success: true, 
@@ -52,6 +54,7 @@ router.get('/next-number', async (req, res) => {
                 nomor_urut: nextUrut, 
                 bulan: blnNum,
                 tahun: parseInt(tahun),
+                perihal_singkatan: segPA,
                 nomor_surat: generatedFormat 
             } 
         });
@@ -115,16 +118,16 @@ router.get('/:id', async (req, res) => {
 // CREATE letter
 router.post('/', async (req, res) => {
     try {
-        const { company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal, tanggal, konten, template_id } = req.body;
+        const { company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal, tanggal, konten, template_id, perihal_singkatan } = req.body;
         
         if (!company_id || !kode_surat || !nomor_surat) {
             return res.status(400).json({ success: false, error: 'company_id, kode_surat, nomor_surat required' });
         }
 
         const { rows } = await db.query(
-            `INSERT INTO letters (company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal, tanggal, konten, template_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal || '', tanggal || null, konten || '', template_id || null]
+            `INSERT INTO letters (company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal, tanggal, konten, template_id, perihal_singkatan)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+            [company_id, nomor_urut, kode_surat, bulan, tahun, nomor_surat, perihal || '', tanggal || null, konten || '', template_id || null, perihal_singkatan || 'PA']
         );
         res.json({ success: true, data: rows[0] });
     } catch (err) {

@@ -51,15 +51,15 @@ const SettingsPage = {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(248, 250, 252, 0.5);
+            background: var(--bg-elevated, #1f1f1f);
             padding: 14px 18px;
-            border-radius: 12px;
-            border: 1px solid var(--border, #f1f5f9);
-            transition: all 0.2s ease;
+            border-radius: 8px;
+            border: 1px solid var(--border, #303030);
+            transition: background var(--t-fast, 100ms ease), border-color var(--t-fast, 100ms ease);
         }
         .tb-switch-container:hover {
-            background: rgba(241, 245, 249, 0.8);
-            border-color: #cbd5e1;
+            background: var(--bg-overlay, #2c2c2c);
+            border-color: var(--border-strong, #484848);
         }
         .spin {
             animation: spin 1s linear infinite;
@@ -103,6 +103,26 @@ const SettingsPage = {
                     <input type="text" class="form-input" id="s-default-lpse-search" placeholder="Cari LPSE..." autocomplete="off">
                     <input type="hidden" id="s-default-lpse-val">
                     <div id="s-default-lpse-dropdown" class="tb-dropdown hidden"></div>
+                </div>
+            </div>
+
+            <!-- Upload Berkas Card -->
+            <div class="card" style="margin-bottom:24px; padding:28px;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                    <div style="width:40px; height:40px; border-radius:10px; background:rgba(59,130,246,0.1); color:var(--accent); display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="file-up"></i>
+                    </div>
+                    <h3 style="font-size:1.1rem; font-weight:700;">Upload Berkas</h3>
+                </div>
+                <div class="tb-switch-container">
+                    <div style="padding-right: 16px;">
+                        <span style="font-size:0.9rem; font-weight:600; color:var(--text-main); display:block; margin-bottom:2px;">Kompres gambar otomatis</span>
+                        <span style="font-size:0.78rem; color:var(--text-muted);">Foto (JPG/PNG) dimampatkan di browser sebelum dikirim — hasil dipakai hanya jika lebih kecil. PDF tidak dikompres.</span>
+                    </div>
+                    <label class="tb-switch">
+                        <input type="checkbox" id="s-compress" ${localStorage.getItem('tb_compress') !== '0' ? 'checked' : ''} onchange="localStorage.setItem('tb_compress', this.checked ? '1' : '0'); Toast.success(this.checked ? 'Kompres gambar aktif' : 'Kompres gambar mati')">
+                        <span class="tb-slider"></span>
+                    </label>
                 </div>
             </div>
 
@@ -233,7 +253,7 @@ const SettingsPage = {
                 <div style="overflow-x:auto; border:1px solid var(--border, #e2e8f0); border-radius:8px; max-height:400px; overflow-y:auto; margin-bottom:16px;">
                     <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
                         <thead>
-                            <tr style="background:#f8fafc; border-bottom:1px solid var(--border, #e2e8f0); position:sticky; top:0; z-index:1;">
+                            <tr style="background:var(--bg-elevated); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:1;">
                                 <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Waktu</th>
                                 <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Target</th>
                                 <th style="padding:10px 14px; font-weight:600; color:var(--text-main);">Pesan</th>
@@ -633,13 +653,13 @@ const SettingsPage = {
                             <td style="padding:10px 14px; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${msgPreview}</td>
                             <td style="padding:10px 14px; display:flex; align-items:center; gap:8px;">
                                 ${badge}
-                                ${!isSuccess ? `<button title="Kirim ulang pesan" style="padding:4px; font-size:0.75rem; border-radius:6px; height:26px; width:26px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border,#e2e8f0); background:#fff; color:var(--accent,#3b82f6); cursor:pointer; flex-shrink:0;" onclick="event.stopPropagation(); SettingsPage.resendWALog('${log.id}')">
+                                ${!isSuccess ? `<button title="Kirim ulang pesan" style="padding:4px; font-size:0.75rem; border-radius:6px; height:26px; width:26px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--bg-elevated); color:var(--accent); cursor:pointer; flex-shrink:0;" onclick="event.stopPropagation(); SettingsPage.resendWALog('${log.id}')">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
                                 </button>` : ''}
                                 <svg id="icon-${logId}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="m6 9 6 6 6-6"/></svg>
                             </td>
                         </tr>
-                        <tr id="detail-${logId}" style="display:none; background:#f8fafc; border-bottom:1px solid #f1f5f9;">
+                        <tr id="detail-${logId}" style="display:none; background:var(--bg-elevated); border-bottom:1px solid var(--border);">
                             <td colspan="4" style="padding:16px 20px;">
                                 <div style="font-size:0.85rem; color:var(--text-main); white-space:pre-wrap; font-family:inherit; line-height:1.6;">${SettingsPage.formatWAMarkdown(log.message)}</div>
                                 ${!isSuccess && log.error_message ? `<div style="margin-top:8px; padding:8px; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:6px; font-size:0.8rem;"><strong>Error:</strong> ${log.error_message}</div>` : ''}

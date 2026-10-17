@@ -9,9 +9,6 @@ const DocumentsPage = {
     personnel: [],
     equipments: [],
     tenders: [],
-    _genMap: {},      // tid -> data nomor surat tergenerate (per surat)
-    _suratData: {},   // tid -> { kode, tgl, perihal, lampiran, touched } (per surat)
-    _dokpilPreset: null,
 
     // ponytail: terbilang inline (mirrors backend/utils/terbilang.js)
     _terbilang(n) {
@@ -34,26 +31,12 @@ const DocumentsPage = {
         return `
         <div class="page-header">
             <div>
-                <h2>Surat & Dokumen</h2>
-                <p>Generator nomor surat otomatis dan manajemen dokumen penawaran tender</p>
+                <h2>Dokumen Lelang</h2>
+                <p>Rekap dokumen penawaran tender yang pernah digenerate</p>
             </div>
-            <button class="btn btn-primary" onclick="DocumentsPage.openForm()"><i data-lucide="plus"></i> Buat Surat Baru</button>
+            <button class="btn btn-primary" onclick="DocumentsPage.openForm()"><i data-lucide="plus"></i> Buat Dokumen</button>
         </div>
-        <div class="toolbar" style="flex-wrap:wrap;">
-            <div class="search-box" style="min-width:200px;">
-                <i data-lucide="search"></i>
-                <input type="text" id="doc-search" placeholder="Nomor atau perihal..." oninput="DocumentsPage.debounceSearch()">
-            </div>
-            <select class="form-select" id="doc-filter-comp" onchange="DocumentsPage.loadData()" style="width:200px;padding:9px 36px 9px 14px;">
-                <option value="">Semua Perusahaan</option>
-            </select>
-            <select class="form-select" id="doc-filter-tahun" onchange="DocumentsPage.loadData()" style="width:120px;padding:9px 36px 9px 14px;">
-                <option value="2026" selected>2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-            </select>
-        </div>
-        <div id="doc-list"></div>`;
+        <div id="doc-records"><div class="page-loading"><div class="spinner"></div></div></div>`;
     },
 
     async afterRender() {
@@ -67,706 +50,1117 @@ const DocumentsPage = {
             this.personnel = persRes.data || [];
             this.equipments = eqRes.data || [];
             this.tenders = tendRes.data || [];
-            const filterSelect = document.getElementById('doc-filter-comp');
-            const opts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
-            if (filterSelect) filterSelect.innerHTML += opts;
         } catch (e) { console.error('Failed to load data for docs', e); }
-        this.loadData();
-        const dokpilDataStr = sessionStorage.getItem('dokpil_extracted_data');
-        if (dokpilDataStr) {
-            sessionStorage.removeItem('dokpil_extracted_data');
-            try { const dokpilData = JSON.parse(dokpilDataStr); setTimeout(() => this.openFormWithDokpil(dokpilData), 300); } catch (e) { }
-        }
+        this.loadRecords();
     },
 
-    debounceTimer: null,
-    debounceSearch() { clearTimeout(this.debounceTimer); this.debounceTimer = setTimeout(() => this.loadData(), 400); },
-
-    async loadData() {
-        const el = document.getElementById('doc-list');
+    async loadRecords() {
+        const el = document.getElementById('doc-records');
         if (!el) return;
-        el.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
         try {
-            const search = document.getElementById('doc-search')?.value || '';
-            const company_id = document.getElementById('doc-filter-comp')?.value || '';
-            const tahun = document.getElementById('doc-filter-tahun')?.value || '';
-            const res = await API.getLetters({ search, company_id, tahun });
-            this.letters = res.data || [];
-            this.renderList();
+            const res = await API.getDocRecords();
+            const rows = res.data || [];
+            if (!rows.length) {
+                el.innerHTML = '<div class="empty-state"><i data-lucide="file-check"></i><p>Belum ada dokumen. Buat via tombol <strong>Buat Dokumen</strong>.</p></div>';
+                lucide.createIcons(); return;
+            }
+            const vOf = (r) => { try { return typeof r.variables === 'string' ? JSON.parse(r.variables) : (r.variables || {}); } catch { return {}; } };
+            // kelompokkan per generate: batch_id di variables — lama tanpa batch_id = grup sendiri
+            const groups = new Map();
+            rows.forEach(r => {
+                const v = vOf(r);
+                const key = v.batch_id || ('s-' + r.id);
+                if (!groups.has(key)) groups.set(key, { key, hasBatch: !!v.batch_id, v, items: [] });
+                groups.get(key).items.push({ r, v });
+            });
+            const th = (x) => (x === null || x === undefined || x === '' ? '-' : `${x} th`);
+            // rows sudah DESC; Map preserve insert order = grup terbaru di atas
+            el.innerHTML = `<div class="table-container" style="overflow-x:auto;"><table class="mini-table doc-records-table"><thead><tr>
+                <th style="width:28px;"></th><th>Pembuatan</th><th>Nama Paket</th><th>SBU</th><th>Perusahaan</th><th>Pelaksana</th><th>K3</th><th style="text-align:center;">Peng. Pelaksana</th><th style="text-align:center;">Peng. K3</th><th style="text-align:center;">TTD</th><th style="text-align:center;">Aksi</th></tr></thead><tbody>` +
+                [...groups.values()].map(g => {
+                    const { v, items, key } = g;
+                    const first = items[0];
+                    const ttd = (() => {
+                        const vv = items.map(i => i.v);
+                        if (vv.some(x => x.has_ttd === true)) return '<span style="color:var(--success); font-weight:800;" title="TTD + cap ada">✓</span>';
+                        if (vv.every(x => x.has_ttd === false)) return '<span style="color:var(--text-muted);">-</span>';
+                        return vv.some(x => { const s = x.show || {}; return (s.direktur || s.pelaksana || s.k3) && s.cap; })
+                            ? '<span style="color:var(--success); font-weight:800;" title="TTD + cap ada">✓</span>' : '<span style="color:var(--text-muted);">-</span>';
+                    })();
+                    const zipA = g.hasBatch ? `<a class="btn btn-secondary eq-btn" href="/api/documents/batch/${encodeURIComponent(key)}/zip" title="Unduh semua (ZIP)" onclick="event.stopPropagation()"><i data-lucide="archive"></i></a>` : '';
+                    const delAll = `<button class="btn btn-danger eq-btn" onclick="event.stopPropagation(); DocumentsPage.removeBatch('${key}')" title="Hapus semua"><i data-lucide="trash-2"></i></button>`;
+                    const parent = `<tr class="doc-parent" onclick="DocumentsPage.toggleBatch('${key}')">
+                    <td style="text-align:center; color:var(--text-muted);"><i data-lucide="chevron-right" class="doc-chev" data-batch="${key}" style="width:16px; height:16px; transition:transform .15s;"></i></td>
+                    <td style="white-space:nowrap;">${first.r.created_at ? new Date(first.r.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                    <td>${Fmt.escape(v.tender?.nama || first.r.nama_tender || '-')}<br><small style="color:var(--text-muted);">${Fmt.escape(v.tender?.kode || first.r.kode_tender || '')}</small></td>
+                    <td>${Fmt.escape(first.r.tender_sbu || '-')}</td>
+                    <td>${Fmt.escape(first.r.nama_perusahaan || '-')}</td>
+                    <td>${Fmt.escape(v.pelaksana?.nama || v.vars?.nama_pelaksana || '-')}</td>
+                    <td>${Fmt.escape(v.k3?.nama || v.vars?.nama_k3 || '-')}</td>
+                    <td style="text-align:center;">${th(v.pelaksana?.pengalaman ?? v.vars?.pengalaman_pelaksana)}</td>
+                    <td style="text-align:center;">${th(v.k3?.pengalaman ?? v.vars?.pengalaman_k3)}</td>
+                    <td style="text-align:center;">${ttd}</td>
+                    <td><div class="eq-actions">${zipA}${delAll}</div></td>
+                </tr>`;
+                    const children = items.map(({ r }) => `<tr class="doc-child" data-batch="${key}" style="display:none;">
+                    <td></td>
+                    <td colspan="9" style="padding-left:36px;"><i data-lucide="file-text" style="width:14px; height:14px; vertical-align:-2px; color:var(--accent);"></i> <strong>${Fmt.escape(r.nama_template || 'Dokumen')}</strong>
+                        <small style="color:var(--text-muted); margin-left:8px;">${r.page_count || '?'} hal.</small></td>
+                    <td style="text-align:center; white-space:nowrap;">
+                        <div class="eq-actions">
+                            <a class="btn btn-secondary eq-btn" href="${r.file_url}" target="_blank" title="Lihat" onclick="event.stopPropagation()"><i data-lucide="eye"></i></a>
+                            <a class="btn btn-secondary eq-btn" href="${r.file_url}" download title="Unduh" onclick="event.stopPropagation()"><i data-lucide="download"></i></a>
+                            <button class="btn btn-danger eq-btn" onclick="event.stopPropagation(); DocumentsPage.removeRecord('${r.id}', '${Fmt.escape(r.file_url || '')}')" title="Hapus"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
+                </tr>`).join('');
+                    return parent + children;
+                }).join('') + `</tbody></table></div>`;
+            lucide.createIcons();
         } catch (e) {
-            el.innerHTML = `<div class="empty-state"><i data-lucide="file-text"></i><p>Gagal memuat surat: ${e.message}</p></div>`;
+            el.innerHTML = `<div class="empty-state"><i data-lucide="file-text"></i><p>Gagal memuat dokumen: ${e.message}</p></div>`;
             lucide.createIcons();
         }
     },
 
-    renderList() {
-        const el = document.getElementById('doc-list');
-        if (!el) return;
-        if (!this.letters.length) {
-            el.innerHTML = `<div class="empty-state"><i data-lucide="file-text"></i><p>Belum ada data surat.</p><p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px;">Klik <strong>Buat Surat Baru</strong> untuk membuat nomor surat otomatis.</p></div>`;
-            lucide.createIcons(); return;
-        }
-        const rows = this.letters.map((l, i) => `
-        <tr>
-            <td style="color:var(--text-muted);text-align:center;">${i + 1}</td>
-            <td>
-                <div style="font-weight:700;color:var(--accent);font-size:0.95rem;line-height:1.4;">${Fmt.escape(l.nomor_surat)}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${Fmt.escape(l.singkatan || l.nama_perusahaan || '')}</div>
-            </td>
-            <td>${l.tanggal ? Fmt.date(l.tanggal) : '-'}</td>
-            <td>${Fmt.escape(l.perihal || '-')}</td>
-            <td style="text-align:center; white-space:nowrap;">
-                <button class="btn btn-secondary btn-sm" onclick="DocumentsPage.viewOrPrint('${l.id}')" title="Preview / Cetak"><i data-lucide="printer"></i> Cetak</button>
-                <button class="btn btn-danger btn-sm btn-icon" onclick="DocumentsPage.remove('${l.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
-            </td>
-        </tr>`).join('');
-        el.innerHTML = `
-        <div class="table-container">
-            <table>
-                <thead><tr><th width="50" style="text-align:center;">No</th><th width="280">Nomor Surat</th><th width="150">Tanggal</th><th>Perihal</th><th width="120" style="text-align:center;">Aksi</th></tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        </div>`;
-        lucide.createIcons();
+    toggleBatch(key) {
+        const kids = document.querySelectorAll(`tr.doc-child[data-batch="${CSS.escape(key)}"]`);
+        if (!kids.length) return;
+        const open = kids[0].style.display === 'none';
+        kids.forEach(k => k.style.display = open ? '' : 'none');
+        const chev = document.querySelector(`.doc-chev[data-batch="${CSS.escape(key)}"]`);
+        if (chev) chev.style.transform = open ? 'rotate(90deg)' : '';
     },
 
-    async checkNumber(tid) {
-        const compId = document.getElementById('f-doc-comp')?.value;
-        const block = document.querySelector(`#doc-surat-blocks [data-tpl="${tid}"]`);
-        const kode = (block?.querySelector('.ds-kode')?.value || this._suratData[tid]?.kode || '').toUpperCase().trim();
-        const tgl = block?.querySelector('.ds-tgl')?.value || this._suratData[tid]?.tgl;
-        if (!compId || !kode) { Toast.warning('Pilih Perusahaan dan isi Kode Surat terlebih dahulu'); return; }
-        const dateObj = tgl ? new Date(tgl) : new Date();
-        const thn = dateObj.getFullYear(); const bln = dateObj.getMonth() + 1;
-        try {
-            const res = await API.getNextLetterNumber(compId, kode, thn, bln);
-            this._genMap[tid] = res.data;
-            const pNum = block?.querySelector('.ds-preview-num');
-            const pBox = block?.querySelector('.ds-preview');
-            if (pNum && pBox) { pNum.textContent = res.data.nomor_surat; pBox.classList.remove('hidden'); }
-            Toast.success('Nomor surat berhasil digenerate');
-        } catch (e) { Toast.error('Gagal generate nomor: ' + e.message); }
-    },
-
-    openFormWithDokpil(dokpilData) {
-        this._dokpilPreset = dokpilData;
-        this.openForm();
-        setTimeout(() => {
-            this._applyAutoPerihal();
-            // pre-select peralatan/personil if names match extracted tables (best effort)
-            if (dokpilData.peralatan && dokpilData.peralatan.length) {
-                // peralatan from AI is objects, try to match by jenis
-                const eqSel = document.getElementById('f-doc-equipments');
-                if (eqSel) {
-                    const names = dokpilData.peralatan.map(r => (Array.isArray(r) ? r[1] : r.jenis_alat || r.jenis || '')).filter(Boolean).map(s => s.toLowerCase());
-                    Array.from(eqSel.options).forEach(o => {
-                        const txt = o.textContent.toLowerCase();
-                        if (names.some(n => txt.includes(n.substring(0, 12)) || n.includes(txt.substring(0, 12)))) o.selected = true;
-                    });
-                    this.renderAttachments();
+    removeBatch(key, hasBatch) {
+        Modal.confirm('Hapus Semua Dokumen', 'Hapus seluruh file PDF + catatan dalam generate ini?', async () => {
+            try {
+                const res = await API.getDocRecords();
+                const rows = (res.data || []).filter(r => {
+                    let v = {}; try { v = typeof r.variables === 'string' ? JSON.parse(r.variables) : (r.variables || {}); } catch {}
+                    return (v.batch_id || ('s-' + r.id)) === key;
+                });
+                for (const r of rows) {
+                    if (r.file_url) await API.deleteFile(r.file_url).catch(() => {});
+                    await API.deleteDocRecord(r.id).catch(() => {});
                 }
-            }
-            if (dokpilData.personel && dokpilData.personel.length) {
-                const psel = document.getElementById('f-doc-personil-list');
-                if (psel) {
-                    const jabs = dokpilData.personel.map(r => (Array.isArray(r) ? r[1] : r.jabatan || '')).filter(Boolean).map(s => s.toLowerCase());
-                    Array.from(psel.options).forEach(o => {
-                        const txt = o.textContent.toLowerCase();
-                        if (jabs.some(j => txt.includes(j.substring(0, 8)) || j.includes(txt.substring(0, 8)))) o.selected = true;
-                    });
-                }
-            }
-            Toast.info('Data dari Dokpil berhasil dimuat. Pilih template surat di bawah.');
-            // trigger template vars refresh if any selected
-            this.onTemplatesChange();
-        }, 100);
-    },
-
-    _findTender() {
-        const id = document.getElementById('f-doc-tender')?.value;
-        if (!id) return null;
-        return this.tenders.find(x => String(x.id) === String(id)) || null;
-    },
-    _tenderLabel(t) {
-        return (t.nama_tender || t.nama_paket || t.title || 'Tender') + (t.kode_tender ? ' — ' + String(t.kode_tender) : '');
-    },
-    filterTenderOpts() {
-        const dd = document.getElementById('tender-dropdown');
-        if (!dd) return;
-        const q = (document.getElementById('f-doc-tender-search')?.value || '').toLowerCase().trim();
-        const hidden = document.getElementById('f-doc-tender');
-        // user mengedit teks setelah memilih → lepas pilihan lama (sinkron)
-        if (hidden?.value) {
-            const t = this._findTender();
-            if (t && this._tenderLabel(t).toLowerCase() !== q) { hidden.value = ''; this.onTenderChange(); }
-        }
-        if (q.length < 2) { dd.innerHTML = ''; dd.classList.add('hidden'); return; }
-        const matches = this.tenders.filter(t => this._tenderLabel(t).toLowerCase().includes(q));
-        dd.innerHTML = matches.length
-            ? matches.map(t => `<div class="tender-opt" style="padding:8px 12px; cursor:pointer;" onmousedown="event.preventDefault(); DocumentsPage.selectTender('${t.id}')">${Fmt.escape(this._tenderLabel(t))}</div>`).join('')
-            : '<div style="padding:8px 12px; color:var(--text-muted);">Tidak ada paket cocok</div>';
-        dd.classList.remove('hidden');
-    },
-    selectTender(id) {
-        const t = this.tenders.find(x => String(x.id) === String(id));
-        if (!t) return;
-        const hidden = document.getElementById('f-doc-tender');
-        const search = document.getElementById('f-doc-tender-search');
-        if (hidden) hidden.value = t.id;
-        if (search) search.value = this._tenderLabel(t);
-        this._hideTenderDrop();
-        this.onTenderChange();
-    },
-    _hideTenderDrop() {
-        const dd = document.getElementById('tender-dropdown');
-        if (dd) { dd.innerHTML = ''; dd.classList.add('hidden'); }
-    },
-
-    // auto isi variabel dari paket tender terpilih (fallback: data Dokpil); tidak ada → kosong
-    _autoVarValues() {
-        const t = this._findTender();
-        const d = this._dokpilPreset || {};
-        const gv = (tk, dk) => (t && t[tk]) || (d && d[dk]) || '';
-        const nama = gv('nama_tender', 'nama_paket') || t?.title || '';
-        const pagu = gv('pagu', 'pagu_anggaran') || '';
-        const lokasiRaw = gv('lokasi_pekerjaan', 'lokasi') || t?.lokasi || '';
-        const lokasi = typeof lokasiRaw === 'object' && lokasiRaw ? Object.values(lokasiRaw).filter(Boolean).join(', ') : lokasiRaw;
-        const v = {
-            nama_paket: nama,
-            kode_tender: gv('kode_tender', 'kode_tender') || t?.kd_pkt || '',
-            instansi: gv('satuan_kerja', 'instansi') || t?.klpd || t?.lpse_name || '',
-            pokja: gv('pokja', 'pokja') || '',
-            alamat_pokja: gv('alamat_pokja', 'alamat_pokja'),
-            jangka_waktu: gv('jangka_waktu', 'jangka_waktu'),
-            masa_berlaku: gv('masa_berlaku', 'masa_berlaku'),
-            masa_berlaku_penawaran: gv('masa_berlaku_penawaran', 'masa_berlaku_penawaran'),
-            nomor_dokpil: gv('', 'nomor_dokpil'),
-            tanggal_dokpil: gv('', 'tanggal_dokpil'),
-            lokasi,
-            nilai_pagu: pagu ? Fmt.rupiah(pagu) : '',
-            pagu_anggaran: pagu ? Fmt.rupiah(pagu) : '',
-            nilai_hps: t?.hps ? Fmt.rupiah(t.hps) : '',
-            nilai_penawaran: gv('', 'nilai_penawaran'),
-            terbilang: '',
-            nilai_pagu_terbilang: '',
-            pagu_terbilang: '',
-            terbilang_penawaran: gv('', 'terbilang_penawaran'),
-        };
-        if (pagu) { const tb = this._terbilang(pagu); v.terbilang = tb; v.nilai_pagu_terbilang = tb; v.pagu_terbilang = tb; }
-        return v;
-    },
-    _autoPerihal() {
-        const t = this._findTender();
-        const nama = (t && (t.nama_tender || t.nama_paket || t.title)) || this._dokpilPreset?.nama_paket || '';
-        return nama ? 'Penawaran Pekerjaan ' + nama : '';
-    },
-    _applyAutoPerihal() {
-        const auto = this._autoPerihal();
-        if (!auto) return;
-        document.querySelectorAll('#doc-surat-blocks [data-tpl]').forEach(b => {
-            const s = this._suratData[b.dataset.tpl];
-            if (s?.touched) return;
-            const inp = b.querySelector('.ds-perihal');
-            if (inp) { inp.value = auto; if (s) s.perihal = auto; }
+                Toast.success(`${rows.length} dokumen dihapus`);
+                this.loadRecords();
+            } catch (e) { Toast.error(e.message); }
         });
     },
 
-    onTenderChange() {
-        const auto = this._autoVarValues();
-        document.querySelectorAll('.doc-dynamic-var').forEach(input => {
-            const vName = input.getAttribute('data-var');
-            if (vName in auto) input.value = auto[vName];
+    removeRecord(id, url) {
+        Modal.confirm('Hapus Dokumen', 'Hapus catatan + file PDF ini?', async () => {
+            try {
+                if (url) await API.deleteFile(url).catch(() => {});
+                await API.deleteDocRecord(id);
+                Toast.success('Dokumen dihapus');
+                this.loadRecords();
+            } catch (e) { Toast.error(e.message); }
         });
-        this._applyAutoPerihal();
     },
 
     openForm() {
-        this._genMap = {}; this._suratData = {};
+        if (!this.companies?.length) { Toast.warning('Tunggu data dimuat...'); return; }
+        this._wz = { step: 1, tender: null, vars: {}, letter: { pa: 'PA', sdg: '', perihal: 'Penawaran Administrasi', lampiran: 'Dokumen Penawaran', tgl: new Date().toISOString().split('T')[0], nomor: '', urut: null }, equip: {}, pelaksana: { id: '', exp: [] }, k3: { id: '', exp: [] } };
         const compOpts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
-        const tplOpts = this.templates.map(t => `<option value="${t.id}">${Fmt.escape(t.nama_template)}</option>`).join('');
-        const persOpts = this.personnel.map(p => `<option value="${p.id}">${Fmt.escape(p.nama)} — ${Fmt.escape(p.jabatan || '-')}</option>`).join('');
-        const eqOpts = this.equipments.map(e => `<option value="${e.id}">${Fmt.escape(e.jenis)} - ${Fmt.escape(e.merk_type || '')}</option>`).join('');
+        const stepBar = (n) => [1, 2, 3, 4, 5].map(i => `<div class="doc-wiz-step" data-s="${i}" onclick="DocumentsPage._wizGo(${i})" title="Ke langkah ${i}" style="flex:1; text-align:center; font-size:0.75rem; font-weight:700; padding:8px 4px; border-radius:8px; cursor:pointer; background:${i === n ? 'var(--accent)' : 'var(--bg-tertiary)'}; color:${i === n ? '#fff' : 'var(--text-muted)'};">${i}. ${['Proyek', '04 Surat', '01 Alat', 'Personil', 'Review'][i - 1]}</div>`).join('');
         const body = `
-        <div class="form-row">
-            <div class="form-group"><label class="form-label">Perusahaan Pengirim <span style="color:var(--danger);">*</span></label>
-                <select class="form-select" id="f-doc-comp" onchange="DocumentsPage.onCompanyChange()" required>
-                    <option value="">-- Pilih Perusahaan --</option>${compOpts}
-                </select>
-                <small id="doc-font-hint" style="display:block; margin-top:6px; color:var(--text-muted);"></small>
+        <div id="doc-wiz-steps" style="display:flex; gap:8px; margin-bottom:16px;">${stepBar(1)}</div>
+        <div id="doc-wiz-hint"></div>
+        <div class="doc-wiz-pane" data-pane="1"></div>
+        <div class="doc-wiz-pane" data-pane="2" style="display:none;"></div>
+        <div class="doc-wiz-pane" data-pane="3" style="display:none;"></div>
+        <div class="doc-wiz-pane" data-pane="4" style="display:none;"></div>
+        <div class="doc-wiz-pane" data-pane="5" style="display:none;">
+            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Review & Generate</div>
+            <div id="doc-review-box"></div>
+            <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+                <button class="btn btn-primary" id="doc-generate-btn" onclick="DocumentsPage.wzGenerate()"><i data-lucide="file-check"></i> Generate PDF</button>
             </div>
-            <div class="form-group"><label class="form-label">Paket Tender / Dokpil (Opsional Auto-fill)</label>
-                <div style="position:relative;">
-                    <input class="form-input" id="f-doc-tender-search" placeholder="Ketik untuk cari paket dari Tender Saya..." autocomplete="off"
-                        oninput="DocumentsPage.filterTenderOpts()" onfocus="DocumentsPage.filterTenderOpts()" onblur="DocumentsPage._hideTenderDrop()">
-                    <input type="hidden" id="f-doc-tender" value="">
-                    <div id="tender-dropdown" class="hidden" style="position:absolute; top:100%; left:0; right:0; z-index:20; max-height:220px; overflow:auto; background:var(--bg-secondary, #fff); border:1px solid var(--border-color, #ccc); border-radius:8px; margin-top:4px; box-shadow:0 8px 16px rgba(0,0,0,.12);"></div>
-                </div>
-                <small style="color:var(--text-muted);">Pencarian otomatis setelah ketik minimal 2 karakter</small>
-            </div>
-        </div>
-        <div class="form-group"><label class="form-label">Pilih Template Surat (Bisa >1)</label>
-            <select class="form-select" id="f-doc-templates" multiple size="5" onchange="DocumentsPage.onTemplatesChange()" style="height:auto;">${tplOpts}</select>
-            <small style="color:var(--text-muted);">Tahan Ctrl/Cmd untuk memilih beberapa template sekaligus</small>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label class="form-label">Pilih Peralatan Pendukung (Bisa >1) <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">— untuk {{tabel_peralatan}}</span></label>
-                <select class="form-select" id="f-doc-equipments" multiple size="4" onchange="DocumentsPage.renderAttachments()" style="height:auto;">${eqOpts}</select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Pilih Personil Ditugaskan (Bisa >1) <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">— untuk {{tabel_personil}} & {{struktur_organisasi}}</span></label>
-                <select class="form-select" id="f-doc-personil-list" multiple size="4" style="height:auto;">${persOpts}</select>
-            </div>
-        </div>
-        <div style="border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Data Surat & Penomoran <span style="text-transform:none; font-weight:400;">— tiap surat bisa beda kode, nomor, tanggal &amp; perihal</span></div>
-            <div id="doc-surat-hint" style="padding:14px; border:1px dashed var(--border-color); border-radius:8px; color:var(--text-muted); text-align:center; font-size:0.85rem;">Pilih template surat di atas — data &amp; penomoran muncul per surat.</div>
-            <div id="doc-surat-blocks"></div>
-        </div>
-        <div style="border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Penandatangan & Personil</div>
-            <div class="form-row">
-                <div class="form-group"><label class="form-label">Penandatangan 1 (Direktur) <span style="color:var(--danger);">*</span></label>
-                    <select class="form-select" id="f-doc-ttd1-type"><option value="direktur">Direktur Perusahaan (Otomatis dari Data Perusahaan)</option></select>
-                </div>
-                <div class="form-group"><label class="form-label">Penandatangan 2 (Personil Pelaksana — untuk {{ttd_personil}} / {{ttd_gabungan}})</label>
-                    <select class="form-select" id="f-doc-ttd2" onchange="DocumentsPage.renderAttachments()">
-                        <option value="">-- Tidak Ada / Kosong --</option>${persOpts}
-                    </select>
-                </div>
-            </div>
-            <label style="display:flex; align-items:center; gap:8px; margin-top:14px; cursor:pointer;">
-                <input type="checkbox" id="f-doc-cap-ttd" checked style="width:16px; height:16px; accent-color:var(--accent);">
-                <span style="font-weight:600;">Sertakan Cap &amp; Tanda Tangan <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">— hapus centang untuk surat tanpa cap &amp; TTD</span></span>
-            </label>
-            <!-- Cap/stempel: ukuran & posisi di Master Perusahaan -->
-        </div>
-        <div id="doc-dynamic-vars-section" style="display:none; border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Variabel Tambahan Template</div>
-            <div id="doc-dynamic-vars-container" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;"></div>
-        </div>
-        <div id="doc-attachments-section" style="display:none; border-top:1px dashed var(--border-color); margin:16px 0; padding-top:16px;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Sertakan Lampiran Dokumen</div>
-            <div id="doc-attachments-container"></div>
         </div>`;
-        const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><button class="btn btn-primary" id="doc-save-btn" onclick="DocumentsPage.generateDocument()">Generate & Cetak Surat</button>`;
-        Modal.open('Buat Dokumen Surat Baru', body, footer);
-        const modalEl = document.querySelector('.modal');
-        if (modalEl) { modalEl.style.maxWidth = '850px'; modalEl.style.width = '90%'; }
+        const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><span style="flex:1;"></span><button class="btn btn-secondary" id="doc-wiz-back" onclick="DocumentsPage._wizNav(-1)" style="display:none;">‹ Kembali</button><button class="btn btn-primary" id="doc-wiz-next" onclick="DocumentsPage._wizNav(1)">Lanjut ›</button>`;
+        Modal.open('Buat Dokumen Lelang', body, footer, { maxWidth: 'calc(100vw - 40px)' });
+        this._wzForm1(compOpts);
+        this._wizShow(1);
         lucide.createIcons();
-        // if dokpil preset exists, apply after open
-        if (this._dokpilPreset) setTimeout(() => this.onTemplatesChange(), 150);
     },
 
-    onCompanyChange() {
-        // ganti perusahaan → nomor urut lama tidak berlaku lagi
-        this._genMap = {};
-        document.querySelectorAll('#doc-surat-blocks .ds-preview').forEach(el => el.classList.add('hidden'));
-        this._updateFontHint();
-        this.renderAttachments();
+    _wizShow(n) {
+        this._wzStep = n;
+        document.querySelectorAll('.doc-wiz-pane').forEach(p => { p.style.display = +p.dataset.pane === n ? '' : 'none'; });
+        document.querySelectorAll('.doc-wiz-step').forEach(s => {
+            const active = +s.dataset.s === Math.min(n, 5);
+            s.style.background = active ? 'var(--accent)' : (+s.dataset.s < n ? 'var(--success)' : 'var(--bg-tertiary)');
+            s.style.color = (active || +s.dataset.s < n) ? '#fff' : 'var(--text-muted)';
+        });
+        document.getElementById('doc-wiz-back').style.display = n > 1 ? '' : 'none';
+        document.getElementById('doc-wiz-next').style.display = n < 5 ? '' : 'none';
+        const hints = {
+            1: 'Pilih paket yang belum lewat upload — data terisi otomatis, semua bisa diubah.',
+            2: 'Nomor tersusun otomatis. Perihal menentukan segmen. Tanggal bisa diklik.',
+            3: 'Ceklis alat yang dipakai. Klik nilai untuk ubah. Sewa → lampirkan file.',
+            4: 'Pilih pelaksana & K3 — profil terisi otomatis, riwayat boleh kosong.',
+            5: 'Periksa ringkasan, lalu generate PDF.',
+        };
+        const hint = document.getElementById('doc-wiz-hint');
+        if (hint) hint.textContent = hints[n] || '';
+        lucide.createIcons();
     },
 
-    _updateFontHint() {
-        const el = document.getElementById('doc-font-hint');
+    _wzVal(id) { return document.getElementById(id)?.value ?? ''; },
+
+    // bulan → romawi
+    _roman(m) { return ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][m - 1] || ''; },
+
+    // tender aktif = ada jadwal berakhir ≥ sekarang
+    _tenderAktif() {
+        const now = new Date();
+        const months = { januari: 0, februari: 1, maret: 2, april: 3, mei: 4, juni: 5, juli: 6, agustus: 7, september: 8, oktober: 9, november: 10, desember: 11 };
+        return (this.tenders || []).filter(t => {
+            let j = t.jadwal;
+            if (!j) return true;
+            if (typeof j === 'string') { try { j = JSON.parse(j); } catch { return true; } }
+            const ends = (Array.isArray(j) ? j : []).map(s => {
+                const m = String(s.end || '').match(/(\d{1,2})\s+(\w+)\s+(\d{4})\s+(\d{1,2}):(\d{2})/i);
+                if (!m || months[m[2].toLowerCase()] === undefined) return null;
+                return new Date(+m[3], months[m[2].toLowerCase()], +m[1], +m[4], +m[5]);
+            }).filter(Boolean);
+            if (!ends.length) return true;
+            return Math.max(...ends) >= now;
+        });
+    },
+
+    // ── FORM 1: proyek ──
+    _wzForm1(compOpts) {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="1"]');
+        const tenders = this._tenderAktif();
+        pane.innerHTML = `
+        <div style="font-weight:700; margin-bottom:10px; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">1. Proyek &amp; Perusahaan</div>
+        <div class="form-group"><label class="form-label">Cari Proyek *</label>
+            <div style="position:relative;">
+                <input class="form-input" id="wz-tender-search" placeholder="Ketik nama/kode paket..." autocomplete="off"
+                    oninput="DocumentsPage._wzTenderSearch(this.value)" onfocus="DocumentsPage._wzTenderSearch(this.value)">
+                <input type="hidden" id="wz-tender" value="">
+                <div id="wz-tender-drop" class="hidden" style="position:absolute; top:100%; left:0; right:0; z-index:30; max-height:240px; overflow:auto; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; box-shadow:0 8px 16px rgba(0,0,0,.15);"></div>
+            </div>
+            <small style="color:var(--text-muted);">Ketik untuk menyaring daftar panjang</small>
+        </div>
+        <div style="display:grid; grid-template-columns:110px 1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Tahun</label><input class="form-input" id="wz-tahun" placeholder="2026"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Lokasi</label><input class="form-input" id="wz-lokasi" placeholder="Kab. Sukoharjo"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Perusahaan *</label>
+                <select class="form-select" id="wz-comp"><option value="">-- Pilih --</option>${compOpts}</select>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">LPSE</label><input class="form-input" id="wz-lpse" placeholder="LPSE Kab. ..."></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Pokja (custom)</label><input class="form-input" id="wz-pokja" placeholder="Pokja Pemilihan ..."></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Alamat Pokja</label><input class="form-input" id="wz-alamat-pokja" placeholder="Jl. ..."></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 2fr 120px; gap:10px;">
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Nomor Tender</label><input class="form-input" id="wz-kode" readonly style="background:var(--bg-tertiary);"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Pagu (angka)</label><input class="form-input" id="wz-pagu" inputmode="numeric" placeholder="480000000" oninput="DocumentsPage._wzTerbilang()"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Terbilang (otomatis)</label><input class="form-input" id="wz-terbilang" placeholder="otomatis dari pagu"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">TTD &amp; Cap?</label>
+                <select class="form-select" id="wz-with-ttd"><option value="1">Ya, sertakan</option><option value="0">Tidak</option></select>
+            </div>
+        </div>`;
+    },
+
+    _wzTenderSearch(q) {
+        const box = document.getElementById('wz-tender-drop');
+        if (!box) return;
+        const s = (q || '').toLowerCase();
+        const list = this._tenderAktif().filter(t =>
+            !s || (t.nama_tender || t.nama_paket || '').toLowerCase().includes(s) || String(t.kode_tender || '').includes(s)
+        ).slice(0, 30);
+        if (!list.length) { box.innerHTML = '<div style="padding:10px 14px; font-size:0.82rem; color:var(--text-muted);">Tidak ketemu.</div>'; }
+        else box.innerHTML = list.map(t => `
+            <div onmousedown="DocumentsPage._wzTenderChoose('${t.id}')" style="padding:9px 14px; font-size:0.84rem; cursor:pointer; border-bottom:1px solid var(--border-color);"
+                onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
+                <strong>${Fmt.escape(t.nama_tender || t.nama_paket || '')}</strong><br>
+                <small style="color:var(--text-muted);">${Fmt.escape(t.kode_tender || '')}</small>
+            </div>`).join('');
+        box.classList.remove('hidden');
+        clearTimeout(this._wzDropT);
+        this._wzDropT = setTimeout(() => box.classList.add('hidden'), 8000);
+    },
+
+    _wzTenderChoose(id) {
+        const t = (this.tenders || []).find(x => String(x.id) === String(id));
+        document.getElementById('wz-tender-drop')?.classList.add('hidden');
+        if (!t) return;
+        document.getElementById('wz-tender').value = t.id;
+        document.getElementById('wz-tender-search').value = `${t.nama_tender || t.nama_paket || ''} — ${t.kode_tender || ''}`;
+        this._wzTenderPick(t.id);
+    },
+
+    _wzTenderPick(id) {
+        const t = (this.tenders || []).find(x => String(x.id) === String(id));
+        this._wz.tender = t || null;
+        if (!t) return;
+        const set = (el, v) => { const e = document.getElementById(el); if (e) e.value = v ?? ''; };
+        set('wz-tahun', t.tahun || '');
+        set('wz-lokasi', t.lokasi_pekerjaan || t.lokasi || '');
+        set('wz-lpse', t.klpd ? 'LPSE ' + t.klpd : '');
+        set('wz-kode', t.kode_tender || '');
+        const paguDigits = String(t.pagu || '').replace(/\D/g, '');
+        const paguEl = document.getElementById('wz-pagu');
+        if (paguEl) { paguEl.dataset.raw = paguDigits; paguEl.value = paguDigits ? Number(paguDigits).toLocaleString('id-ID') : ''; }
+        const nm = t.nama_tender || t.nama_paket || '';
+        this._wz.vars.nama_paket = nm;
+        this._wzTerbilang();
+    },
+
+    // ponytail: pagu tampil bertitik (480.000.000), mentah digit disimpan di dataset
+    _wzPaguRaw() {
+        const el = document.getElementById('wz-pagu');
+        return (el?.dataset.raw ?? el?.value ?? '').replace(/\D/g, '');
+    },
+
+    _wzTerbilang() {
+        const el = document.getElementById('wz-pagu');
         if (!el) return;
-        const comp = this.companies.find(c => c.id === document.getElementById('f-doc-comp')?.value);
-        el.textContent = comp ? `Font surat: ${comp.font_surat || 'Times New Roman'} — dipakai saat mencetak` : '';
+        const digits = el.value.replace(/\D/g, '').slice(0, 15);
+        el.dataset.raw = digits;
+        if (digits) el.value = Number(digits).toLocaleString('id-ID');
+        const tb = this._terbilang(digits);
+        const tbel = document.getElementById('wz-terbilang');
+        if (tbel && tb) tbel.value = '(' + tb + ')';
     },
 
-    _suratField(tid, field, el) {
-        const s = this._suratData[tid];
-        if (!s) return;
-        s[field] = el.value;
-        if (field === 'kode') {
-            delete this._genMap[tid];
-            el.closest('[data-tpl]')?.querySelector('.ds-preview')?.classList.add('hidden');
-        }
-        if (field === 'perihal') s.touched = true;
-    },
-
-    // render blok Data Surat per template terpilih (state disimpan di _suratData)
-    renderSuratBlocks() {
-        const select = document.getElementById('f-doc-templates');
-        const container = document.getElementById('doc-surat-blocks');
-        const hint = document.getElementById('doc-surat-hint');
-        if (!select || !container) return;
-        container.querySelectorAll('[data-tpl]').forEach(b => {
-            const s = this._suratData[b.dataset.tpl];
-            if (!s) return;
-            s.kode = b.querySelector('.ds-kode')?.value ?? s.kode;
-            s.tgl = b.querySelector('.ds-tgl')?.value ?? s.tgl;
-            s.perihal = b.querySelector('.ds-perihal')?.value ?? s.perihal;
-            s.lampiran = b.querySelector('.ds-lampiran')?.value ?? s.lampiran;
-        });
-        const ids = Array.from(select.selectedOptions).map(o => o.value);
-        if (!ids.length) { container.innerHTML = ''; hint?.classList.remove('hidden'); return; }
-        hint?.classList.add('hidden');
-        const today = new Date().toISOString().split('T')[0];
-        const autoPerihal = this._autoPerihal();
-        const firstKode = Object.values(this._suratData).find(s => s.kode)?.kode || '';
-        container.innerHTML = ids.map((tid, i) => {
-            const t = this.templates.find(x => x.id === tid);
-            const s = this._suratData[tid] || (this._suratData[tid] = { kode: firstKode, tgl: today, perihal: '', lampiran: '-', touched: false });
-            if (!s.touched && !s.perihal && autoPerihal) s.perihal = autoPerihal;
-            const g = this._genMap[tid];
-            return `
-            <div data-tpl="${tid}" style="border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--bg-secondary);">
-                <div style="font-weight:700; font-size:0.8rem; color:var(--text-muted); margin-bottom:10px;">Surat ${i + 1}: ${Fmt.escape(t?.nama_template || tid)}</div>
-                <div class="form-row">
-                    <div class="form-group"><label class="form-label">Kode Surat <span style="color:var(--danger);">*</span></label>
-                        <div style="display:flex; gap:8px;">
-                            <input type="text" class="form-input ds-kode" value="${Fmt.escape(s.kode)}" placeholder="SP, ST, SK" style="text-transform:uppercase; flex:1;"
-                                oninput="DocumentsPage._suratField('${tid}','kode',this)" onchange="DocumentsPage.checkNumber('${tid}')">
-                            <button type="button" class="btn btn-secondary" onclick="DocumentsPage.checkNumber('${tid}')"><i data-lucide="hash"></i> Gen No.</button>
-                        </div>
+    // ── FORM 2: 04 surat ──
+    _wzForm2() {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="2"]');
+        const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+        const L = this._wz.letter;
+        const tgl = L.tgl || new Date().toISOString().split('T')[0];
+        const dt = new Date(tgl);
+        const tglShow = (() => { const d = new Date(tgl + 'T00:00:00'); return isNaN(d) ? tgl : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); })();
+        pane.innerHTML = `
+        <div style="font-weight:700; margin-bottom:12px;">2. Surat <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— 04 surat • format 001/PA/SDG/UGM/X/2026</span></div>
+        <div class="form-row">
+            <div class="form-group" style="max-width:110px;"><label class="form-label">Urut</label><input class="form-input" id="wz-urut" readonly value="${Fmt.escape(L.urut || '')}" style="background:var(--bg-tertiary);"></div>
+            <div class="form-group" style="max-width:130px;"><label class="form-label">Segmen (otomatis)</label><input class="form-input" id="wz-pa" value="${Fmt.escape(L.pa)}" oninput="DocumentsPage._wzPaManual()" title="Otomatis dari perihal, bisa diubah manual"></div>
+            <div class="form-group" style="max-width:150px;"><label class="form-label">Kode Proyek</label><input class="form-input" id="wz-sdg" value="${Fmt.escape(L.sdg)}" placeholder="contoh: SDG" oninput="DocumentsPage._wzAutoNomor()"></div>
+            <div class="form-group" style="max-width:110px;"><label class="form-label">Perusahaan</label><input class="form-input" readonly value="${Fmt.escape(comp.singkatan || '')}" style="background:var(--bg-tertiary);"></div>
+            <div class="form-group" style="max-width:80px;"><label class="form-label">Bulan</label><input class="form-input" readonly value="${this._roman(dt.getMonth() + 1)}" style="background:var(--bg-tertiary);"></div>
+            <div class="form-group" style="max-width:90px;"><label class="form-label">Tahun</label><input class="form-input" readonly value="${dt.getFullYear()}" style="background:var(--bg-tertiary);"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Nomor Surat Jadi <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">(otomatis setelah kode terisi)</span></label>
+            <div style="display:flex; gap:8px;">
+                <input class="form-input" id="wz-nomor" readonly value="${Fmt.escape(L.nomor)}" style="background:var(--bg-tertiary); font-weight:700; flex:1;">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Perihal</label><input class="form-input" id="wz-perihal" value="${Fmt.escape(L.perihal)}" placeholder="Penawaran Administrasi" oninput="DocumentsPage._wzPerihalChange()"></div>
+            <div class="form-group"><label class="form-label">Lampiran</label><input class="form-input" id="wz-lampiran" value="${Fmt.escape(L.lampiran)}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Tanggal Surat</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <div style="position:relative; flex:1; display:flex; align-items:center;">
+                        <input type="text" class="form-input" id="wz-tgl-show" readonly value="${tglShow}"
+                            style="cursor:pointer; padding-right:36px;"
+                            onclick="DocumentsPage._datePop('wz-tgl')"
+                            title="Klik untuk pilih tanggal">
+                        <button type="button" style="position:absolute; right:6px; background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; color:var(--accent);" onclick="DocumentsPage._datePop('wz-tgl')" title="Pilih tanggal">
+                            <i data-lucide="calendar-days" style="width:17px; height:17px; pointer-events:none;"></i>
+                        </button>
                     </div>
-                    <div class="form-group"><label class="form-label">Tanggal Surat <span style="color:var(--danger);">*</span></label>
-                        <input type="date" class="form-input ds-tgl" value="${Fmt.escape(s.tgl)}" onchange="DocumentsPage._suratField('${tid}','tgl',this); DocumentsPage.checkNumber('${tid}')">
-                    </div>
+                    <input type="hidden" id="wz-tgl" value="${tgl}">
+                    <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap; flex-shrink:0;" onclick="DocumentsPage._wzTglSet(new Date().toISOString().split('T')[0])" title="Isi hari ini">Hari ini</button>
                 </div>
-                <div class="ds-preview ${g ? '' : 'hidden'}" style="margin-bottom:12px; padding:12px; background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.3); border-radius:8px;">
-                    <span style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Nomor Surat Tergenerate:</span>
-                    <span class="ds-preview-num" style="font-weight:700; font-size:1rem; color:var(--accent); margin-left:8px;">${g ? Fmt.escape(g.nomor_surat) : ''}</span>
-                </div>
-                <div class="form-group"><label class="form-label">Perihal Surat <span style="color:var(--danger);">*</span></label>
-                    <input type="text" class="form-input ds-perihal" value="${Fmt.escape(s.perihal)}" placeholder="Perihal surat (misal: Penawaran Pekerjaan...)"
-                        oninput="DocumentsPage._suratField('${tid}','perihal',this)">
-                </div>
-                <div class="form-group"><label class="form-label">Lampiran</label>
-                    <input type="text" class="form-input ds-lampiran" value="${Fmt.escape(s.lampiran)}" placeholder="1 (Satu) Berkas"
-                        oninput="DocumentsPage._suratField('${tid}','lampiran',this)">
-                </div>
-            </div>`;
-        }).join('');
+            </div>
+            <div class="form-group"><label class="form-label">Direktur</label><input class="form-input" readonly value="${Fmt.escape(comp.direktur || '')}" style="background:var(--bg-tertiary);"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Alamat Direktur</label><input class="form-input" id="wz-alamat-dir" value="${Fmt.escape(L.alamatDir || comp.alamat_direktur || comp.alamat || '')}"></div>
+            <div class="form-group"><label class="form-label">Perusahaan</label><input class="form-input" readonly value="${Fmt.escape(comp.nama_perusahaan || '')}" style="background:var(--bg-tertiary);"></div>
+        </div>`;
         lucide.createIcons();
+        this._wzAutoNomor();
     },
 
-    renderAttachments() {
-        const compId = document.getElementById('f-doc-comp')?.value;
-        const persId = document.getElementById('f-doc-ttd2')?.value;
-        const eqIds = Array.from(document.getElementById('f-doc-equipments')?.selectedOptions || []).map(o => o.value);
-        const comp = this.companies.find(c => c.id === compId);
-        const pers = this.personnel.find(p => p.id === persId);
-        const selectedEqs = this.equipments.filter(e => eqIds.includes(e.id));
-        let allAtts = [];
-        if (comp && comp.attachments) {
-            let atts = comp.attachments; if (typeof atts === 'string') { try { atts = JSON.parse(atts); } catch (e) { atts = []; } }
-            if (Array.isArray(atts)) allAtts = allAtts.concat(atts.map(a => ({ ...a, group: 'Perusahaan' })));
-        }
-        if (pers) {
-            if (pers.ktp_url) allAtts.push({ name: 'KTP - ' + pers.nama, url: pers.ktp_url, group: 'Personil' });
-            if (pers.npwp_url) allAtts.push({ name: 'NPWP - ' + pers.nama, url: pers.npwp_url, group: 'Personil' });
-            (pers.education_history || []).forEach(e => { if (e.ijazah_url) allAtts.push({ name: `Ijazah${e.lembaga ? ' ' + e.lembaga : ''} - ${pers.nama}`, url: e.ijazah_url, group: 'Personil' }); });
-            (pers.ska || []).forEach(s => { if (s.file_url) allAtts.push({ name: `${s.nama_sertifikat || 'SKA/SKT'} - ${pers.nama}`, url: s.file_url, group: 'Personil' }); });
-        }
-        selectedEqs.forEach(eq => { if (eq.file_url) allAtts.push({ name: 'Dokumen Alat - ' + eq.jenis, url: eq.file_url, group: 'Peralatan' }); });
-        const attContainer = document.getElementById('doc-attachments-container');
-        const attSection = document.getElementById('doc-attachments-section');
-        if (!attContainer || !attSection) return;
-        if (allAtts.length === 0) { attSection.style.display = 'none'; attContainer.innerHTML = ''; return; }
-        attSection.style.display = 'block';
-        attContainer.innerHTML = allAtts.map((att) => `
-            <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer; padding:8px; background:var(--bg-secondary); border-radius:6px;">
-                <input type="checkbox" class="doc-attachment-cb" value='${Fmt.escape(JSON.stringify(att))}'>
-                <i data-lucide="file-text" style="width:16px; height:16px; color:var(--accent);"></i>
-                <div style="display:flex; flex-direction:column;">
-                    <span style="font-size:0.85rem; font-weight:500;">${Fmt.escape(att.name)}</span>
-                    <span style="font-size:0.65rem; color:var(--text-muted);">${att.group}</span>
-                </div>
-            </label>`).join('');
-        lucide.createIcons();
+    // ponytail: inisial perihal ("Penawaran Administrasi" → "PA"), maks 4 huruf
+    _wzInitPA(text) {
+        const w = String(text || '').replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+        return (w.map(x => x[0]).join('') || 'PA').toUpperCase().slice(0, 4);
     },
 
-    onTemplatesChange() {
-        const select = document.getElementById('f-doc-templates');
-        if (!select) return;
-        this.renderSuratBlocks();
-        const selectedIds = Array.from(select.selectedOptions).map(opt => opt.value);
-        let allVars = new Set();
-        selectedIds.forEach(id => {
-            const t = this.templates.find(x => x.id === id);
-            if (t && t.html_content) {
-                const matches = t.html_content.match(/\{\{([^}]+)\}\}/g);
-                if (matches) matches.forEach(m => {
-                    const vName = m.replace(/[{}]/g, '').trim();
-                    const standardVars = ['header_surat', 'nomor_surat', 'perihal', 'lampiran', 'tanggal_surat', 'kota_perusahaan', 'nama_perusahaan', 'singkatan', 'direktur', 'alamat', 'npwp', 'nama_personil', 'jabatan_personil', 'ttd_direktur', 'ttd_personil', 'ttd_gabungan', 'tabel_peralatan', 'tabel_personil', 'struktur_organisasi', 'cap_perusahaan'];
-                    if (!standardVars.includes(vName)) allVars.add(vName);
-                });
+    _wzNomorPreview() {
+        const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+        const L = this._wz.letter;
+        const paInput = (document.getElementById('wz-pa')?.value || '').toUpperCase().trim();
+        L.pa = paInput || this._wzInitPA(document.getElementById('wz-perihal')?.value || L.perihal);
+        L.sdg = (document.getElementById('wz-sdg')?.value || '').toUpperCase().trim();
+        const tgl = document.getElementById('wz-tgl')?.value || L.tgl;
+        const dt = new Date(tgl);
+        const urut = L.urut ? String(L.urut).padStart(3, '0') : '___';
+        const nomor = [urut, L.pa, L.sdg || '___', comp.singkatan || '___', this._roman(dt.getMonth() + 1), dt.getFullYear()].join('/');
+        const el = document.getElementById('wz-nomor');
+        if (el) el.value = nomor;
+        return nomor;
+    },
+
+    _wzPerihalChange() {
+        // ponytail: segmen manual menang; bila belum disentuh, ikut perihal
+        if (!this._wz._paDirty) {
+            const pa = this._wzInitPA(document.getElementById('wz-perihal')?.value);
+            const paEl = document.getElementById('wz-pa');
+            if (paEl) paEl.value = pa;
+        }
+        this._wzNomorPreview();
+        this._wzAutoNomor();
+    },
+
+    _wzPaManual() {
+        this._wz._paDirty = true;
+        this._wzNomorPreview();
+        this._wzAutoNomor();
+    },
+
+    // ponytail: popup kalender — muncul dekat ikon kalender bukan pojok layar
+    _datePop(targetId) {
+        document.getElementById('wz-datepop')?.remove();
+        const target = document.getElementById(targetId);
+        const show = document.getElementById('wz-tgl-show');
+        const cur = target?.value ? new Date(target.value + 'T00:00:00') : new Date();
+        const state = { y: cur.getFullYear(), m: cur.getMonth(), sel: target?.value || '' };
+        const pop = document.createElement('div');
+        pop.id = 'wz-datepop';
+        pop.style.cssText = 'position:fixed; z-index:5000; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.3); padding:14px; width:280px;';
+        // ponytail: posisi dekat ikon kalender (tombol kanan dari input) bukan pojok
+        const anchor = show || target;
+        const r = anchor ? anchor.getBoundingClientRect() : { left: 100, bottom: 100, right: 380 };
+        const popW = 280, popH = 300;
+        let left = r.right - popW; // rata kanan dengan input
+        if (left < 8) left = 8;
+        if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+        let top = r.bottom + 4;
+        if (top + popH > window.innerHeight - 8) top = r.top - popH - 4;
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+        document.body.appendChild(pop);
+        const draw = () => {
+            const first = new Date(state.y, state.m, 1);
+            const off = (first.getDay() + 6) % 7;
+            const dim = new Date(state.y, state.m + 1, 0).getDate();
+            const ml = first.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+            let cells = '';
+            for (let i = 0; i < off; i++) cells += '<span></span>';
+            for (let d = 1; d <= dim; d++) {
+                const k = `${state.y}-${String(state.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const sel = k === state.sel;
+                const today = k === new Date().toISOString().split('T')[0];
+                cells += `<span data-d="${k}" style="display:flex; align-items:center; justify-content:center; height:32px; border-radius:8px; font-size:0.82rem; cursor:pointer; font-weight:${sel ? '800' : '400'}; background:${sel ? 'var(--accent)' : today ? 'var(--accent-bg)' : 'transparent'}; color:${sel ? '#fff' : 'var(--text-primary)'};">${d}</span>`;
             }
-        });
-        const varSection = document.getElementById('doc-dynamic-vars-section');
-        const varContainer = document.getElementById('doc-dynamic-vars-container');
-        if (!varSection || !varContainer) return;
-        if (allVars.size === 0) { varSection.style.display = 'none'; varContainer.innerHTML = ''; return; }
-        varSection.style.display = 'block';
-        const auto = this._autoVarValues();
-        varContainer.innerHTML = Array.from(allVars).map(vName => {
-            const defaultVal = auto[vName] ?? '';
-            return `<div class="form-group" style="margin-bottom:0;"><label class="form-label" style="text-transform:capitalize;">${Fmt.escape(vName.replace(/_/g, ' '))}</label><input type="text" class="form-input doc-dynamic-var" data-var="${Fmt.escape(vName)}" value="${Fmt.escape(defaultVal)}" placeholder="Isi ${Fmt.escape(vName)}..."></div>`;
-        }).join('');
-    },
-
-    async generateDocument() {
-        const compId = document.getElementById('f-doc-comp')?.value;
-        const templateIds = Array.from(document.getElementById('f-doc-templates')?.selectedOptions || []).map(o => o.value);
-        const persId = document.getElementById('f-doc-ttd2')?.value || null;
-        const equipIds = Array.from(document.getElementById('f-doc-equipments')?.selectedOptions || []).map(o => o.value);
-        const personilIds = Array.from(document.getElementById('f-doc-personil-list')?.selectedOptions || []).map(o => o.value);
-        const withCapTtd = document.getElementById('f-doc-cap-ttd')?.checked ?? true;
-        if (!compId || templateIds.length === 0) { Toast.warning('Pilih Perusahaan dan minimal 1 Template'); return; }
-        // baca Data Surat per blok (fallback ke state)
-        const today = new Date().toISOString().split('T')[0];
-        const items = templateIds.map(tid => {
-            const block = document.querySelector(`#doc-surat-blocks [data-tpl="${tid}"]`);
-            const s = this._suratData[tid] || {};
-            return {
-                tid,
-                kode: (block?.querySelector('.ds-kode')?.value ?? s.kode ?? '').toUpperCase().trim(),
-                tgl: block?.querySelector('.ds-tgl')?.value ?? s.tgl ?? today,
-                perihal: (block?.querySelector('.ds-perihal')?.value ?? s.perihal ?? '').trim(),
-                lampiran: (block?.querySelector('.ds-lampiran')?.value ?? s.lampiran ?? '-').trim() || '-',
-            };
-        });
-        if (items.some(i => !i.perihal)) { Toast.warning('Isi Perihal untuk setiap surat'); return; }
-        const btn = document.getElementById('doc-save-btn');
-        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Generate...'; }
-        try {
-            const dynamicVars = {};
-            document.querySelectorAll('.doc-dynamic-var').forEach(input => { dynamicVars[input.getAttribute('data-var')] = input.value; });
-            // auto terbilang filling if user left terbilang empty but has nilai_pagu
-            if (dynamicVars['terbilang'] === '' && dynamicVars['nilai_pagu']) { const tb = this._terbilang(dynamicVars['nilai_pagu']); if (tb) dynamicVars['terbilang'] = tb; }
-            if (dynamicVars['nilai_pagu_terbilang'] === '' && dynamicVars['nilai_pagu']) { const tb = this._terbilang(dynamicVars['nilai_pagu']); if (tb) dynamicVars['nilai_pagu_terbilang'] = tb; }
-            if (dynamicVars['pagu_terbilang'] === '' && (dynamicVars['pagu_anggaran'] || dynamicVars['nilai_pagu'])) { const raw = dynamicVars['pagu_anggaran'] || dynamicVars['nilai_pagu']; const tb = this._terbilang(raw); if (tb) dynamicVars['pagu_terbilang'] = tb; }
-
-            // generate nomor per surat (urut per kode & bulan)
-            for (const it of items) {
-                if (this._genMap[it.tid] || !it.kode) continue;
-                const d = new Date(it.tgl);
-                const res = await API.getNextLetterNumber(compId, it.kode, d.getFullYear(), d.getMonth() + 1);
-                this._genMap[it.tid] = res.data;
-            }
-            // satu record surat per template (nomor & perihal sendiri-sendiri)
-            for (const it of items) {
-                const g = this._genMap[it.tid];
-                const kontenObj = { templates: [it.tid], variables: dynamicVars, personnel: persId, equipments: equipIds, personilList: personilIds, lampiran: it.lampiran, cap_ttd: withCapTtd };
-                const letterData = {
-                    company_id: compId, nomor_urut: g?.nomor_urut || 0, kode_surat: it.kode || 'DOC',
-                    bulan: g?.bulan || new Date(it.tgl).getMonth() + 1, tahun: g?.tahun || new Date(it.tgl).getFullYear(),
-                    nomor_surat: g?.nomor_surat || '-', tanggal: it.tgl, perihal: it.perihal, konten: JSON.stringify(kontenObj)
-                };
-                await API.createLetter(letterData);
-            }
-            const parts = items.map((it, i) => this._buildPrintHtml(compId, [it.tid], persId,
-                { ...dynamicVars, nomor_surat: this._genMap[it.tid]?.nomor_surat || '-', perihal: it.perihal, lampiran: it.lampiran, tanggal: it.tgl },
-                equipIds, personilIds, null, withCapTtd, i === items.length - 1));
-            this._openPrint(this._mergePrintParts(parts));
-            Toast.success('Dokumen surat berhasil digenerate dan disimpan!');
-            this._genMap = {}; Modal.close(); this.loadData();
-        } catch (err) { Toast.error(err.message); if (btn) { btn.disabled = false; btn.innerHTML = 'Generate & Cetak Surat'; } }
-    },
-
-    async viewOrPrint(id) {
-        try {
-            const res = await API.getLetterById(id);
-            const l = res.data;
-            let konten = {};
-            if (l.konten) { try { konten = typeof l.konten === 'string' ? JSON.parse(l.konten) : l.konten; } catch (e) { } }
-            const tplIds = konten.templates || (l.template_id ? [l.template_id] : []);
-            const persId = konten.personnel || null;
-            const vars = konten.variables || {};
-            const equipIds = konten.equipments || [];
-            const personilIds = konten.personilList || [];
-            if (tplIds.length === 0) { Toast.warning('Surat ini tidak memiliki template tersimpan.'); return; }
-            this.buildAndPrint(l.company_id, tplIds, persId, { ...vars, nomor_surat: l.nomor_surat, perihal: l.perihal, lampiran: konten.lampiran || '-', tanggal: l.tanggal }, equipIds, personilIds, konten.cap || null, konten.cap_ttd !== false);
-        } catch (e) { Toast.error('Gagal memuat detail surat: ' + e.message); }
-    },
-
-    buildAndPrint(compId, templateIds, persId, vars, equipIds, personilIds, capOpts, withCapTtd = true) {
-        this._openPrint(this._buildPrintHtml(compId, templateIds, persId, vars, equipIds, personilIds, capOpts, withCapTtd));
-    },
-
-    _openPrint(fullHtml) {
-        const printWin = window.open('', '_blank');
-        if (!printWin) { Toast.error('Popup diblokir browser. Izinkan popup untuk mencetak dokumen.'); return; }
-        printWin.document.open(); printWin.document.write(fullHtml); printWin.document.close();
-        setTimeout(() => { printWin.focus(); printWin.print(); }, 600);
-    },
-
-    // gabung beberapa surat jadi satu window cetak, dipisah page-break
-    // ponytail: @page/ukuran kertas & CSS head diambil dari surat pertama — campur orientasi = kertas surat pertama menang
-    _mergePrintParts(parts) {
-        if (parts.length === 1) return parts[0];
-        let merged = parts[0].slice(0, parts[0].indexOf('<body>') + 6);
-        parts.forEach((p, i) => {
-            merged += p.slice(p.indexOf('<body>') + 6, p.lastIndexOf('</body>'));
-            if (i < parts.length - 1) merged += '<div class="page-break"></div>';
-        });
-        return merged + '</body></html>';
-    },
-
-    _buildPrintHtml(compId, templateIds, persId, vars, equipIds, personilIds, capOpts, withCapTtd = true, includeAtts = true) {
-        const comp = this.companies.find(c => c.id === compId);
-        const pers = this.personnel.find(p => p.id === persId);
-        const mainTpl = templateIds.length > 0 ? this.templates.find(x => x.id === templateIds[0]) : null;
-        let pwmm = mainTpl?.paper_size === 'F4' ? 215 : 210, phmm = mainTpl?.paper_size === 'F4' ? 330 : 297;
-        if (mainTpl?.orientation === 'landscape') { const t0 = pwmm; pwmm = phmm; phmm = t0; }
-        const paperSizeStr = `${pwmm}mm ${phmm}mm`;
-        const mt = mainTpl?.margin_top ?? 25; const mb = mainTpl?.margin_bottom ?? 25; const ml = mainTpl?.margin_left ?? 30; const mr = mainTpl?.margin_right ?? 25;
-        const kota = comp?.kota || '';
-        const tglFormat = vars.tanggal ? Fmt.date(vars.tanggal) : '';
-        const tglSurat = kota ? `${kota}, ${tglFormat}` : tglFormat;
-        const headerSurat = `<table style="width:100%; max-width:550px; margin-bottom:20px; border-collapse:collapse; font-size:inherit; font-family:inherit;"><tr><td style="width:90px; vertical-align:top; padding:2px 0;">Nomor</td><td style="width:12px; vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${Fmt.escape(vars.nomor_surat)}</td></tr><tr><td style="vertical-align:top; padding:2px 0;">Lampiran</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${Fmt.escape(vars.lampiran || '-')}</td></tr><tr><td style="vertical-align:top; padding:2px 0;">Perihal</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;"><strong>${Fmt.escape(vars.perihal)}</strong></td></tr></table>`;
-        const capSz = Math.min(300, Math.max(30, parseInt(capOpts?.size) || parseInt(comp?.cap_size) || 110));
-        const capPos = capOpts?.pos || comp?.cap_pos || 'kiri';
-        const capX = capPos === 'tengah' ? 'left:50%; transform:translateX(-50%);' : capPos === 'kanan' ? 'right:-15px;' : 'left:-15px;';
-        const imgCap = withCapTtd && comp?.cap_image_url ? `<img src="${Fmt.url(comp.cap_image_url)}" style="position:absolute; ${capX} top:10px; max-width:${capSz}px; opacity:0.85; z-index:-1;">` : '';
-        const imgTtdDir = comp?.ttd_image_url ? `<img src="${Fmt.url(comp.ttd_image_url)}" style="max-height:85px; position:relative; z-index:1;">` : '<br><br><br>';
-        const ttdJabatan = comp?.ttd_jabatan || 'Direktur';
-        const ttdDirektur = withCapTtd ? `<div style="text-align:center; position:relative; display:inline-block; min-width:220px;">${imgCap}<div style="margin-bottom:8px;"><strong>${Fmt.escape(comp?.nama_perusahaan || 'Perusahaan')}</strong></div>${imgTtdDir}<div style="margin-top:8px; font-weight:bold; text-decoration:underline;">${Fmt.escape(comp?.direktur || 'Nama Direktur')}</div><div>${Fmt.escape(ttdJabatan)}</div></div>` : '';
-        let ttdPersonil = '';
-        if (pers && withCapTtd) {
-            const imgTtdPers = pers.ttd_image_url ? `<img src="${Fmt.url(pers.ttd_image_url)}" style="max-height:85px;">` : '<br><br><br>';
-            const tglLine = tglSurat ? `<div style="margin-bottom:6px;">${Fmt.escape(tglSurat)}</div>` : '';
-            ttdPersonil = `<div style="text-align:center; display:inline-block; min-width:220px;">${tglLine}<div style="margin-bottom:8px;"><strong>Hormat saya,</strong></div>${imgTtdPers}<div style="margin-top:8px; font-weight:bold; text-decoration:underline;">${Fmt.escape(pers.nama)}</div><div>${Fmt.escape(pers.jabatan || 'Pelaksana')}</div></div>`;
-        }
-        const ttdGabungan = withCapTtd ? `<table style="width:100%; margin-top:35px; border-collapse:collapse;"><tr><td style="width:50%; text-align:center; vertical-align:bottom;"><div style="margin-bottom:8px;">Mengetahui,</div>${ttdDirektur}</td><td style="width:50%; text-align:center; vertical-align:bottom;">${ttdPersonil}</td></tr></table>` : '';
-
-        // ── auto vars tabel ──
-        // resolve selected lists from params or DOM fallback
-        let selEquipIds = equipIds;
-        let selPersonilIds = personilIds;
-        if ((!selEquipIds || !selEquipIds.length) && document.getElementById('f-doc-equipments')) {
-            selEquipIds = Array.from(document.getElementById('f-doc-equipments')?.selectedOptions || []).map(o => o.value);
-        }
-        if ((!selPersonilIds || !selPersonilIds.length) && document.getElementById('f-doc-personil-list')) {
-            selPersonilIds = Array.from(document.getElementById('f-doc-personil-list')?.selectedOptions || []).map(o => o.value);
-        }
-        selEquipIds = selEquipIds || [];
-        selPersonilIds = selPersonilIds || [];
-        const selectedEquipList = this.equipments.filter(e => selEquipIds.includes(e.id));
-        const selectedPersonilList = this.personnel.filter(p => selPersonilIds.includes(p.id));
-
-        const tabelPeralatan = selectedEquipList.length ? `
-            <table style="width:100%; border-collapse:collapse; font-size:10pt;">
-                <thead><tr style="background:#f2f2f2;">
-                    <th style="border:1px solid #000; padding:4px;">No</th>
-                    <th style="border:1px solid #000; padding:4px;">Jenis Peralatan</th>
-                    <th style="border:1px solid #000; padding:4px;">Kapasitas</th>
-                    <th style="border:1px solid #000; padding:4px;">Jumlah</th>
-                    <th style="border:1px solid #000; padding:4px;">Tahun Produksi</th>
-                    <th style="border:1px solid #000; padding:4px;">Merk/Type</th>
-                    <th style="border:1px solid #000; padding:4px;">Kondisi</th>
-                    <th style="border:1px solid #000; padding:4px;">Lokasi Sekarang</th>
-                    <th style="border:1px solid #000; padding:4px;">Bukti Kepemilikan</th>
-                </tr></thead>
-                <tbody>
-                ${selectedEquipList.map((e, i) => `<tr>
-                    <td style="border:1px solid #000; padding:4px; text-align:center;">${i + 1}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.jenis)}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.kapasitas || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px; text-align:center;">${Fmt.escape(String(e.jumlah || '-'))}</td>
-                    <td style="border:1px solid #000; padding:4px; text-align:center;">${Fmt.escape(String(e.tahun_produksi || '-'))}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.merk_type || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.kondisi || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.lokasi_sekarang || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(e.bukti_kepemilikan || '-')}</td>
-                </tr>`).join('')}
-                </tbody>
-            </table>` : '<p style="color:#999; font-style:italic; text-align:center; border:1px dashed #ccc; padding:12px;">Tidak ada peralatan terpilih — pilih peralatan di form sebelum cetak.</p>';
-
-        const tabelPersonil = selectedPersonilList.length ? `
-            <table style="width:100%; border-collapse:collapse; font-size:10pt;">
-                <thead><tr style="background:#f2f2f2;">
-                    <th style="border:1px solid #000; padding:4px;">No</th>
-                    <th style="border:1px solid #000; padding:4px;">Nama</th>
-                    <th style="border:1px solid #000; padding:4px;">Tingkat Pendidikan</th>
-                    <th style="border:1px solid #000; padding:4px;">Jabatan</th>
-                    <th style="border:1px solid #000; padding:4px;">Pengalaman (th)</th>
-                    <th style="border:1px solid #000; padding:4px;">Sertifikat Keahlian</th>
-                </tr></thead>
-                <tbody>
-                ${selectedPersonilList.map((p, i) => `<tr>
-                    <td style="border:1px solid #000; padding:4px; text-align:center;">${i + 1}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(p.nama)}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(p.tingkat_pendidikan || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(p.jabatan || '-')}</td>
-                    <td style="border:1px solid #000; padding:4px; text-align:center;">${Fmt.escape(String(p.tahun_pengalaman ?? 0))}</td>
-                    <td style="border:1px solid #000; padding:4px;">${Fmt.escape(p.sertifikat_keahlian || '-')}</td>
-                </tr>`).join('')}
-                </tbody>
-            </table>` : '<p style="color:#999; font-style:italic; text-align:center; border:1px dashed #ccc; padding:12px;">Tidak ada personil terpilih — pilih personil di form sebelum cetak.</p>';
-
-        const strukturOrganisasi = selectedPersonilList.length ? `
-            <div style="text-align:center; margin:20px 0;">
-                <div style="display:inline-block; border:1px solid #000; padding:8px 20px; font-weight:bold;">
-                    ${Fmt.escape(comp?.direktur || '')}<br><span style="font-weight:normal;">Direktur</span>
+            pop.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                    <button class="btn btn-secondary btn-sm" data-nav="-1">‹</button>
+                    <strong style="text-transform:capitalize; font-size:0.85rem;">${ml}</strong>
+                    <button class="btn btn-secondary btn-sm" data-nav="1">›</button>
                 </div>
-                <div style="width:1px; height:20px; background:#000; margin:0 auto;"></div>
-                <div style="display:flex; justify-content:center; gap:24px; margin-top:8px; flex-wrap:wrap;">
-                ${selectedPersonilList.map(p => `
-                    <div style="border:1px solid #000; padding:8px 14px; font-weight:bold; min-width:120px;">
-                        ${Fmt.escape(p.nama)}<br><span style="font-weight:normal; font-size:0.9em;">${Fmt.escape(p.jabatan || '-')}</span>
-                    </div>`).join('')}
+                <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px; text-align:center; font-size:0.68rem; color:var(--text-muted); font-weight:700; margin-bottom:4px;">
+                    ${['S', 'S', 'R', 'K', 'J', 'S', 'M'].map(w => `<span>${w}</span>`).join('')}
                 </div>
-            </div>` : '<p style="color:#999; font-style:italic; text-align:center; border:1px dashed #ccc; padding:12px;">Bagan struktur organisasi akan tampil setelah personil terpilih.</p>';
-
-        let kopHtml = '';
-        if (comp) {
-            const kopLine = /^#[0-9a-fA-F]{3,8}$/.test(comp.kop_garis_warna || '') ? comp.kop_garis_warna : '#000000';
-            if (comp.kop_is_image && comp.kop_image_url) kopHtml = `<img src="${Fmt.url(comp.kop_image_url)}" style="width:100%; max-height:140px; object-fit:contain; margin-bottom:10px; border-bottom:3px double ${kopLine}; padding-bottom:8px;">`;
-            else kopHtml = `<div style="text-align:center; margin-bottom:10px; border-bottom:3px double ${kopLine}; padding-bottom:10px;"><h2 style="margin:0; font-size:22px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${Fmt.escape(comp.kop_nama || comp.nama_perusahaan)}</h2><p style="margin:4px 0 2px 0; font-size:11pt;">${Fmt.escape(comp.kop_alamat || comp.alamat || '')}</p><p style="margin:0; font-size:10pt; color:#333;">${Fmt.escape(comp.kop_kontak || '')}</p></div>`;
-        }
-        const selectedAtts = includeAtts ? Array.from(document.querySelectorAll('.doc-attachment-cb:checked')).map(cb => JSON.parse(cb.value)) : [];
-        const fontName = String(comp?.font_surat || 'Times New Roman').replace(/[^A-Za-z0-9 '\-.,]/g, '');
-        const fontStack = `'${fontName}', 'Times New Roman', Times, serif`;
-        // ponytail: @page margin 0 → Chrome sembunyikan header/footer cetak (tanggal, judul, about:blank, no. halaman); margin pindah ke padding .doc-page (inline per halaman). Satu template meluber >1 halaman = halaman lanjutan tanpa margin.
-        let fullHtml = `<!DOCTYPE html><html><head><title>${Fmt.escape(vars.nomor_surat)}</title><style>@page { size: ${paperSizeStr}; margin: 0; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } * { box-sizing: border-box; }</style></head><body>`;
-        templateIds.forEach((tId, idx) => {
-            const t = this.templates.find(x => x.id === tId); if (!t) return;
-            let content = t.html_content || '';
-            // tanpa cap&TTD: buang ekor penutup manual gaya {{kota_perusahaan}}, {{tanggal}} … s/d akhir (nama perusahaan/direktur/jabatan di situ ikut hilang)
-            if (!withCapTtd) content = content.replace(/\{\{\s*kota_perusahaan\s*\}\}\s*,\s*\{\{\s*(?:tanggal_surat|tanggal)\s*\}\}[\s\S]*$/i, '');
-            content = content.replace(/\{\{header_surat\}\}/g, headerSurat)
-                .replace(/\{\{tanggal_surat\}\}/g, withCapTtd ? tglSurat : '')
-                .replace(/\{\{kota_perusahaan\}\}/g, withCapTtd ? Fmt.escape(kota) : '')
-                .replace(/\{\{nama_perusahaan\}\}/g, Fmt.escape(comp?.nama_perusahaan || ''))
-                .replace(/\{\{singkatan\}\}/g, Fmt.escape(comp?.singkatan || comp?.nama_perusahaan || ''))
-                .replace(/\{\{direktur\}\}/g, Fmt.escape(comp?.direktur || ''))
-                .replace(/\{\{alamat\}\}/g, Fmt.escape(comp?.alamat || ''))
-                .replace(/\{\{npwp\}\}/g, Fmt.escape(comp?.npwp_usaha || ''))
-                .replace(/\{\{nama_personil\}\}/g, Fmt.escape(pers?.nama || ''))
-                .replace(/\{\{jabatan_personil\}\}/g, Fmt.escape(pers?.jabatan || 'Pelaksana'))
-                .replace(/\{\{ttd_direktur\}\}/g, ttdDirektur)
-                .replace(/\{\{ttd_personil\}\}/g, ttdPersonil)
-                .replace(/\{\{ttd_gabungan\}\}/g, ttdGabungan)
-                .replace(/\{\{tabel_peralatan\}\}/g, tabelPeralatan)
-                .replace(/\{\{tabel_personil\}\}/g, tabelPersonil)
-                .replace(/\{\{struktur_organisasi\}\}/g, strukturOrganisasi);
-            // auto terbilang fallback if not provided via dynamic vars
-            if (!vars['terbilang'] && vars['nilai_pagu']) { const tb = this._terbilang(vars['nilai_pagu']); if (tb) content = content.replace(/\{\{terbilang\}\}/g, Fmt.escape(tb)); }
-            if (!vars['nilai_pagu_terbilang'] && vars['nilai_pagu']) { const tb = this._terbilang(vars['nilai_pagu']); if (tb) content = content.replace(/\{\{nilai_pagu_terbilang\}\}/g, Fmt.escape(tb)); }
-            Object.keys(vars).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), Fmt.escape(vars[k])); });
-            // auto table fallback for any remaining terbilang-like tokens -> try terbilang of related nilai
-            content = content.replace(/\{\{terbilang[^}]*\}\}/g, m => {
-                // if still not replaced, try to find numeric var nearby
-                return '.........';
+                <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">${cells}</div>
+                <button class="btn btn-secondary btn-sm" style="width:100%; margin-top:8px;" data-today="1">Hari ini</button>`;
+            pop.querySelectorAll('[data-nav]').forEach(b => b.onclick = (e) => {
+                e.stopPropagation();
+                const dt = new Date(state.y, state.m + (+b.dataset.nav), 1);
+                state.y = dt.getFullYear(); state.m = dt.getMonth(); draw();
             });
-            content = content.replace(/\{\{[^}]+\}\}/g, '.........');
-            fullHtml += `<div class="doc-page" style="min-height: ${phmm - mt - mb}mm; padding: ${mt}mm ${mr}mm ${mb}mm ${ml}mm;">${kopHtml}${content}</div>`;
-            if (idx < templateIds.length - 1 || selectedAtts.length > 0) fullHtml += '<div class="page-break"></div>';
-        });
-        selectedAtts.forEach((att, idx) => {
-            if (att.url && att.url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) { fullHtml += `<div class="attachment-page"><img src="${Fmt.url(att.url)}" class="attachment-img"></div>`; if (idx < selectedAtts.length - 1) fullHtml += '<div class="page-break"></div>'; }
-            else { fullHtml += `<div class="attachment-page"><h3>Lampiran Dokumen: ${Fmt.escape(att.name)}</h3><p><em>(Harap sertakan file ini: ${Fmt.url(att.url)})</em></p></div>`; if (idx < selectedAtts.length - 1) fullHtml += '<div class="page-break"></div>'; }
-        });
-        fullHtml += '</body></html>';
-        return fullHtml;
+            pop.querySelector('[data-today]').onclick = (e) => { e.stopPropagation(); this._wzTglSet(new Date().toISOString().split('T')[0]); };
+            pop.querySelectorAll('[data-d]').forEach(s => s.onclick = (e) => { e.stopPropagation(); this._wzTglSet(s.dataset.d); });
+        };
+        draw();
+        setTimeout(() => {
+            const off = (e) => { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('pointerdown', off); } };
+            document.addEventListener('pointerdown', off);
+        }, 0);
     },
 
-    remove(id) {
-        Modal.confirm('Hapus Surat', 'Hapus dokumen surat ini? Nomor urut tidak akan berubah.', async () => {
-            try { await API.deleteLetter(id); Toast.success('Surat dihapus'); this.loadData(); }
-            catch (e) { Toast.error(e.message); }
+    _wzTglSet(v) {
+        const h = document.getElementById('wz-tgl');
+        const s = document.getElementById('wz-tgl-show');
+        if (h) h.value = v;
+        if (s && v) {
+            const d = new Date(v + 'T00:00:00');
+            s.value = isNaN(d) ? v : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+        document.getElementById('wz-datepop')?.remove();
+        this._wzTglChange();
+    },
+
+    _wzTglChange() {
+        const v = document.getElementById('wz-tgl')?.value;
+        this._wzTglPretty();
+        this._wzForm2dateOnly();
+        this._wzAutoNomor();
+    },
+
+    _wzForm2dateOnly() {
+        const v = document.getElementById('wz-tgl')?.value;
+        if (!v) return;
+        this._wz.letter.tgl = v;
+        this._wzNomorPreview();
+    },
+
+    // ponytail: nomor auto-generate (debounce) setelah kode+perusahaan+tgl lengkap — tanpa tombol
+    _wzAutoNomor() {
+        clearTimeout(this._wzNomorT);
+        this._wzNomorT = setTimeout(() => this._wzDoNomor(), 700);
+    },
+
+    async _wzDoNomor() {
+        if (this._wz._nomorBusy) return;
+        const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+        if (!comp.id) return;
+        const sdg = (document.getElementById('wz-sdg')?.value || '').toUpperCase().trim();
+        if (!sdg) return;
+        const perihal = document.getElementById('wz-perihal')?.value.trim() || 'Penawaran Administrasi';
+        const paManual = (document.getElementById('wz-pa')?.value || '').toUpperCase().trim();
+        const pa = paManual || this._wzInitPA(perihal);
+        const tgl = document.getElementById('wz-tgl')?.value || new Date().toISOString().split('T')[0];
+        const dt = new Date(tgl);
+        const cur = document.getElementById('wz-nomor')?.value || '';
+        this._wz._nomorBusy = true;
+        try {
+            const res = await API.getNextLetterNumber(comp.id, sdg, dt.getFullYear(), dt.getMonth() + 1, pa);
+            // hanya timpa bila user belum mengunci nomor lain / masih placeholder
+            const el = document.getElementById('wz-nomor');
+            this._wz.letter.urut = res.data.nomor_urut;
+            this._wz.letter.nomor = res.data.nomor_surat;
+            this._wz.letter.pa = res.data.perihal_singkatan || pa;
+            if (el && (!cur || cur.includes('___') || el.value === cur)) {
+                el.value = res.data.nomor_surat;
+                const eu = document.getElementById('wz-urut');
+                if (eu) eu.value = String(res.data.nomor_urut).padStart(3, '0');
+                const paEl = document.getElementById('wz-pa');
+                if (paEl) paEl.value = this._wz.letter.pa;
+            }
+        } catch (e) { console.warn('Auto nomor:', e.message); }
+        finally { this._wz._nomorBusy = false; }
+    },
+
+    _wzCollect2() {
+        const L = this._wz.letter;
+        L.perihal = document.getElementById('wz-perihal')?.value.trim() || 'Penawaran Administrasi';
+        L.pa = this._wzInitPA(L.perihal);
+        L.sdg = (document.getElementById('wz-sdg')?.value || '').toUpperCase().trim();
+        L.lampiran = document.getElementById('wz-lampiran')?.value.trim() || 'Dokumen Penawaran';
+        L.tgl = document.getElementById('wz-tgl')?.value || L.tgl;
+        L.alamatDir = document.getElementById('wz-alamat-dir')?.value.trim() || '';
+        L.nomor = document.getElementById('wz-nomor')?.value.trim() || '';
+        if (!L.nomor || L.nomor.includes('___')) L.nomor = this._wzNomorPreview();
+    },
+
+    _wzCollect3() {
+        Object.keys(this._wz.equip).forEach(async (id) => {
+            const st = this._wz.equip[id];
+            if (st && st.files === null) {
+                try {
+                    const res = await API.getEquipmentFiles(id);
+                    st.files = (res.data || []).map(f => ({ url: f.file_url, label: f.label }));
+                } catch {}
+            }
         });
-    }
+    },
+
+    _wzCollect4() {
+        ['pelaksana', 'k3'].forEach(role => {
+            const r = this._wz[role];
+            r.id = document.getElementById('wz-' + role)?.value || '';
+            r.posisi = document.getElementById(`wz-${role}-posisi`)?.value.trim() || '';
+            r.pendidikan = document.getElementById(`wz-${role}-pendidikan`)?.value.trim() || '';
+            r.pengalaman = document.getElementById(`wz-${role}-pengalaman`)?.value.trim() || '0';
+            r.ttl = document.getElementById(`wz-${role}-ttl`)?.value.trim() || '';
+            const box = document.getElementById(`wz-${role}-exp`);
+            const checked = box ? Array.from(box.querySelectorAll('input:checked')) : [];
+            r.exp = checked.map(i => i.value);
+            r.expNames = checked.map(i => i.closest('label')?.querySelector('strong')?.textContent || i.value);
+        });
+        this._wz.show = {
+            direktur: document.getElementById('wz-show-direktur')?.checked ?? true,
+            pelaksana: document.getElementById('wz-show-pelaksana')?.checked ?? true,
+            k3: document.getElementById('wz-show-k3')?.checked ?? true,
+            cap: document.getElementById('wz-show-cap')?.checked ?? true,
+        };
+        this._wz.capSize = parseInt(document.getElementById('wz-cap-size')?.value) || 0;
+    },
+
+    _wzReview() {
+        const box = document.getElementById('doc-review-box');
+        if (!box) return;
+        const t = this._wz.tender || {};
+        const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+        const L = this._wz.letter;
+        const nm = id => (this.personnel.find(p => p.id === id) || {}).nama || '-';
+        const row = (k, v) => `<div style="display:flex; gap:8px; font-size:0.85rem; padding:6px 0; border-bottom:1px solid var(--border-color);"><span style="width:150px; color:var(--text-muted); flex-shrink:0;">${k}</span><strong>${v}</strong></div>`;
+        box.innerHTML =
+            row('Paket', Fmt.escape(t.nama_tender || t.nama_paket || '-')) +
+            row('Perusahaan', Fmt.escape(comp.nama_perusahaan || '-') + (comp.kbli ? ` (KBLI ${Fmt.escape(comp.kbli)})` : '')) +
+            row('Nomor surat', Fmt.escape(L.nomor || '-')) +
+            row('Peralatan', Object.keys(this._wz.equip).length + ' alat dipilih') +
+            row('Pelaksana', Fmt.escape(nm(this._wz.pelaksana.id)) + ` (${(this._wz.pelaksana.exp || []).length} riwayat)`) +
+            row('K3', Fmt.escape(nm(this._wz.k3.id)) + ` (${(this._wz.k3.exp || []).length} riwayat)`);
+    },
+
+    async wzGenerate() {
+        const btn = document.getElementById('doc-generate-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Mempersiapkan...'; }
+        try {
+            const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+            const t = this._wz.tender || {};
+            const L = this._wz.letter;
+            const tpl04 = (this.templates.find(x => /04 surat/i.test(x.nama_template)) || this.templates[0] || {});
+            if (!tpl04.id) throw new Error('Template 04 surat belum ada');
+            // ponytail: file alat TIDAK ikut 04 surat — hanya nempel di dokumen 01 alat
+            const equipAtts = [];
+            for (const eqId of Object.keys(this._wz.equip)) {
+                try {
+                    const res = await API.getEquipmentFiles(eqId);
+                    const e = (this.equipments || []).find(x => x.id === eqId) || {};
+                    (res.data || []).forEach(f => equipAtts.push({ name: `${e.jenis || 'Alat'} — ${f.label || 'lampiran'}`, url: f.file_url }));
+                    if (e.file_url) equipAtts.push({ name: `${e.jenis || 'Alat'} — berkas`, url: e.file_url });
+                } catch {}
+            }
+            const expUrls = [];
+            for (const role of ['pelaksana', 'k3']) {
+                const r = this._wz[role];
+                if (!r.id || !r.exp?.length) continue;
+                try {
+                    const det = await API.getPersonnelById(r.id);
+                    (det.data?.experience_history || []).filter(x => r.exp.includes(String(x.id)))
+                        .forEach(x => { if (x.surat_referensi_url) expUrls.push({ name: `Referensi — ${x.nama_kegiatan || ''}`, url: x.surat_referensi_url }); });
+                } catch {}
+            }
+            const V = this._wz.vars;
+            const pelObj = this.personnel.find(p => p.id === this._wz.pelaksana.id) || {};
+            const k3Obj = this.personnel.find(p => p.id === this._wz.k3.id) || {};
+            const vars = {
+                ...V,
+                nomor_surat: L.nomor, nomor_surat_penawaran: L.nomor,
+                perihal: L.perihal, perihal_penawaran: L.perihal,
+                lampiran: L.lampiran, tanggal: L.tgl,
+                direktur: comp.direktur || '', alamat_direktur: L.alamatDir || comp.alamat_direktur || comp.alamat || '',
+                nama_perusahaan: comp.nama_perusahaan || '',
+                nama_pelaksana: pelObj.nama || '',
+                posisi_pelaksana: this._wz.pelaksana.posisi || '', alamat_pelaksana: pelObj.alamat || '-',
+                nama_k3: k3Obj.nama || '',
+                posisi_k3: this._wz.k3.posisi || '', alamat_k3: k3Obj.alamat || '-',
+            };
+            const payload = {
+                company_id: comp.id, template_ids: [tpl04.id],
+                tender_id: t.id || t.kode_tender || null,
+                signer2_id: this._wz.pelaksana.id || null, signer3_id: this._wz.k3.id || null,
+                signer2_data: { jabatan: this._wz.pelaksana.posisi || undefined },
+                signer3_data: { jabatan: this._wz.k3.posisi || undefined },
+                show: this._wz.show, cap_opts: { ...(this._wz.capSize ? { size: this._wz.capSize } : {}) },
+                personil_ids: [this._wz.pelaksana.id, this._wz.k3.id].filter(Boolean),
+                equipment_ids: Object.keys(this._wz.equip),
+                vars, with_cap_ttd: V.withTtd !== false,
+                attachments: expUrls,
+                variables: {
+                    batch_id: (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),
+                    company_id: comp.id, tender: { kode: t.kode_tender, nama: t.nama_tender || t.nama_paket },
+                    vars, letter: L, equipIds: Object.keys(this._wz.equip),
+                    pelaksana: { ...this._wz.pelaksana, nama: pelObj.nama || '' },
+                    k3: { ...this._wz.k3, nama: k3Obj.nama || '' },
+                    show: this._wz.show, capPos: 'auto-bergantian',
+                },
+            };
+            // ponytail: 01 alat & 02 personil = dokumen terpisah; file lampiran alat hanya nempel di 01 alat
+            // TTD direktur/cap ikut form wizard (with_cap_ttd + show.direktur) — template kini punya {{ttd_direktur}}
+            const jobs = [{ label: '04 surat', payload }];
+            const tpl01 = this.templates.find(x => /01 alat/i.test(x.nama_template));
+            if (tpl01?.id && payload.equipment_ids.length) {
+                jobs.push({ label: '01 alat', payload: {
+                    ...payload, template_ids: [tpl01.id],
+                    signer2_id: null, signer3_id: null, signer2_data: undefined, signer3_data: undefined,
+                    personil_ids: [], attachments: equipAtts,
+                } });
+            }
+            const tpl02 = this.templates.find(x => /02 personil/i.test(x.nama_template));
+            if (tpl02?.id && payload.personil_ids.length) {
+                jobs.push({ label: '02 personil', payload: {
+                    ...payload, template_ids: [tpl02.id],
+                    signer2_id: null, signer3_id: null, signer2_data: undefined, signer3_data: undefined,
+                    equipment_ids: [], attachments: [],
+                } });
+            }
+            const dt = new Date(L.tgl);
+            if (L.urut && L.sdg) {
+                await API.createLetter({
+                    company_id: comp.id, nomor_urut: L.urut, kode_surat: L.sdg,
+                    bulan: dt.getMonth() + 1, tahun: dt.getFullYear(), nomor_surat: L.nomor,
+                    perihal: L.perihal, tanggal: L.tgl, perihal_singkatan: L.pa,
+                    konten: JSON.stringify({ template: tpl04.id }), template_id: tpl04.id,
+                }).catch(e => console.warn('Simpan nomor:', e.message));
+            }
+            // ponytail: tutup modal lalu generate jalan di background — tab bisa ditinggal, tanpa lag
+            Modal.close();
+            Toast.sticky('⏳ Merender PDF... bisa navigasi ke halaman lain, dokumen muncul saat selesai.');
+            this._runGenerateBg(jobs);
+        } catch (e) {
+            Toast.error(e.message);
+            if (btn) { btn.disabled = false; btn.innerHTML = 'Generate PDF'; }
+        }
+    },
+
+    // ponytail: generate di background — tidak memblokir UI; notif toast setelah selesai
+    async _runGenerateBg(jobs) {
+        const list = Array.isArray(jobs) ? jobs : [{ label: 'PDF', payload: jobs }];
+        const outs = [];
+        try {
+            for (const j of list) {
+                const res = await API.generateDocument(j.payload);
+                outs.push({ label: j.label, d: res.data });
+            }
+            Toast.success(outs.map(o => `✅ ${o.label} (${o.d.pages} hal.) — <a href="${o.d.url}" target="_blank" style="color:var(--accent); font-weight:700;">Unduh</a>`).join('<br>'));
+            this.loadRecords();
+        } catch (e) { Toast.error('Generate gagal: ' + e.message); }
+    },
+
+    // ── FORM 3: 01 alat (tabel + pagination + ceklis + lampiran per alat) ──
+    _wzEqPage: 1,
+    _wzEqPerPage: 5,
+    _wzForm3() {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="3"]');
+        pane.innerHTML = `
+        <div style="font-weight:700; margin-bottom:4px;">3. Peralatan <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— ceklis yang dipakai • klik nilai untuk ubah langsung</span></div>
+        <div class="table-container" style="overflow-x:auto;"><table class="mini-table"><thead><tr>
+            <th style="width:36px; text-align:center;"><input type="checkbox" onchange="DocumentsPage._wzEqAll(this.checked)" style="accent-color:var(--accent);"></th>
+            <th>Jenis</th><th>Kapasitas</th><th style="width:64px;">Jumlah</th><th style="width:70px;">Tahun</th><th>Merk/Type</th><th style="width:110px;">Kondisi</th><th>Lokasi</th><th>Bukti</th><th style="width:64px;">File</th>
+        </tr></thead><tbody id="wz-eq-body"></tbody></table></div>
+        <div id="wz-eq-pager" style="display:flex; gap:8px; align-items:center; margin-top:8px; font-size:0.8rem;"></div>
+        <div id="wz-eq-files" style="margin-top:8px;"></div>
+        <details style="margin-top:10px; border:1px dashed var(--border-color); border-radius:8px; padding:10px 12px;">
+            <summary style="cursor:pointer; font-size:0.82rem; font-weight:700;">+ Input alat manual (di luar daftar)</summary>
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr; gap:8px; margin-top:8px;">
+                <input class="form-input" id="wz-eqm-jenis" placeholder="Jenis alat *">
+                <select class="form-select" id="wz-eqm-pt"><option value="">PT...</option>${(this.companies || []).map(c => `<option value="${c.id}">${Fmt.escape(c.singkatan || c.nama_perusahaan)}</option>`).join('')}</select>
+                <input class="form-input" id="wz-eqm-kap" placeholder="Kapasitas">
+                <input class="form-input" id="wz-eqm-satuan" placeholder="Satuan">
+                <input type="number" class="form-input" id="wz-eqm-jumlah" placeholder="Jumlah">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; margin-top:8px;">
+                <input type="number" class="form-input" id="wz-eqm-tahun" placeholder="Tahun">
+                <input class="form-input" id="wz-eqm-merk" placeholder="Merk/Type">
+                <select class="form-select" id="wz-eqm-kondisi"><option value="Baik">Baik</option><option value="Rusak Ringan">Rusak Ringan</option><option value="Rusak Berat">Rusak Berat</option></select>
+                <input class="form-input" id="wz-eqm-lokasi" placeholder="Lokasi">
+                <input class="form-input" id="wz-eqm-bukti" placeholder="Bukti (milik/sewa)">
+            </div>
+            <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+                <label class="form-label" style="margin:0;">Berkas:</label>
+                <input type="file" class="form-input" id="wz-eqm-file" accept="image/*,.pdf" style="flex:1; min-width:160px;">
+                <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqManual()">Tambah & Ceklis</button>
+            </div>
+        </details>`;
+        this._wzEqPage = 1;
+        this._wzRenderEq();
+    },
+
+    _wzEqKap(e) {
+        if (e.kapasitas_angka != null || e.kapasitas_satuan) return `${e.kapasitas_angka ?? ''} ${e.kapasitas_satuan || ''}`.trim();
+        return e.kapasitas || '-';
+    },
+
+    _wzRenderEq() {
+        const body = document.getElementById('wz-eq-body');
+        const pager = document.getElementById('wz-eq-pager');
+        if (!body) return;
+        const list = this.equipments || [];
+        const pages = Math.max(1, Math.ceil(list.length / this._wzEqPerPage));
+        this._wzEqPage = Math.min(Math.max(1, this._wzEqPage), pages);
+        const start = (this._wzEqPage - 1) * this._wzEqPerPage;
+        body.innerHTML = list.slice(start, start + this._wzEqPerPage).map(e => {
+            const sel = this._wz.equip[e.id];
+            const kapA = e.kapasitas_angka ?? '';
+            const kapS = e.kapasitas_satuan ?? '';
+            const inp = 'font-size:0.78rem; padding:3px 6px;';
+            return `<tr>
+                <td style="text-align:center;"><input type="checkbox" ${sel ? 'checked' : ''} onchange="DocumentsPage._wzEqToggle('${e.id}', this.checked)" style="accent-color:var(--accent); width:16px; height:16px;"></td>
+                <td><strong>${Fmt.escape(e.jenis)}</strong></td>
+                <td style="white-space:nowrap;"><input class="form-input" style="${inp} width:56px; display:inline-block;" value="${kapA}" onchange="DocumentsPage._wzEqEdit('${e.id}','kapA',this.value)" title="Angka kapasitas"> <input class="form-input" style="${inp} width:56px; display:inline-block;" value="${Fmt.escape(kapS)}" onchange="DocumentsPage._wzEqEdit('${e.id}','kapS',this.value)" title="Satuan (m³/cc/ton...)"></td>
+                <td><input type="number" class="form-input" style="${inp} width:56px;" value="${e.jumlah ?? ''}" onchange="DocumentsPage._wzEqEdit('${e.id}','jumlah',this.value)"></td>
+                <td><input type="number" class="form-input" style="${inp} width:64px;" value="${e.tahun_produksi ?? ''}" onchange="DocumentsPage._wzEqEdit('${e.id}','tahun',this.value)"></td>
+                <td><input class="form-input" style="${inp} min-width:90px;" value="${Fmt.escape(e.merk_type || '')}" onchange="DocumentsPage._wzEqEdit('${e.id}','merk',this.value)"></td>
+                <td><select class="form-select" style="${inp}" onchange="DocumentsPage._wzEqEdit('${e.id}','kondisi',this.value)">
+                    ${['Baik', 'Rusak Ringan', 'Rusak Berat'].map(k => `<option ${e.kondisi === k ? 'selected' : ''}>${k}</option>`).join('')}</select></td>
+                <td><input class="form-input" style="${inp} min-width:90px;" value="${Fmt.escape(e.lokasi_sekarang || '')}" onchange="DocumentsPage._wzEqEdit('${e.id}','lokasi',this.value)"></td>
+                <td><small>${Fmt.escape(e.bukti_kepemilikan || '-')}</small></td>
+                <td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqFiles('${e.id}')">📎 <span id="wz-eq-n-${e.id}">${sel?.files ? sel.files.length : '…'}</span></button></td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="10" class="text-center">Belum ada data peralatan</td></tr>';
+        pager.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqGo(-1)" ${this._wzEqPage <= 1 ? 'disabled' : ''}>‹</button>
+            <span style="color:var(--text-muted);">Hal ${this._wzEqPage}/${pages} • ${list.length} alat • ${Object.keys(this._wz.equip).length} dipilih</span>
+            <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqGo(1)" ${this._wzEqPage >= pages ? 'disabled' : ''}>›</button>`;
+        lucide.createIcons();
+    },
+
+    _wzEqGo(d) { this._wzEqPage += d; this._wzRenderEq(); },
+
+    // ponytail: alat manual → simpan ke master lalu ceklis otomatis
+    async _wzEqManual() {
+        const jenis = document.getElementById('wz-eqm-jenis')?.value.trim();
+        if (!jenis) { Toast.warning('Isi jenis alat'); return; }
+        const kapA = parseFloat(String(document.getElementById('wz-eqm-kap')?.value || '').replace(',', '.')) || null;
+        const kapS = document.getElementById('wz-eqm-satuan')?.value.trim() || null;
+        try {
+            const res = await API.createEquipment({
+                jenis,
+                company_id: document.getElementById('wz-eqm-pt')?.value || null,
+                kapasitas: [kapA, kapS].filter(Boolean).join(' ') || null,
+                kapasitas_angka: kapA, kapasitas_satuan: kapS,
+                jumlah: parseInt(document.getElementById('wz-eqm-jumlah')?.value) || null,
+                tahun_produksi: parseInt(document.getElementById('wz-eqm-tahun')?.value) || null,
+                merk_type: document.getElementById('wz-eqm-merk')?.value.trim() || null,
+                kondisi: document.getElementById('wz-eqm-kondisi')?.value || 'Baik',
+                lokasi_sekarang: document.getElementById('wz-eqm-lokasi')?.value.trim() || null,
+                bukti_kepemilikan: document.getElementById('wz-eqm-bukti')?.value.trim() || null,
+            });
+            const item = res.data || res;
+            // ponytail: berkas manual ikut terunggah + tercatat sebagai lampiran alat
+            const fInput = document.getElementById('wz-eqm-file');
+            if (fInput?.files?.length) {
+                try {
+                    Toast.info('Mengunggah berkas...');
+                    const up = await API.uploadFile(fInput.files[0], 'equipment');
+                    await API.addEquipmentFile(item.id, { label: fInput.files[0].name, file_url: up.url });
+                } catch (e) { Toast.error('Berkas gagal: ' + e.message); }
+            }
+            this.equipments = [...(this.equipments || []), item];
+            this._wz.equip[item.id] = { files: null };
+            this._wzEqPage = Math.ceil(this.equipments.length / this._wzEqPerPage);
+            this._wzRenderEq();
+            ['wz-eqm-jenis', 'wz-eqm-pt', 'wz-eqm-kap', 'wz-eqm-satuan', 'wz-eqm-jumlah', 'wz-eqm-tahun', 'wz-eqm-merk', 'wz-eqm-lokasi', 'wz-eqm-bukti', 'wz-eqm-file'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+            Toast.success('Alat ditambahkan & diceklis');
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    // ponytail: edit nilai langsung di tabel form → update master (sumber tunggal, tanpa duplikasi)
+    async _wzEqEdit(id, field, value) {
+        const map = { kapA: 'kapasitas_angka', kapS: 'kapasitas_satuan', jumlah: 'jumlah', tahun: 'tahun_produksi', merk: 'merk_type', kondisi: 'kondisi', lokasi: 'lokasi_sekarang' };
+        const col = map[field];
+        if (!col) return;
+        let v = value;
+        if (field === 'kapA') v = value === '' ? null : parseFloat(String(value).replace(',', '.')) || null;
+        if (field === 'jumlah' || field === 'tahun') v = value === '' ? null : parseInt(value) || null;
+        if (field === 'kapS' || field === 'merk' || field === 'lokasi') v = String(value).trim() || null;
+        try {
+            const e = (this.equipments || []).find(x => x.id === id) || {};
+            const patch = { [col]: v };
+            if (field === 'kapA' || field === 'kapS') {
+                const a = field === 'kapA' ? v : e.kapasitas_angka;
+                const s = field === 'kapS' ? v : e.kapasitas_satuan;
+                patch.kapasitas = [a, s].filter(x => x !== null && x !== '').join(' ') || null;
+            }
+            const res = await API.updateEquipment(id, patch);
+            Object.assign(e, res.data || patch);
+        } catch (err) { Toast.error(err.message); this._wzRenderEq(); }
+    },
+
+    _wzEqAll(on) {
+        (this.equipments || []).forEach(e => {
+            if (on) { if (!this._wz.equip[e.id]) this._wz.equip[e.id] = { files: null }; }
+            else delete this._wz.equip[e.id];
+        });
+        this._wzRenderEq();
+    },
+
+    _wzEqToggle(id, on) {
+        if (on) { if (!this._wz.equip[id]) this._wz.equip[id] = { files: null }; }
+        else delete this._wz.equip[id];
+        const n = Object.keys(this._wz.equip).length;
+        const pg = document.getElementById('wz-eq-pager');
+        if (pg) { const s = pg.querySelector('span'); if (s) s.textContent = s.textContent.replace(/• \d+ dipilih/, `• ${n} dipilih`); }
+    },
+
+    async _wzEqFiles(id) {
+        const box = document.getElementById('wz-eq-files');
+        const e = (this.equipments || []).find(x => x.id === id) || {};
+        box.innerHTML = `<div style="border:1px solid var(--border-color); border-radius:8px; padding:12px; background:var(--bg-secondary);">
+            <div style="font-weight:700; margin-bottom:8px;">📎 ${Fmt.escape(e.jenis || '')} ${e.bukti_kepemilikan === 'Perjanjian sewa' ? '<span class="badge badge-warning">sewa — lampirkan file baru</span>' : ''}</div>
+            <div id="wz-eq-filelist" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;"><span class="spinner-sm"></span> Memuat...</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <input type="file" class="form-input" id="wz-eq-upload" accept="image/*,.pdf" style="flex:1; min-width:160px;">
+                <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqUpload('${id}')">Upload Baru</button>
+                <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqPickShared('${id}')">Pakai File Alat Lain</button>
+            </div></div>`;
+        try {
+            const res = await API.getEquipmentFiles(id);
+            const files = res.data || [];
+            if (this._wz.equip[id]) this._wz.equip[id].files = files.map(f => ({ url: f.file_url, label: f.label }));
+            const n = document.getElementById('wz-eq-n-' + id);
+            if (n) n.textContent = files.length;
+            document.getElementById('wz-eq-filelist').innerHTML = files.length ? files.map(f => `
+                <div style="display:flex; gap:8px; align-items:center; font-size:0.82rem;">
+                    <a href="${f.file_url}" target="_blank" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${Fmt.escape(f.label || f.file_url.split('/').pop())}</a>
+                    <button class="btn btn-danger btn-sm" style="padding:2px 8px;" onclick="DocumentsPage._wzEqDelFile('${id}','${f.id}','${Fmt.escape(f.file_url)}')">Hapus</button>
+                </div>`).join('') : '<small style="color:var(--text-muted);">Belum ada file — upload baru di bawah.</small>';
+        } catch (err) { document.getElementById('wz-eq-filelist').innerHTML = `<small style="color:var(--danger);">${err.message}</small>`; }
+    },
+
+    async _wzEqUpload(id) {
+        const input = document.getElementById('wz-eq-upload');
+        if (!input?.files?.length) { Toast.warning('Pilih file dulu'); return; }
+        try {
+            Toast.info('Mengunggah...');
+            const up = await API.uploadFile(input.files[0], 'equipment');
+            const label = prompt('Label file:', input.files[0].name) || input.files[0].name;
+            await API.addEquipmentFile(id, { label, file_url: up.url });
+            Toast.success('File tersimpan');
+            if (!this._wz.equip[id]) this._wz.equip[id] = { files: null };
+            this._wzEqFiles(id);
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    async _wzEqPickShared(id) {
+        try {
+            const res = await API.getAllEquipmentFiles();
+            const files = (res.data || []).filter(f => String(f.equipment_id) !== String(id));
+            if (!files.length) { Toast.info('Belum ada file milik alat lain'); return; }
+            const body = files.slice(0, 30).map(f => `
+                <div style="display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-color); font-size:0.82rem;">
+                    <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${Fmt.escape(f.file_url)}">${Fmt.escape(f.equipment_nama || '')} — ${Fmt.escape(f.label || '')}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqUseShared('${id}','${f.id}')">Pakai</button>
+                </div>`).join('');
+            Modal.open('Pakai File Alat Lain', `<div style="max-height:50vh; overflow:auto;">${body}</div>`, '<button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>');
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    async _wzEqUseShared(id, fileId) {
+        try {
+            await API.addEquipmentFile(id, { file_id: fileId });
+            Modal.close();
+            Toast.success('File dibagikan ke alat ini (1 file, 2 alat)');
+            if (!this._wz.equip[id]) this._wz.equip[id] = { files: null };
+            this._wzEqFiles(id);
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    async _wzEqDelFile(equipId, fileId, url) {
+        try {
+            if (url && confirm('Hapus juga berkas dari storage? (Batal = catatan saja)')) await API.deleteFile(url).catch(() => {});
+            await API.deleteEquipmentFile(fileId);
+            Toast.success('Dihapus');
+            this._wzEqFiles(equipId);
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    // ── FORM 4: personil (pelaksana + K3 + riwayat masing-masing) ──
+    // ponytail: dropdown difilter jabatan (pelaksana↔Pelaksana, k3↔K3); kosong → tampil semua + info
+    _wzRoleOpts(role) {
+        const kw = role === 'pelaksana' ? 'pelaksana' : 'k3';
+        const hit = (this.personnel || []).filter(p => (p.jabatan || '').toLowerCase().includes(kw));
+        const list = hit.length ? hit : (this.personnel || []);
+        return { opts: list.map(p => `<option value="${p.id}">${Fmt.escape(p.nama)} — ${Fmt.escape(p.jabatan || '-')}</option>`).join(''), fallback: !hit.length };
+    },
+
+    _wzForm4() {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="4"]');
+        const pel = this._wzRoleOpts('pelaksana'), k3o = this._wzRoleOpts('k3');
+        pane.innerHTML = `
+        <div style="font-weight:700; margin-bottom:12px;">4. Personil <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— profil auto, semua editable • riwayat boleh kosong/1/banyak</span></div>
+        ${['pelaksana', 'k3'].map(role => {
+            const oo = role === 'pelaksana' ? pel : k3o;
+            return `
+        <div style="border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--bg-secondary);">
+            <div class="form-group"><label class="form-label">${role === 'pelaksana' ? 'Pelaksana' : 'Petugas K3'}${oo.fallback ? ' <small style="color:var(--warning);">(belum ada jabatan ini — tampil semua)</small>' : ''}</label>
+                <select class="form-select" id="wz-${role}" onchange="DocumentsPage._wzRolePick('${role}')">
+                    <option value="">-- Pilih personil --</option>${oo.opts}
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Posisi</label><input class="form-input" id="wz-${role}-posisi"></div>
+                <div class="form-group"><label class="form-label">Pendidikan</label><input class="form-input" id="wz-${role}-pendidikan"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Pengalaman (tahun, kosong = 0)</label><input type="number" class="form-input" id="wz-${role}-pengalaman"></div>
+                <div class="form-group"><label class="form-label">TTL (tempat, tanggal lahir)</label><input class="form-input" id="wz-${role}-ttl" placeholder="otomatis dari data personil"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Riwayat ${role === 'pelaksana' ? 'pelaksana' : 'K3'} (boleh kosong)</label>
+                <div id="wz-${role}-exp" style="display:flex; flex-direction:column; gap:6px;"><small style="color:var(--text-muted);">Pilih personil dulu.</small></div>
+            </div>
+        </div>`; }).join('')}
+        <div class="form-row">
+            <div class="form-group"><label class="form-label">Tampilkan</label>
+                <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:0.82rem; padding-top:8px;">
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="wz-show-direktur" checked style="accent-color:var(--accent);"> TTD Direktur</label>
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="wz-show-pelaksana" checked style="accent-color:var(--accent);"> Pelaksana</label>
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="wz-show-k3" checked style="accent-color:var(--accent);"> K3</label>
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" id="wz-show-cap" checked style="accent-color:var(--accent);"> Cap</label>
+                </div>
+            </div>
+            <div class="form-group" style="max-width:130px;"><label class="form-label">Ukuran Cap (px)</label>
+                <input type="number" class="form-input" id="wz-cap-size" placeholder="otomatis">
+            </div>
+            <div class="form-group"><label class="form-label">Posisi Cap</label>
+                <input class="form-input" readonly value="Otomatis bergantian" style="background:var(--bg-tertiary);">
+            </div>
+        </div>`;
+        lucide.createIcons();
+    },
+
+    async _wzRolePick(role) {
+        const id = document.getElementById('wz-' + role)?.value || '';
+        this._wz[role].id = id;
+        this._wz[role].exp = [];
+        const box = document.getElementById(`wz-${role}-exp`);
+        if (!id) {
+            ['posisi', 'pendidikan', 'pengalaman', 'ttl'].forEach(k => { const e = document.getElementById(`wz-${role}-${k}`); if (e) e.value = ''; });
+            if (box) box.innerHTML = '<small style="color:var(--text-muted);">Pilih personil dulu.</small>';
+            return;
+        }
+        try {
+            const res = await API.getPersonnelById(id);
+            const p = res.data || {};
+            const set = (k, v) => { const e = document.getElementById(`wz-${role}-${k}`); if (e) e.value = v ?? ''; };
+            set('posisi', p.jabatan || '');
+            set('pendidikan', p.tingkat_pendidikan || '');
+            set('pengalaman', p.tahun_pengalaman ?? 0);
+            // ponytail: TTL pendek "Kulon Progo, 12 Juli 1998" (bukan ISO mentah)
+            let ttl = p.tempat_lahir || '';
+            if (p.tanggal_lahir) {
+                const d = new Date(p.tanggal_lahir);
+                if (!isNaN(d)) ttl += (ttl ? ', ' : '') + d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+            }
+            set('ttl', ttl);
+            const exps = p.experience_history || [];
+            box.innerHTML = exps.length ? exps.map(x => `
+                <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.82rem; cursor:pointer; border:1px solid var(--border-color); border-radius:6px; padding:6px 10px;">
+                    <input type="checkbox" value="${x.id}" onchange="DocumentsPage._wzExpToggle('${role}')" style="accent-color:var(--accent); margin-top:2px;">
+                    <span><strong>${Fmt.escape(x.nama_kegiatan || '')}</strong> <span style="color:var(--text-muted);">(${Fmt.escape(x.tahun || '')}${x.posisi ? ' • ' + Fmt.escape(x.posisi) : ''})</span></span>
+                </label>`).join('') : '<small style="color:var(--text-muted);">Personil ini belum punya riwayat.</small>';
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    _wzExpToggle(role) {
+        const box = document.getElementById(`wz-${role}-exp`);
+        this._wz[role].exp = box ? Array.from(box.querySelectorAll('input:checked')).map(i => i.value) : [];
+    },
+
+
+    _wizNav(d) {
+        const n = Math.min(5, Math.max(1, this._wzStep + d));
+        if (d > 0) {
+            if (!this._wzValidate(this._wzStep)) return;
+            if (this._wzStep === 2) this._wzCollect2();
+            if (this._wzStep === 3) this._wzCollect3();
+            if (this._wzStep === 4) this._wzCollect4();
+            if (n === 2) this._wzForm2();
+            if (n === 3) this._wzForm3();
+            if (n === 4) this._wzForm4();
+            if (n === 5) this._wzReview();
+        }
+        this._wizShow(n);
+    },
+
+    // ponytail: lompat via step — mundur bebas, maju wajib valid + collect tiap tahap terlewati
+    _wizGo(n) {
+        n = Math.min(5, Math.max(1, n));
+        if (n === this._wzStep) return;
+        if (n < this._wzStep) { this._wizShow(n); return; }
+        for (let s = this._wzStep; s < n; s++) {
+            if (!this._wzValidate(s)) return;
+            if (s === 2) this._wzCollect2();
+            if (s === 3) this._wzCollect3();
+            if (s === 4) this._wzCollect4();
+        }
+        if (n === 2) this._wzForm2();
+        if (n === 3) this._wzForm3();
+        if (n === 4) this._wzForm4();
+        if (n === 5) this._wzReview();
+        this._wizShow(n);
+    },
+
+    _wzCollect1() {
+        const g = (id) => document.getElementById(id)?.value.trim() ?? '';
+        this._wz.companyId = document.getElementById('wz-comp')?.value || '';
+        Object.assign(this._wz.vars, {
+            tahun_anggaran: g('wz-tahun'), lokasi: g('wz-lokasi'), lpse: g('wz-lpse'),
+            pokja: g('wz-pokja'), alamat_pokja: g('wz-alamat-pokja'),
+            kode_tender: g('wz-kode'), pagu: this._wzPaguRaw(), pagu_terbilang: g('wz-terbilang'),
+            withTtd: document.getElementById('wz-with-ttd')?.value !== '0',
+        });
+    },
+
+    _wzValidate(step) {
+        if (step === 1) {
+            this._wzCollect1();
+            if (!this._wz.tender) { Toast.warning('Pilih paket proyek dulu'); return false; }
+            if (!this._wz.companyId) { Toast.warning('Pilih perusahaan'); return false; }
+        }
+        return true;
+    },
+
+    // pane 3 dibangun malas (hanya saat dibuka) agar popup cepat
+    // ponytail: loader overlay ber-timer + tahap, result modal estetik tombol kontras
+    _wzLoader(show, stage) {
+        // ponytail: timeout tahap disimpan agar bisa dibatalkan (hindari loader muncul lagi setelah selesai)
+        if (!show) (this._wzStageT || []).forEach(clearTimeout);
+        // ponytail: generate jalan di server — tab boleh ditinggal; jangan tampilkan loader bila tab sembunyi
+        if (document.hidden && show) return;
+        let ov = document.getElementById('wz-loader');
+        if (show) {
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'wz-loader';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);z-index:4000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
+                ov.innerHTML = `<div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:14px; padding:28px 36px; text-align:center; max-width:320px;">
+                    <div class="spinner" style="margin:0 auto 14px auto;"></div>
+                    <div id="wz-loader-stage" style="font-weight:700;"></div>
+                    <div id="wz-loader-time" style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">0 dtk</div>
+                </div>`;
+                document.body.appendChild(ov);
+            }
+            ov.style.display = 'flex';
+            this._wzT0 = Date.now();
+            clearInterval(this._wzTimer);
+            this._wzTimer = setInterval(() => {
+                const t = document.getElementById('wz-loader-time');
+                if (t) t.textContent = Math.round((Date.now() - this._wzT0) / 1000) + ' dtk';
+            }, 500);
+        } else {
+            clearInterval(this._wzTimer);
+            if (ov) ov.style.display = 'none';
+        }
+        if (stage) { const s = document.getElementById('wz-loader-stage'); if (s) s.textContent = stage; }
+    },
+
+    async _runGenerate(payload, btnId, btnLabel) {
+        const btn = document.getElementById(btnId);
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Generate PDF...'; }
+        this._wzLoader(true, 'Menyiapkan data...');
+        try {
+            this._wzStageT = [
+                setTimeout(() => this._wzLoader(true, 'Merender PDF di server...'), 2500),
+                setTimeout(() => this._wzLoader(true, 'Menggabung lampiran & mengunggah...'), 12000),
+            ];
+            const res = await API.generateDocument(payload);
+            const d = res.data;
+            this._wzLoader(false);
+            Modal.open('Dokumen PDF Jadi',
+                `<div style="text-align:center; padding:8px 4px;">
+                    <div style="width:56px; height:56px; border-radius:50%; background:var(--success-bg); color:var(--success); display:flex; align-items:center; justify-content:center; margin:0 auto 12px auto;"><i data-lucide="file-check" style="width:28px; height:28px;"></i></div>
+                    <h3 style="margin:0 0 4px 0;">PDF Siap</h3>
+                    <p style="color:var(--text-muted); font-size:0.85rem;">${d.pages} halaman • tersimpan di rekap dokumen${d.cap_variants?.length ? ` • cap V${[...new Set(d.cap_variants)].join('/')}` : ''}</p>
+                    ${d.skipped?.length ? `<p style="font-size:0.78rem; color:var(--warning);">Lewati: ${d.skipped.map(Fmt.escape).join('; ')}</p>` : ''}
+                    <div style="display:flex; gap:10px; justify-content:center; margin-top:16px;">
+                        <a href="${d.url}" target="_blank" class="btn btn-primary"><i data-lucide="download"></i> Unduh PDF</a>
+                        <button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>
+                    </div>
+                </div>`,
+                '');
+            lucide.createIcons();
+            Toast.success('PDF tersimpan di database dokumen');
+            DocumentsPage.loadRecords();
+        } catch (e) { this._wzLoader(false); Toast.error('Generate gagal: ' + e.message); }
+        finally { if (btn) { btn.disabled = false; btn.innerHTML = btnLabel; } }
+    },
+
 };

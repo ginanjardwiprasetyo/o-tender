@@ -30,8 +30,8 @@ app.use('/migrations', express.static(path.join(__dirname, 'migrations')));
 // penanda versi server (id proses) → tab lama yang tidak pernah reload dapat notifikasi muat ulang
 const APP_VER = String(Date.now());
 app.use('/api', (req, res, next) => { res.setHeader('X-App-Ver', APP_VER); next(); });
-const { requireAuth } = require('./utils/auth');
-app.use('/api', requireAuth);
+const { requireAuth, requireWrite } = require('./utils/auth');
+app.use('/api', requireAuth, requireWrite);
 app.use('/api/auth', require('./routes/auth'));
 
 // ─── API Routes ───────────────────────────────────────────────
@@ -57,6 +57,25 @@ app.use('/api/sirup',      require('./routes/sirup'));
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', app: 'TenderBuild', version: '1.0.0', timestamp: new Date().toISOString() });
+});
+
+// ─── Statistik publik untuk layar login (tanpa auth) ─────────
+app.get('/api/public-stats', async (req, res) => {
+    // ponytail: counts murah per tampil login; gagal → nol agar login tak pernah rusak
+    const out = { tercrawling: 0, diikuti: 0, nilai_kontrak: 0, jml_sbu: 0 };
+    try {
+        const db = require('./config/db');
+        const c1 = await db.query('SELECT COUNT(*)::int AS n FROM crawled_tenders');
+        out.tercrawling = c1.rows[0].n;
+        const c2 = await db.query('SELECT COUNT(*)::int AS n, COALESCE(SUM(pagu::numeric), 0) AS pagu FROM followed_tenders');
+        out.diikuti = c2.rows[0].n;
+        out.nilai_kontrak = Number(c2.rows[0].pagu) || 0;
+        const c3 = await db.query('SELECT kbli FROM companies WHERE kbli IS NOT NULL');
+        const sbu = new Set();
+        c3.rows.forEach(r => String(r.kbli).split(',').forEach(k => { const s = k.trim(); if (s) sbu.add(s); }));
+        out.jml_sbu = sbu.size;
+    } catch (e) { console.warn('[public-stats]', e.message); }
+    res.json({ success: true, data: out });
 });
 
 // ─── DB Status & Auto-Migration ───────────────────────────────
@@ -247,10 +266,21 @@ app.listen(PORT, async () => {
     const { checkAndSendNotifications } = require('./services/notif_scheduler');
     console.log('⏰ [Scheduler] Memulai pengecekan awal notifikasi diikuti...');
     checkAndSendNotifications().catch(e => console.error(e));
-    
+
     cron.schedule('*/15 * * * *', () => {
         checkAndSendNotifications().catch(e => console.error(e));
     });
+
+    // Auto-sync template Google Docs (tiap 15 menit + saat start) — incremental, hanya file berubah
+    if (process.env.GDRIVE_TEMPLATE_FOLDER) {
+        const { syncFolderTemplates } = require('./services/gdoc_sync');
+        const runGdocSync = () => syncFolderTemplates().then(r => {
+            if (r.added || r.updated || r.removed) console.log(`📄 [GDoc Sync] +${r.added} ~${r.updated} -${r.removed} dari ${r.total} file`);
+        }).catch(e => console.error('[GDoc Sync]', e.message));
+        runGdocSync();
+        cron.schedule('*/15 * * * *', runGdocSync);
+        console.log('📄 [Scheduler] GDocs template sync setiap 15 menit');
+    }
 
     // Supabase Keep-Alive: Ping database every 12 hours to prevent auto-pause of free tier projects
     cron.schedule('0 */12 * * *', async () => {

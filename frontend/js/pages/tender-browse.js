@@ -93,12 +93,12 @@ const TenderBrowsePage = {
                 </div>
 
                 <!-- LIVE LOG BOX -->
-                <div id="crawl-log-container" class="hidden" style="margin-top:20px; padding:12px; background:#0f172a; border-radius:8px; border:1px solid #1e293b;">
+                <div id="crawl-log-container" class="hidden" style="margin-top:20px; padding:12px; background:var(--bg-base); border-radius:8px; border:1px solid var(--border);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span style="font-size:0.7rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em;">Live Crawl Log</span>
+                        <span style="font-size:0.7rem; font-weight:700; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em;">Live Crawl Log</span>
                         <span class="spinner-sm" style="width:10px; height:10px;"></span>
                     </div>
-                    <div id="crawl-logs" style="font-family:'JetBrains Mono', monospace; font-size:0.7rem; color:#cbd5e1; max-height:120px; overflow-y:auto; line-height:1.5;"></div>
+                    <div id="crawl-logs" style="font-family:'JetBrains Mono', 'Geist Mono', monospace; font-size:0.7rem; color:var(--text-2); max-height:120px; overflow-y:auto; line-height:1.5;"></div>
                 </div>
             </div>
 

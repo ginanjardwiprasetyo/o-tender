@@ -40,7 +40,7 @@ const FIELDS = [
     'npwp_direktur', 'kbli', 'no_hp', 'email', 'website', 'alamat', 'kota', 
     'provinsi', 'foto_logo_url', 'ttd_image_url', 'cap_image_url', 'ttd_jabatan',
     'kop_is_image', 'kop_image_url', 'kop_nama', 'kop_alamat', 'kop_kontak', 'kop_garis_warna', 'font_surat', 'attachments',
-    'cap_size', 'cap_pos'
+    'cap_size', 'cap_pos', 'alamat_direktur'
 ];
 
 // GET all companies

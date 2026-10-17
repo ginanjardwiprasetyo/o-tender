@@ -36,19 +36,21 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/img/logo-512.png">
 
-    <!-- Google Fonts -->
+    <!-- Google Fonts — Geist: sharp, terminal-grade, zero fluff -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@0.454.0"></script>
 
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="/css/main.css?v=11">
+    <link rel="stylesheet" href="/css/main.css?v=36">
 </head>
 
-<body class="light-theme">
+<body>
     <!-- ─── App Shell ──────────────────────────────────────── -->
     <div id="app" class="app-layout">
 
@@ -61,7 +63,6 @@
                     </div>
                     <div class="logo-text">
                         <h1>oTender</h1>
-                        <span>Manajemen Tender</span>
                     </div>
                 </div>
             </div>
@@ -149,6 +150,15 @@
 
         <!-- Main Content -->
         <main class="main-content">
+            <script>
+            /* ponytail: restore sidebar pre-paint — tanpa ini reload selalu animasi expand→collapse */
+            try {
+                if (window.innerWidth > 768 && localStorage.getItem('tenderbuild-sidebar') === 'collapsed') {
+                    document.getElementById('sidebar').classList.add('collapsed');
+                    document.querySelector('.main-content').classList.add('expanded');
+                }
+            } catch (e) {}
+            </script>
             <!-- Top Navbar -->
             <header class="topbar">
                 <button id="sidebar-toggle" class="topbar-btn" aria-label="Toggle sidebar">
@@ -182,78 +192,53 @@
 
     <!-- Login Screen — hidden by default; only shown if session invalid -->
     <div id="login-screen" class="login-screen hidden">
-        <div class="login-layout">
-            <!-- Realistic industrial construction site (atmospheric, no cartoon) -->
-            <div class="site-bg" aria-hidden="true">
-                <div class="site-sky"></div>
-                <div class="site-haze"></div>
-                <div class="site-crane">
-                    <div class="crane-mast"></div>
-                    <div class="crane-jib"></div>
-                    <div class="crane-counter">
-                        <span></span><span></span><span></span>
+        <div class="pc-wrap">
+            <main class="pc-main">
+                <section class="pc-hero">
+                    <div class="pc-badge"><span class="pc-ping"></span>Portal Rekanan Aktif • Terhubung Jaringan LPSE Nasional</div>
+                    <h1>Portal Pengadaan &amp; Eksekusi <span>Proyek Konstruksi Nasional</span></h1>
+                    <p class="pc-desc">Platform komprehensif bagi rekanan kontraktor untuk pengajuan penawaran tender, sinkronisasi dokumen Google Docs, evaluasi pengadaan, dan pemantauan jadwal lelang.</p>
+                    <div class="pc-stats">
+                        <div class="pc-stat"><b id="pc-stat-crawl">…</b><span>Tender Tercrawling</span><small>Otomasi LPSE &amp; Lembaga</small></div>
+                        <div class="pc-stat"><b id="pc-stat-follow">…</b><span>Tender Diikuti</span><small>Riwayat Evaluasi &amp; Penawaran</small></div>
+                        <div class="pc-stat"><b id="pc-stat-nilai">…</b><span>Nilai Kontrak</span><small>Portofolio Berjalan</small></div>
+                        <div class="pc-stat"><b class="pc-green" id="pc-stat-sbu">…</b><span>Jumlah SBU</span><small>Kualifikasi Terverifikasi</small></div>
                     </div>
-                    <div class="crane-cable-wrap">
-                        <div class="crane-cable"></div>
-                        <div class="crane-hook-block"></div>
-                        <div class="crane-load-beam"></div>
+                    <div class="pc-ticks">
+                        <span><i>✓</i>Data Tersimpan Aman</span>
+                        <span><i>✓</i>Sinkronisasi Google Docs</span>
+                        <span><i>✓</i>Notifikasi WhatsApp</span>
                     </div>
-                    <div class="crane-beacon"></div>
-                </div>
-                <div class="site-scaffold">
-                    <div class="sc-col"></div><div class="sc-col"></div><div class="sc-col"></div>
-                    <div class="sc-brace"></div><div class="sc-brace"></div><div class="sc-brace"></div>
-                    <div class="sc-plank"></div><div class="sc-plank"></div>
-                </div>
-                <div class="site-bldg site-bldg-a">
-                    <div class="floor"></div><div class="floor"></div><div class="floor"></div>
-                    <div class="floor"></div><div class="floor"></div>
-                    <div class="window w-lit"></div><div class="window"></div><div class="window w-dim"></div>
-                    <div class="window"></div><div class="window w-lit"></div><div class="window"></div>
-                </div>
-                <div class="site-bldg site-bldg-b">
-                    <div class="floor"></div><div class="floor"></div><div class="floor"></div>
-                    <div class="window"></div><div class="window w-lit"></div><div class="window"></div>
-                    <div class="window w-dim"></div><div class="window"></div>
-                </div>
-                <div class="site-equipment">
-                    <!-- excavator silhouette -->
-                    <div class="ex-body"></div>
-                    <div class="ex-cab"></div>
-                    <div class="ex-track"></div>
-                    <div class="ex-boom-arm">
-                        <div class="ex-stick">
-                            <div class="ex-bucket"></div>
+                </section>
+                <section class="pc-card">
+                    <div class="pc-top"></div>
+                    <div class="pc-ava">OT</div>
+                    <h2>Portal Masuk Rekanan</h2>
+                    <p class="pc-sub">Akses aman dokumen tender, evaluasi BQ, dan laporan proyek</p>
+                    <div class="pc-verified"><span class="pc-dot"></span>Autentikasi Terverifikasi<code>LPSE • SIRUP</code></div>
+                    <form autocomplete="on" onsubmit="return false;">
+                        <label class="pc-label" for="login-user">Username</label>
+                        <div class="pc-field">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                            <input id="login-user" name="username" type="text" autocomplete="username" required placeholder="Masukkan username">
                         </div>
-                    </div>
-                </div>
-                <div class="site-cone"></div>
-                <div class="site-barrier"></div>
-                <div class="site-particles">
-                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-                </div>
-                <div class="site-fade site-fade-left"></div>
-                <div class="site-fade site-fade-right"></div>
-            </div>
-
-            <div class="login-card">
-                <div class="login-logo">
-                    <img src="/img/logo.svg" alt="oTender" width="52" height="52">
-                </div>
-                <h1 class="login-title">Masuk ke oTender</h1>
-                <p class="login-sub">Manajemen tender & dokumen konstruksi</p>
-                <form id="login-form" autocomplete="on" onsubmit="return false;">
-                    <label class="login-label" for="login-user">Username</label>
-                    <input class="login-input" id="login-user" name="username" type="text" autocomplete="username" required placeholder="Username">
-                    <label class="login-label" for="login-pass">Password</label>
-                    <input class="login-input" id="login-pass" name="password" type="password" autocomplete="current-password" required placeholder="Password">
-                    <div id="login-error" class="login-error hidden"></div>
-                    <button type="button" class="login-btn" id="login-btn" onclick="App.submitLogin()">
-                        <span id="login-btn-text">Masuk</span>
-                    </button>
-                </form>
-                <p class="login-foot">tender.rekayasa-sipil.my.id</p>
-            </div>
+                        <label class="pc-label" for="login-pass">Password</label>
+                        <div class="pc-field">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+                            <input id="login-pass" name="password" type="password" autocomplete="current-password" required placeholder="Masukkan password">
+                            <button type="button" class="pc-eye" aria-label="Lihat password" onclick="var p=document.getElementById('login-pass');p.type=p.type==='password'?'text':'password';"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+                        </div>
+                        <div id="login-error" class="pc-error hidden"></div>
+                        <div class="pc-meta"><span class="pc-live"><i></i>Server Operasional</span><span class="pc-mono">Sesi 7 Hari</span></div>
+                        <button type="button" class="pc-go" id="login-btn" onclick="App.submitLogin()"><span id="login-btn-text">Masuk ke oTender</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+                    </form>
+                    <div class="pc-domain"><i></i>tender.rekayasa-sipil.my.id</div>
+                </section>
+            </main>
+            <footer class="pc-foot">
+                <span>© 2026 oTender - Divisi Teknologi Informasi Rekayasa Sipil Indonesia. Hak Cipta Dilindungi.</span>
+                <span class="pc-links">Panduan Pengadaan &amp; Evaluasi&nbsp;&nbsp;•&nbsp;&nbsp;Standar Dokumen K3 Konstruksi&nbsp;&nbsp;•&nbsp;&nbsp;Pusat Bantuan Teknis&nbsp;&nbsp;•&nbsp;&nbsp;Kebijakan Privasi</span>
+            </footer>
         </div>
     </div>
 
@@ -274,19 +259,19 @@
     <!-- Background decoration removed for cleaner light UI -->
 
     <!-- Scripts -->
-    <script src="/js/utils/formatter.js"></script>
-    <script src="/js/api.js"></script>
+    <script src="/js/utils/formatter.js?v=2"></script>
+    <script src="/js/api.js?v=7"></script>
     <script src="/js/components/toast.js"></script>
     <script src="/js/components/modal.js"></script>
     <script src="/js/pages/setup.js"></script>
-    <script src="/js/pages/dashboard.js"></script>
-    <script src="/js/pages/equipment.js"></script>
-    <script src="/js/pages/personnel.js"></script>
+    <script src="/js/pages/dashboard.js?v=11"></script>
+    <script src="/js/pages/equipment.js?v=6"></script>
+    <script src="/js/pages/personnel.js?v=4"></script>
     <script src="/js/pages/experience.js"></script>
-    <script src="/js/pages/company.js"></script>
+    <script src="/js/pages/company.js?v=5"></script>
     <script src="/js/pages/company-detail.js"></script>
-    <script src="/js/pages/documents.js"></script>
-    <script src="/js/pages/templates.js"></script>
+    <script src="/js/pages/documents.js?v=23"></script>
+    <script src="/js/pages/templates.js?v=10"></script>
     <!-- ONLYOFFICE_DULU_DIMATIKAN — aktifkan lagi bersama route di app.js -->
     <!-- <script src="/js/pages/onlyoffice.js"></script> -->
     <script src="/js/pages/dokpil.js"></script>
@@ -297,8 +282,8 @@
     <script src="/js/pages/tender-manage.js"></script>
     <script src="/js/pages/tender-recap.js"></script>
     <script src="/js/pages/tender-detail.js"></script>
-    <script src="/js/pages/settings.js"></script>
-    <script src="/js/app.js?v=4"></script>
+    <script src="/js/pages/settings.js?v=2"></script>
+    <script src="/js/app.js?v=9"></script>
 </body>
 
 </html>

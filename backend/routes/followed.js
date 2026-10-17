@@ -32,13 +32,16 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-// GET /api/followed/upcoming
+// GET /api/followed/upcoming?days=7 — jadwal tender diikuti dalam N hari ke depan
 router.get('/upcoming', async (req, res) => {
     try {
+        const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 7));
+        const past = Math.min(30, Math.max(0, parseInt(req.query.past) || 0));
         const { rows } = await db.query('SELECT * FROM followed_tenders WHERE status = $1', ['Diproses']);
         let upcoming = [];
         const now = new Date();
-        const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const since = new Date(now.getTime() - past * 24 * 60 * 60 * 1000);
+        const until = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
         
         for (const tender of rows) {
             if (tender.jadwal) {
@@ -51,11 +54,14 @@ router.get('/upcoming', async (req, res) => {
                         const mo = months[m[2].toLowerCase()];
                         if (mo !== undefined) {
                             const endDate = new Date(+m[3], mo, +m[1], +m[4], +m[5]);
-                            if (endDate >= now && endDate <= next7Days) {
+                            if (endDate >= since && endDate <= until) {
                                 upcoming.push({
                                     stage_name: s.stage,
                                     end_date: endDate.toISOString(),
+                                    passed: endDate < now,
+                                    tender_id: tender.id,
                                     tenders: {
+                                        kode_tender: tender.kode_tender,
                                         nama_paket: tender.nama_tender,
                                         instansi: tender.klpd
                                     }
@@ -68,8 +74,9 @@ router.get('/upcoming', async (req, res) => {
         }
         
         upcoming.sort((a, b) => new Date(a.end_date) - new Date(b.end_date));
-        
-        res.json({ success: true, data: upcoming.slice(0, 10) });
+
+        const limit = req.query.days ? 200 : 10;
+        res.json({ success: true, data: upcoming.slice(0, limit) });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

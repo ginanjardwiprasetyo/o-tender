@@ -138,6 +138,9 @@ const CompanyPage = {
                             <input class="form-input" id="f-comp-direktur" value="${Fmt.escape(c.direktur||'')}" placeholder="Nama Lengkap & Gelar">
                         </div>
                     </div>
+                    <div class="form-group"><label class="form-label">Alamat Direktur (untuk dokumen)</label>
+                        <input class="form-input" id="f-comp-alamat-dir" value="${Fmt.escape(c.alamat_direktur||'')}" placeholder="Jl. ..., Kota">
+                    </div>
  
                     <div class="form-row">
                         <div class="form-group"><label class="form-label">NPWP Badan Usaha</label>
@@ -208,6 +211,11 @@ const CompanyPage = {
                                 <button id="del-comp-kop" type="button" onclick="CompanyPage.deleteImageField('f-comp-kop-img-url', 'prev-comp-kop', 'icon-comp-kop', 'del-comp-kop', event)" style="position:absolute; top:6px; right:6px; background:rgba(239,68,68,0.9); color:white; width:22px; height:22px; border-radius:50%; border:none; display:${c.kop_image_url ? 'flex' : 'none'}; align-items:center; justify-content:center; cursor:pointer; z-index:10;" title="Hapus Kop Surat">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                                 </button>
+                                <!-- Tombol Crop Kop -->
+                                <button id="crop-comp-kop" type="button" onclick="CompanyPage.cropKop(event)" style="position:absolute; bottom:6px; right:6px; background:rgba(59,130,246,0.92); color:white; border:none; border-radius:6px; display:${c.kop_image_url ? 'flex' : 'none'}; align-items:center; gap:4px; padding:4px 8px; font-size:0.7rem; font-weight:600; cursor:pointer; z-index:10;" title="Crop — atur area kop yang tampil">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+                                    Crop
+                                </button>
                             </div>
                             <input type="hidden" id="f-comp-kop-img-url" value="${c.kop_image_url || ''}">
                         </div>
@@ -239,17 +247,10 @@ const CompanyPage = {
                         </div>
                     </div>
  
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:16px;">
+                    <div style="margin-top:16px; max-width:220px;">
                         <div class="form-group" style="margin-bottom:0;">
                             <label class="form-label">Ukuran Cap / Stempel (px)</label>
                             <input type="number" class="form-input" id="f-comp-cap-size" value="${c.cap_size || 110}" min="30" max="300" step="5">
-                        </div>
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label class="form-label">Posisi Cap / Stempel</label>
-                            <select class="form-select" id="f-comp-cap-pos">
-                                ${[['kiri', 'Agak Kiri'], ['tengah', 'Tengah'], ['kanan', 'Agak Kanan']].map(([v, l]) =>
-                                    `<option value="${v}" ${(c.cap_pos || 'kiri') === v ? 'selected' : ''}>${l}</option>`).join('')}
-                            </select>
                         </div>
                     </div>
 
@@ -453,12 +454,97 @@ const CompanyPage = {
                 else if (imgId === 'prev-comp-kop') btnId = 'del-comp-kop';
                 else if (imgId === 'prev-comp-ttd') btnId = 'del-comp-ttd';
                 else if (imgId === 'prev-comp-cap') btnId = 'del-comp-cap';
-                
+
                 const btn = document.getElementById(btnId);
                 if (btn) btn.style.display = 'flex';
+                // tombol crop kop ikut muncul
+                if (imgId === 'prev-comp-kop') {
+                    const cb = document.getElementById('crop-comp-kop');
+                    if (cb) cb.style.display = 'flex';
+                }
             };
             reader.readAsDataURL(input.files[0]);
         }
+    },
+
+    // ─── CROP KOP (cropperjs CDN, Lazy-load; hasil crop masuk ke input file → alur Simpan tak berubah) ───
+    _cropper: null,
+    _cropSrcRevoke: null,
+
+    async _loadCropper() {
+        if (window.Cropper) return;
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css';
+        document.head.appendChild(css);
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.js';
+            s.onload = res; s.onerror = () => rej(new Error('Gagal memuat cropper (cek koneksi)'));
+            document.head.appendChild(s);
+        });
+    },
+
+    async cropKop(e) {
+        if (e) e.preventDefault();
+        const file = document.getElementById('f-comp-kop-img-file')?.files?.[0];
+        const url = document.getElementById('f-comp-kop-img-url')?.value || '';
+        if (!file && !url) { Toast.warning('Pilih/upload gambar kop dulu'); return; }
+        try { await this._loadCropper(); }
+        catch (err) { Toast.error(err.message); return; }
+        const src = file ? URL.createObjectURL(file) : url;
+        if (this._cropSrcRevoke) URL.revokeObjectURL(this._cropSrcRevoke);
+        this._cropSrcRevoke = file ? src : null;
+        document.getElementById('kop-crop-overlay')?.remove();
+        const ov = document.createElement('div');
+        ov.id = 'kop-crop-overlay';
+        ov.className = 'soft-overlay';
+        ov.innerHTML = `<div style="background:var(--bg-secondary);border-radius:12px;width:min(960px,calc(100vw - 32px));max-height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden;">
+            <div style="padding:12px 20px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <h3 style="margin:0;font-size:0.95rem;">Crop Kop — seret & zoom untuk atur area tampil</h3>
+                <button class="btn btn-secondary btn-sm" onclick="CompanyPage._cropClose()">✕ Batal</button>
+            </div>
+            <div style="padding:16px;overflow:auto;flex:1;background:#1e293b;"><img id="kop-crop-img" style="max-width:100%; display:block;"></div>
+            <div style="padding:12px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:8px;">
+                <button class="btn btn-secondary" onclick="CompanyPage._cropClose()">Batal</button>
+                <button class="btn btn-primary" id="kop-crop-apply" onclick="CompanyPage._cropApply()">Terapkan Crop</button>
+            </div></div>`;
+        document.body.appendChild(ov);
+        const img = document.getElementById('kop-crop-img');
+        img.crossOrigin = 'anonymous';
+        img.src = src;
+        img.onload = () => {
+            try { this._cropper?.destroy(); } catch {}
+            this._cropper = new Cropper(img, { viewMode: 1, dragMode: 'move', autoCropArea: 1, background: false });
+        };
+        img.onerror = () => { this._cropClose(); Toast.error('Gambar tak bisa dimuat (kemungkinan blokir CORS host file)'); };
+    },
+
+    _cropClose() {
+        try { this._cropper?.destroy(); } catch {}
+        this._cropper = null;
+        document.getElementById('kop-crop-overlay')?.remove();
+    },
+
+    async _cropApply() {
+        const btn = document.getElementById('kop-crop-apply');
+        try {
+            if (!this._cropper) throw new Error('Cropper belum siap');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Memproses...'; }
+            const canvas = this._cropper.getCroppedCanvas({ maxWidth: 1600, imageSmoothingQuality: 'high' });
+            const blob = await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('Crop gagal (kemungkinan CORS — unduh & upload ulang gambarnya)')), 'image/png'));
+            const dt = new DataTransfer();
+            dt.items.add(new File([blob], 'kop-cropped.png', { type: 'image/png' }));
+            document.getElementById('f-comp-kop-img-file').files = dt.files;
+            const img = document.getElementById('prev-comp-kop');
+            if (img) { img.src = URL.createObjectURL(blob); img.style.display = 'block'; }
+            document.getElementById('icon-comp-kop').style.display = 'none';
+            document.getElementById('del-comp-kop').style.display = 'flex';
+            document.getElementById('crop-comp-kop').style.display = 'flex';
+            this._cropClose();
+            Toast.success('Crop diterapkan — klik Simpan untuk mengunggah');
+        } catch (err) { Toast.error(err.message); }
+        finally { if (btn) { btn.disabled = false; btn.innerHTML = 'Terapkan Crop'; } }
     },
 
     async deleteImageField(urlInputId, imgId, iconId, btnId, event) {
@@ -489,6 +575,10 @@ const CompanyPage = {
             }
             if (icon) { icon.style.display = 'block'; }
             if (btn) { btn.style.display = 'none'; }
+            if (imgId === 'prev-comp-kop') {
+                const cb = document.getElementById('crop-comp-kop');
+                if (cb) cb.style.display = 'none';
+            }
         };
         
         if (url) {
@@ -540,6 +630,7 @@ const CompanyPage = {
                 nama_perusahaan: document.getElementById('f-comp-nama').value.trim(),
                 singkatan: document.getElementById('f-comp-singkatan').value.trim() || null,
                 direktur: document.getElementById('f-comp-direktur').value.trim() || null,
+                alamat_direktur: document.getElementById('f-comp-alamat-dir')?.value.trim() || null,
                 npwp_usaha: document.getElementById('f-comp-npwp').value.trim() || null,
                 npwp_direktur: document.getElementById('f-comp-npwp-dir').value.trim() || null,
                 email: document.getElementById('f-comp-email').value.trim() || null,

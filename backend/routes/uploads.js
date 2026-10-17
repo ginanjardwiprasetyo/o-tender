@@ -13,7 +13,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ 
     storage,
     limits: {
-        fileSize: 10 * 1024 * 1024 // Batasi ukuran berkas maksimal 10MB
+        fileSize: 50 * 1024 * 1024 // 50MB (ponytail: scan SKK/PDF sering 15MB+)
     }
 });
 
@@ -46,8 +46,9 @@ router.post('/', upload.single('file'), async (req, res) => {
             try {
                 const fs = require('fs');
                 const dir = path.join(__dirname, '..', 'uploads');
-                fs.mkdirSync(dir, { recursive: true });
-                fs.writeFileSync(path.join(dir, fileName), file.buffer);
+                const target = path.join(dir, fileName);
+                fs.mkdirSync(path.dirname(target), { recursive: true }); // ponytail: kategori (personnel_docs/equipment/...) belum tentu ada sebagai subdir
+                fs.writeFileSync(target, file.buffer);
                 const localUrl = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
                 console.log('[Upload Fallback Lokal]', localUrl);
                 return res.json({ success: true, url: localUrl, local: true });

@@ -1,12 +1,14 @@
 /**
  * Auth — session token (HMAC) tanpa dependency tambahan.
- * User/pass gmp: hanya hash disimpan (aman di-commit).
+ * Multi-user + role: admin (penuh) vs viewer (lihat saja).
  */
 const crypto = require('crypto');
 
-const APP_USER = 'gmp';
-// sha256("gmp") — password login: gmp (hash saja, tanpa plaintext di repo)
-const APP_PASS_HASH = sha256Hex('gmp');
+// ponytail: user di-hash saat runtime (tanpa plaintext di repo); tambah user baru = 1 baris di sini
+const USERS = {
+    gindid: { pass: 'gindid', role: 'admin' },
+    gmp26: { pass: 'gmp26', role: 'viewer' },
+};
 // fallback lokal (bukan secret produksi) — bisa diganti AUTH_SECRET di .env
 const SECRET = process.env.AUTH_SECRET || sha256Hex('otender-session-v1');
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -22,22 +24,25 @@ function sha256(s) {
 function verifyCredentials(username, password) {
     const u = String(username || '');
     const p = String(password || '');
+    const rec = USERS[u];
+    if (!rec) return false;
     // compare via hex hash agar panjang buffer selalu sama (timingSafeEqual wajib equal length)
-    const userOk = sha256Hex(u) === sha256Hex(APP_USER);
-    const passOk = sha256Hex(p) === APP_PASS_HASH;
-    return userOk && passOk;
+    const passOk = sha256Hex(p) === sha256Hex(rec.pass);
+    return passOk ? rec.role : false;
 }
 
 function sign(payload) {
     return crypto.createHmac('sha256', SECRET).update(payload).digest('hex');
 }
 
-function createSession() {
+function createSession(username) {
+    const role = (USERS[username] || {}).role || 'admin';
     const exp = Date.now() + TTL_MS;
-    const payload = Buffer.from(JSON.stringify({ u: APP_USER, exp })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ u: username, role, exp })).toString('base64url');
     return `${payload}.${sign(payload)}`;
 }
 
+/** @returns {{user, role}|false} */
 function verifySession(token) {
     if (!token || typeof token !== 'string') return false;
     const i = token.lastIndexOf('.');
@@ -49,7 +54,8 @@ function verifySession(token) {
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return false;
     try {
         const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-        return data.u === APP_USER && data.exp > Date.now();
+        if (!USERS[data.u] || data.exp <= Date.now()) return false;
+        return { user: data.u, role: data.role || USERS[data.u].role };
     } catch {
         return false;
     }
@@ -85,13 +91,31 @@ function clearSessionCookie(res) {
 }
 
 function requireAuth(req, res, next) {
-    // Publik: login + health + cek DB setup
+    // Publik: login + health + cek DB setup + statistik login
     const p = req.path;
-    if (p === '/auth/login' || p === '/health' || p === '/db-status') return next();
+    if (p === '/auth/login' || p === '/health' || p === '/db-status' || p === '/public-stats') return next();
     // DocumentServer (container) → tanpa cookie; divalidasi HMAC di route onlyoffice
     if (p.startsWith('/onlyoffice/file/') || p.startsWith('/onlyoffice/callback/')) return next();
     if (verifySession(getSessionToken(req))) return next();
     res.status(401).json({ success: false, error: 'Belum login' });
+}
+
+/** Viewer = GET saja (kecuali Template & Pengaturan: tutup total); semua mutasi ditolak 403. */
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const VIEWER_CLOSED = ['/templates', '/settings'];
+function requireWrite(req, res, next) {
+    const p = req.path;
+    if (p === '/auth/login' || p === '/auth/logout') return next();
+    if (p.startsWith('/onlyoffice/file/') || p.startsWith('/onlyoffice/callback/')) return next();
+    const sess = verifySession(getSessionToken(req));
+    if (!sess || sess.role !== 'viewer') return next();
+    if (VIEWER_CLOSED.some(pref => p === pref || p.startsWith(pref + '/'))) {
+        return res.status(403).json({ success: false, error: 'Halaman khusus admin' });
+    }
+    if (WRITE_METHODS.has(req.method)) {
+        return res.status(403).json({ success: false, error: 'Akses lihat saja (viewer)' });
+    }
+    next();
 }
 
 module.exports = {
@@ -102,4 +126,5 @@ module.exports = {
     setSessionCookie,
     clearSessionCookie,
     requireAuth,
+    requireWrite,
 };

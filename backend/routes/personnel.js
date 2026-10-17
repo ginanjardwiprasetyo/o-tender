@@ -57,11 +57,11 @@ router.delete('/education/:id', async (req, res) => {
 // PUT /api/personnel/experience/:id
 router.put('/experience/:id', async (req, res) => {
     try {
-        const { tahun, nama_kegiatan, lokasi, pengguna_jasa, perusahaan, uraian_tugas, waktu_pelaksanaan, posisi } = req.body;
+        const { tahun, nama_kegiatan, lokasi, pengguna_jasa, perusahaan, uraian_tugas, waktu_pelaksanaan, posisi, surat_referensi_url } = req.body;
         const { rows } = await db.query(
             `UPDATE experience_history SET tahun=$1, nama_kegiatan=$2, lokasi=$3, pengguna_jasa=$4,
-             perusahaan=$5, uraian_tugas=$6, waktu_pelaksanaan=$7, posisi=$8 WHERE id=$9 RETURNING *`,
-            [tahun, nama_kegiatan, lokasi, pengguna_jasa, perusahaan, uraian_tugas, waktu_pelaksanaan, posisi, req.params.id]
+             perusahaan=$5, uraian_tugas=$6, waktu_pelaksanaan=$7, posisi=$8, surat_referensi_url=$9 WHERE id=$10 RETURNING *`,
+            [tahun, nama_kegiatan, lokasi, pengguna_jasa, perusahaan, uraian_tugas, waktu_pelaksanaan, posisi, surat_referensi_url || null, req.params.id]
         );
         if (!rows[0]) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, data: rows[0] });
@@ -97,6 +97,36 @@ router.delete('/ska/:id', async (req, res) => {
         const { rowCount } = await db.query('DELETE FROM personnel_ska WHERE id = $1', [req.params.id]);
         if (!rowCount) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, message: 'SKA berhasil dihapus' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// PUT /api/personnel/education/:id
+router.put('/education/:id', async (req, res) => {
+    try {
+        const { lembaga, tempat, tahun_tamat, jenjang, jurusan, ijazah_url } = req.body;
+        const { rows } = await db.query(
+            `UPDATE education_history SET lembaga=$1, tempat=$2, tahun_tamat=$3, jenjang=$4, jurusan=$5, ijazah_url=$6 WHERE id=$7 RETURNING *`,
+            [lembaga, tempat || null, tahun_tamat || null, jenjang || null, jurusan || null, ijazah_url || null, req.params.id]
+        );
+        if (!rows[0]) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
+        res.json({ success: true, data: rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// PUT /api/personnel/ska/:id
+router.put('/ska/:id', async (req, res) => {
+    try {
+        const { nama_sertifikat, no_registrasi, sub_klasifikasi, berlaku_sampai, file_url } = req.body;
+        const { rows } = await db.query(
+            `UPDATE personnel_ska SET nama_sertifikat=$1, no_registrasi=$2, sub_klasifikasi=$3, berlaku_sampai=$4, file_url=$5 WHERE id=$6 RETURNING *`,
+            [nama_sertifikat, no_registrasi || null, sub_klasifikasi || null, berlaku_sampai || null, file_url || null, req.params.id]
+        );
+        if (!rows[0]) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
+        res.json({ success: true, data: rows[0] });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -154,16 +184,16 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
     try {
         const { nama, tempat_lahir, tanggal_lahir, tingkat_pendidikan, tahun_pengalaman,
-                sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url } = req.body;
+                sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url, alamat } = req.body;
         if (!nama || !nama.trim()) return res.status(400).json({ success: false, error: 'Nama wajib diisi' });
 
         const { rows } = await db.query(
             `INSERT INTO personnel (nama, tempat_lahir, tanggal_lahir, tingkat_pendidikan, tahun_pengalaman,
-             sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+             sertifikat_keahlian, no_registrasi_ska, ijasah_ref, foto_url, jabatan, ktp_url, npwp_url, skk_url, ttd_image_url, alamat)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
             [nama, tempat_lahir || null, tanggal_lahir || null, tingkat_pendidikan || null,
              tahun_pengalaman || null, sertifikat_keahlian || null, no_registrasi_ska || null,
-             ijasah_ref || null, foto_url || null, jabatan || null, ktp_url || null, npwp_url || null, skk_url || null, ttd_image_url || null]
+             ijasah_ref || null, foto_url || null, jabatan || null, ktp_url || null, npwp_url || null, skk_url || null, ttd_image_url || null, alamat || null]
         );
         res.status(201).json({ success: true, data: rows[0] });
     } catch (err) {
@@ -173,7 +203,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/personnel/:id
 const PERSONNEL_FIELDS = ['nama', 'tempat_lahir', 'tanggal_lahir', 'tingkat_pendidikan', 'tahun_pengalaman',
-    'sertifikat_keahlian', 'no_registrasi_ska', 'ijasah_ref', 'foto_url', 'jabatan', 'ktp_url', 'npwp_url', 'skk_url', 'ttd_image_url'];
+    'sertifikat_keahlian', 'no_registrasi_ska', 'ijasah_ref', 'foto_url', 'jabatan', 'ktp_url', 'npwp_url', 'skk_url', 'ttd_image_url', 'alamat'];
 router.put('/:id', async (req, res) => {
     try {
         // update hanya field yang dikirim → edit parsial (mis. hapus berkas) tidak menimpa kolom lain

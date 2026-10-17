@@ -10,3 +10,4 @@ services/drission_test_profile2/
 uploads/onlyoffice/
 server.log
 nohup.out
+.gdrive-key.json

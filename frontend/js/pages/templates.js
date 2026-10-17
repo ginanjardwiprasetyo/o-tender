@@ -16,38 +16,52 @@ const TemplatesPage = {
     async render() {
         return `
         <div class="page-header">
-            <div><h2>Template Dokumen</h2><p>Kelola format kop surat, narasi, tanda tangan, dan layout dokumen</p></div>
+            <div><h2>Template Dokumen</h2><p>Cermin folder Google Drive — tambah/edit file di Docs, otomatis masuk sini</p></div>
             <div style="display:flex; gap:8px;">
-                <button class="btn btn-secondary" onclick="TemplatesPage.seedDefaultTemplates()"><i data-lucide="sparkles"></i> Muat Template Standar Tender</button>
-                <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template</button>
+                <button class="btn btn-secondary" id="tpl-sync-folder-btn" onclick="TemplatesPage.syncFolder()"><i data-lucide="refresh-cw"></i> Sync Folder Drive</button>
+                <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Manual</button>
             </div>
         </div>
         <div id="tpl-list"><div class="page-loading"><div class="spinner"></div></div></div>`;
     },
 
-    async afterRender() { this.loadData(); },
+    async afterRender() { this.loadData(true); },
 
-    async loadData() {
+    async loadData(autoSync) {
         const el = document.getElementById('tpl-list');
         if (!el) return;
         try {
             const res = await API.getTemplates();
             this.templates = res.data || [];
             this.renderList();
+            // ponytail: sync jalan di background — list tampil duluan, refresh diam-diam bila ada perubahan
+            if (autoSync) {
+                API.syncFolder()
+                    .then(r => {
+                        const d = r.data || {};
+                        if ((d.added || 0) + (d.updated || 0) + (d.removed || 0) > 0) {
+                            this.loadData(false);
+                            Toast.info(`Sync Drive: +${d.added || 0} ~${d.updated || 0} -${d.removed || 0}`);
+                        }
+                    })
+                    .catch(e => console.warn('Auto-sync folder:', e.message));
+            }
         } catch (e) {
             el.innerHTML = '<div class="empty-state"><i data-lucide="layout"></i><p>Gagal memuat template</p></div>';
             lucide.createIcons();
         }
     },
 
-    async seedDefaultTemplates() {
-        Modal.confirm('Muat Template Standar', 'Apakah Anda ingin menambahkan 11 template standar dokumen penawaran tender (Penawaran, Pakta Integritas, K3/RKK, Kebenaran Dokumen, SKP, Personil, Peralatan, +4 baru: Pernyataan Mengikuti Tender, BPJS, Daftar Peralatan & Daftar Personil)?', async () => {
-            try {
-                const res = await API.seedTemplates();
-                Toast.success(res.message || 'Template standar berhasil ditambahkan!');
-                this.loadData();
-            } catch (e) { Toast.error('Gagal memuat template standar: ' + e.message); }
-        });
+    async syncFolder() {
+        const btn = document.getElementById('tpl-sync-folder-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Sync...'; }
+        try {
+            const res = await API.syncFolder();
+            const d = res.data || {};
+            Toast.success(`Sync folder: +${d.added || 0} baru, ~${d.updated || 0} update, -${d.removed || 0} hapus`);
+            this.loadData(false);
+        } catch (e) { Toast.error('Sync gagal: ' + e.message); }
+        finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i> Sync Folder Drive'; lucide.createIcons(); } }
     },
 
     renderList() {
@@ -59,9 +73,9 @@ const TemplatesPage = {
                     <i data-lucide="layout-template" style="width:32px;height:32px;"></i>
                 </div>
                 <h3>Belum Ada Template</h3>
-                <p style="max-width:440px;margin:8px auto 20px auto;">Buat template baru atau gunakan tombol di bawah untuk memuat 11 template standar tender konstruksi.</p>
+                <p style="max-width:440px;margin:8px auto 20px auto;">Tambah file Google Docs di folder template — halaman ini otomatis membacanya. Atau buat manual.</p>
                 <div style="display:flex; gap:12px; justify-content:center;">
-                    <button class="btn btn-secondary" onclick="TemplatesPage.seedDefaultTemplates()"><i data-lucide="sparkles"></i> Muat Template Standar Tender</button>
+                    <button class="btn btn-secondary" onclick="TemplatesPage.syncFolder()"><i data-lucide="refresh-cw"></i> Sync Folder Drive</button>
                     <button class="btn btn-primary" onclick="TemplatesPage.openEditor()"><i data-lucide="plus"></i> Buat Template Manual</button>
                 </div>
             </div>`;
@@ -77,19 +91,51 @@ const TemplatesPage = {
                     <div style="min-width:0;">
                         <div style="font-weight:600; font-size:0.95rem;">${Fmt.escape(t.nama_template)}</div>
                         <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">
-                            ${t.kategori ? '<span class="badge badge-info">' + Fmt.escape(t.kategori) + '</span> • ' : ''}
-                            Ukuran Kertas: ${t.paper_size || 'A4'} • Margin: ${t.margin_top || 25}mm
+                            ${t.gdoc_id
+                                ? `<span class="badge badge-success">Google Docs</span> • sync ${Fmt.escape(t.gdoc_synced_at ? String(t.gdoc_synced_at).slice(0, 16).replace('T', ' ') : '-')}`
+                                : (t.kategori ? '<span class="badge badge-info">' + Fmt.escape(t.kategori) + '</span> • ' : '')}
+                            • Ukuran Kertas: ${t.paper_size || 'A4'} • Margin: ${t.margin_top || 25}mm
                         </div>
                     </div>
                 </div>
                 <div class="table-actions" onclick="event.stopPropagation()">
-                    <button class="btn btn-secondary btn-sm" onclick="TemplatesPage.preview('${t.id}')"><i data-lucide="eye"></i> Preview</button>
+                    ${t.gdoc_id ? `<button class="btn btn-secondary btn-sm" onclick="TemplatesPage.openGdoc('${t.id}')" title="Edit di Google Docs (tampilan persis Docs)"><i data-lucide="external-link"></i> Edit di Docs</button>` : ''}
                     <button class="btn btn-secondary btn-icon btn-sm" onclick="TemplatesPage.openEditor('${t.id}')" title="Edit dengan CKEditor"><i data-lucide="pencil"></i></button>
                     <button class="btn btn-danger btn-icon btn-sm" onclick="TemplatesPage.remove('${t.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
                 </div>
             </div>
         </div>`).join('');
         lucide.createIcons();
+    },
+
+    // ─── EDITOR GOOGLE DOCS EMBED (dua arah: edit di Docs persis aslinya → Sync tarik perubahan) ───
+    openGdoc(id) {
+        const t = this.templates.find(x => x.id === id);
+        if (!t?.gdoc_id) { Toast.warning('Template ini tidak terikat Google Docs'); return; }
+        Modal.open('Edit di Google Docs: ' + t.nama_template,
+            `<p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">Login akun Google yang punya akses file ini. Selesai edit → klik <strong>Tarik Perubahan</strong>.</p>
+            <iframe src="https://docs.google.com/document/d/${t.gdoc_id}/edit?embedded=true" style="width:100%; height:76vh; border:1px solid var(--border-color); border-radius:8px; background:#fff;"></iframe>`,
+            `<a class="btn btn-secondary" href="https://docs.google.com/document/d/${t.gdoc_id}/edit" target="_blank"><i data-lucide="external-link"></i> Buka Tab Baru</a>
+             <button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>
+             <button class="btn btn-primary" id="tpl-gdoc-sync-btn" onclick="TemplatesPage.syncGdocRow('${t.id}')"><i data-lucide="refresh-cw"></i> Tarik Perubahan</button>`,
+            { maxWidth: 'calc(100vw - 40px)' });
+        lucide.createIcons();
+    },
+
+    async syncGdocRow(id) {
+        const t = this.templates.find(x => x.id === id);
+        if (!t?.gdoc_id) return;
+        const btn = document.getElementById('tpl-gdoc-sync-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Menarik...'; }
+        try {
+            const res = await API.syncTemplate(id, t.gdoc_id);
+            Toast.success(`Perubahan ditarik (${res.html_length} karakter)`);
+            Modal.close();
+            this.loadData(false);
+        } catch (e) {
+            Toast.error('Sync gagal: ' + e.message);
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i> Tarik Perubahan'; lucide.createIcons(); }
+        }
     },
 
     // ─── VARIABLES ────────────────────────────────────
@@ -168,9 +214,7 @@ const TemplatesPage = {
             src.innerHTML = html || '<p><br></p>';
             this._ck = await window.ClassicEditor.create(src, { licenseKey: 'GPL' });
             if (epoch !== this._ckEpoch) { this._destroyEditor(); return; }
-            this._ck.model.document.on('change:data', () => this.updateLiveEditorPreview());
             if (focus) this._ck.focus();
-            this.updateLiveEditorPreview();
         } catch (e) { Toast.error('Editor gagal dimuat: ' + e.message); }
     },
     _editorToHtml() {
@@ -182,7 +226,6 @@ const TemplatesPage = {
         if (!this._ck) { Toast.info('Editor belum siap'); return; }
         this._ck.focus();
         this._ck.execute('input', { text: varKey + ' ' });
-        this.updateLiveEditorPreview();
     },
     _ensureTableStyles(html) {
         // tabel baru bawaan CKEditor belum bergaya — samakan dengan tampilan & ekspor docx
@@ -192,23 +235,26 @@ const TemplatesPage = {
     },
 
     // ─── DATA CONTOH — data asli dari DB; kosong? crawl live SPSE ──
-    async _sampleData() {
-        if (this._sample) return this._sample;
-        if (!this._sampleP) {
-            this._sampleP = this._buildSample()
-                .then(s => (this._sample = s))
-                .catch(() => (this._sample = {}));
+    async _sampleData(compOverride) {
+        if (!compOverride) {
+            if (this._sample) return this._sample;
+            if (!this._sampleP) {
+                this._sampleP = this._buildSample()
+                    .then(s => (this._sample = s))
+                    .catch(() => (this._sample = {}));
+            }
+            return this._sampleP;
         }
-        return this._sampleP;
+        return this._buildSample(compOverride).catch(() => ({}));
     },
-    async _buildSample() {
+    async _buildSample(c0) {
         const arr = p => p.then(r => (r && r.data) || []).catch(() => []);
         const [comps, tends, follows, crawls, pers, eqps, letters] = await Promise.all([
             arr(API.getCompanies()), arr(API.getTenders()), arr(API.getFollowedTenders()),
             arr(API.getCrawledTenders({ limit: 5 })), arr(API.getPersonnel()),
             arr(API.getEquipments()), arr(API.getLetters())
         ]);
-        const c = comps[0] || {};
+        const c = c0 || comps[0] || {};
         const t = tends[0] || follows[0] || crawls[0] || await this._crawlSampleTender() || {};
         const p = pers[0] || {};
         const L = letters[0] || {};
@@ -227,14 +273,17 @@ const TemplatesPage = {
         const cells = (v, center) => ` style="border:1px solid #000; padding:4px;${center ? ' text-align:center;' : ''}"`;
         const th = (v) => `<th${cells(v)}>${v}</th>`;
         const tbl = (heads, rows, kosong) => rows
-            ? `<table style="width:100%; border-collapse:collapse; font-size:9pt;"><tr style="background:#f2f2f2;">${heads.map(th).join('')}</tr>${rows}</table>`
+            ? `<table style="width:100%; border-collapse:collapse; font-size:10pt;"><tr style="background:#f2f2f2;">${heads.map(th).join('')}</tr>${rows}</table>`
             : `<div style="border:1px dashed #94a3b8; padding:8px; text-align:center; color:#64748b; font-size:0.8rem;">[${kosong}]</div>`;
         const pRows = pers.slice(0, 20).map((x, i) =>
             `<tr><td${cells(1, 1)}>${i + 1}</td><td${cells(1)}>${esc(x.nama || '')}</td><td${cells(1)}>${esc(x.jabatan || x.pangkat || '-')}</td></tr>`).join('');
         const eqRows = eqps.slice(0, 20).map((e, i) =>
             `<tr><td${cells(1, 1)}>${i + 1}</td><td${cells(1)}>${esc(e.jenis || '')}</td><td${cells(1)}>${esc(e.kapasitas || '-')}</td><td${cells(1, 1)}>${esc(String(e.jumlah ?? '-'))}</td></tr>`).join('');
         const lok = t.lokasi || t.lokasi_pekerjaan || '';
-        return {
+        const sample = {
+            _personilIds: pers.slice(0, 5).map(x => x.id),
+            _equipmentIds: eqps.slice(0, 5).map(x => x.id),
+            _signerId: (pers[0] && pers[0].id) || null,
             nama_perusahaan: esc(c.nama_perusahaan || ''),
             singkatan: esc(c.singkatan || ''),
             direktur: esc(c.direktur || ''),
@@ -268,11 +317,24 @@ const TemplatesPage = {
             header_surat: `<table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:inherit; font-family:inherit;">${hRow('Nomor', esc(nomor))}${hRow('Lampiran', esc(L.lampiran || '-'))}${hRow('Perihal', esc(perihal))}</table>`,
             tabel_personil: tbl(['No', 'Nama', 'Jabatan'], pRows, 'Tabel Personil — terisi otomatis'),
             tabel_peralatan: tbl(['No', 'Jenis', 'Kapasitas', 'Jumlah'], eqRows, 'Tabel Peralatan — terisi otomatis'),
+            // ponytail: marker khas Google Docs (01 alat) — tabel_alat kolom penuh sesuai permintaan
+            tabel_alat: tbl(
+                ['No', 'Jenis Peralatan', 'Kapasitas', 'Jumlah', 'Tahun Produksi', 'Merk/Tipe', 'Kondisi', 'Lokasi Sekarang', 'Bukti Kepemilikan'],
+                eqps.slice(0, 20).map((e, i) =>
+                    `<tr><td${cells(1, 1)}>${i + 1}</td><td${cells(1)}>${esc(e.jenis || '')}</td><td${cells(1)}>${esc(e.kapasitas || '-')}</td><td${cells(1, 1)}>${esc(String(e.jumlah ?? '-'))}</td><td${cells(1, 1)}>${esc(String(e.tahun_produksi ?? '-'))}</td><td${cells(1)}>${esc(e.merk_type || '-')}</td><td${cells(1)}>${esc(e.kondisi || '-')}</td><td${cells(1)}>${esc(e.lokasi_sekarang || '-')}</td><td${cells(1)}>${esc(e.bukti_kepemilikan || '-')}</td></tr>`).join(''),
+                'Tabel Alat — terisi otomatis'),
+            kop_surat: (c.kop_is_image && c.kop_image_url)
+                ? `<img src="${c.kop_image_url}" style="width:100%; max-height:140px; object-fit:contain; display:block; margin:0 auto 10px auto;">`
+                : `<div style="text-align:center; margin-bottom:10px;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">${esc(c.kop_nama || c.nama_perusahaan || '')}</div><div style="font-size:10pt;">${esc(c.kop_alamat || [c.alamat, c.kota].filter(Boolean).join(', '))}</div><div style="font-size:10pt;">${esc(c.kop_kontak || '')}</div></div>`,
+            garis_bawah_surat: `<div style="border-bottom:4px solid ${this._kopLine(c.kop_garis_warna)}; margin:6px 0 12px 0;"></div>`,
+            perusahaan: esc(c.nama_perusahaan || ''),
+            tahun_anggaran: esc(String(t.tahun_anggaran || t.tahun || now.getFullYear())),
             struktur_organisasi: '<div style="text-align:center; border:1px solid #000; padding:8px; margin:10px 0;">Bagan Struktur Organisasi</div>',
             ttd_gabungan: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;">[Tanda Tangan Pihak 1 & Pihak 2 Akan Muncul Disini]</div>',
             ttd_direktur: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;margin-left:auto;">[Tanda Tangan Direktur Akan Muncul Disini]</div>',
             ttd_personil: '<div style="text-align:center;color:#94a3b8;border:2px dashed #cbd5e1;padding:20px;border-radius:8px;margin-top:20px;width:250px;">[Tanda Tangan Personil Akan Muncul Disini]</div>',
         };
+        return sample;
     },
     async _crawlSampleTender() {
         // ponytail: db tenders kosong → tarik 1 paket live dari SPSE (scrape fallback)
@@ -284,8 +346,11 @@ const TemplatesPage = {
         } catch (e) { return null; }
     },
     _fontStack(name) {
+        // ponytail: sans tetap sans (Aptos/Calibri tak ada di Mac → dulu jatuh ke Times); serif tetap serif
         const n = String(name || 'Times New Roman').replace(/[^A-Za-z0-9 '\-.,]/g, '');
-        return `'${n}', 'Times New Roman', Times, serif`;
+        const serif = /times|georgia|garamond|bookman|palatino|serif|roman/i.test(n);
+        return serif ? `'${n}', Georgia, 'Times New Roman', Times, serif`
+            : `'${n}', Calibri, 'Segoe UI', Helvetica, Arial, sans-serif`;
     },
     _kopLine(color) {
         return /^#[0-9a-fA-F]{3,8}$/.test(color || '') ? color : '#000000';
@@ -329,7 +394,17 @@ const TemplatesPage = {
                 </div>
             </div>
 
-            <!-- CKEditor WYSIWYG (custom build — style mentah dipertahankan, lihat frontend/editor-src) -->
+            <!-- Google Docs binding -->
+            <div class="form-group" style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:12px;">
+                <label class="form-label">Google Docs Template (opsional — edit enak di Docs, sync ke sini)</label>
+                <div style="display:flex; gap:8px;">
+                    <input class="form-input" id="tpl-gdoc" value="${Fmt.escape(t.gdoc_id || '')}" placeholder="ID atau URL Google Docs" style="flex:1;">
+                    <button type="button" class="btn btn-secondary" id="tpl-sync-btn" onclick="TemplatesPage.syncGdoc('${id || ''}')" ${id ? '' : 'disabled title="Simpan template dulu"'}>
+                        <i data-lucide="refresh-cw"></i> Sync
+                    </button>
+                </div>
+                <small style="color:var(--text-muted); font-size:0.75rem;">${t.gdoc_synced_at ? 'Terakhir sync: ' + Fmt.escape(t.gdoc_synced_at) : 'Belum pernah sync'} — sync menimpa isi editor dengan versi Google Docs.</small>
+            </div>
             <div class="tpl-ck-box" style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
                 <div id="tpl-editor"></div>
             </div>
@@ -376,17 +451,11 @@ const TemplatesPage = {
                         <input type="number" class="form-input" id="tpl-mb" value="${t.margin_bottom ?? 25}">
                     </div>
                 </div>
-                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; margin-top:8px;"><input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan (rapat saat preview)</label>
-            </div>
-
-            <div style="margin-top:12px;">
-                <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:4px;">Live Preview (data asli dari database / SPSE):</div>
-                <div id="tpl-live-preview" class="ck-content tpl-doc" style="background:white; color:#000; padding:16px; border:1px solid var(--border-color); border-radius:6px; min-height:120px; max-height:220px; overflow-y:auto;"></div>
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; margin-top:8px;"><input type="checkbox" id="tpl-fit-layout" ${t.fit_layout ? 'checked' : ''}> Mampatkan (rapat)</label>
             </div>
         </div>`;
 
         const footer = `
-            <button class="btn btn-secondary" onclick="TemplatesPage.preview(null, true)"><i data-lucide="eye"></i> Preview Layar Penuh</button>
             <button class="btn btn-secondary" onclick="Modal.close()">Batal</button>
             <button class="btn btn-primary" onclick="TemplatesPage.save('${id || ''}')">Simpan Template</button>`;
 
@@ -434,25 +503,11 @@ const TemplatesPage = {
         set();
     },
 
-    updateLiveEditorPreview() {
-        const prev = document.getElementById('tpl-live-preview');
-        if (!prev) return;
-        const html = this._editorToHtml();
-        if (!html) { prev.innerHTML = '<em style="color:#999;">Belum ada isi surat...</em>'; return; }
-        this._sampleData().then(s => {
-            const p = document.getElementById('tpl-live-preview');
-            if (!p) return;
-            p.style.setProperty('--ck-content-font-family', this._fontStack(s.font_surat));
-            p.innerHTML = html.replace(/\{\{([^}]+)\}\}/g, (m, k) =>
-                s[k] != null && s[k] !== '' ? s[k]
-                    : `<span style="background:#fef3c7; padding:1px 4px;">${Fmt.escape(m)}</span>`);
-        });
-    },
-
     _collectFormData() {
         return {
             nama_template: document.getElementById('tpl-nama')?.value?.trim(),
             kategori: document.getElementById('tpl-kategori')?.value || null,
+            gdoc_id: this._parseGdocId(document.getElementById('tpl-gdoc')?.value) || null,
             html_content: this._ensureTableStyles(this._editorToHtml()),
             fit_layout: document.getElementById('tpl-fit-layout')?.checked || false,
             paper_size: document.getElementById('tpl-paper')?.value || 'A4',
@@ -480,35 +535,26 @@ const TemplatesPage = {
         } catch (e) { Toast.error(e.message); if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan Template'; } }
     },
 
-    // ─── PREVIEW ──────────────────────────────────────
-    async preview(id, fromForm) {
-        let t;
-        if (fromForm) { t = this._collectFormData(); }
-        else { try { const res = await API.request(`/templates/${id}`); t = res.data; } catch (e) { Toast.error(e.message); return; } }
-        const s = await this._sampleData();
-        this._loadCkCss();
-        const paperW = this._paperW(t.paper_size, t.orientation);
-        const subst = str => (str || '').replace(/\{\{([^}]+)\}\}/g, (m, k) => s[k] || m);
-        const fontStack = this._fontStack(s.font_surat);
-        const kopLine = this._kopLine(s.kop_garis_warna);
-        const kop = s.kop_is_image && s.kop_image_url
-            ? `<img src="${Fmt.url(s.kop_image_url)}" style="width:100%; max-height:140px; object-fit:contain; display:block; margin:0 auto 10px auto; border-bottom:3px double ${kopLine}; padding-bottom:8px;">`
-            : s.kop_nama
-                ? `<div style="text-align:center; border-bottom:3px double ${kopLine}; padding-bottom:12px; margin-bottom:10px;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">${s.kop_nama}</div><div style="font-size:10pt;">${[s.kop_alamat, s.kop_kontak].filter(Boolean).join(' • ')}</div></div>`
-                : `<div style="text-align:center; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:10px; color:#94a3b8; border-color:#cbd5e1; font-style:italic;"><div style="font-size:16pt; font-weight:bold; text-transform:uppercase;">[KOP SURAT PERUSAHAAN]</div><div style="font-size:10pt;">Alamat Perusahaan akan tampil otomatis di sini</div></div>`;
-        const narasi = subst(t.html_content);
-        const html = `<div style="background:#e2e8f0; padding:24px; border-radius:var(--radius-md); overflow:auto; max-height:70vh;"><div style="width:${paperW}; max-width:100%; margin:0 auto; background:white; box-shadow:0 4px 24px rgba(0,0,0,0.12); padding:${t.margin_top||25}mm ${t.margin_right||25}mm ${t.margin_bottom||25}mm ${t.margin_left||30}mm; font-family:${fontStack}; color:#000; min-height:400px;">${kop}<div class="ck-content tpl-doc" style="--ck-content-font-family:${fontStack}; --ck-content-font-size:${t.fit_layout ? '11pt' : '12pt'}; --ck-content-line-height:${t.fit_layout ? '1.3' : '1.5'};">${narasi || '<span style="color:#999;">— Narasi belum diisi —</span>'}</div></div></div>`;
-        const finalHtml = html.replace(/\{\{[^}]+\}\}/g, '.........');
-        if (fromForm) {
-            const overlay = document.createElement('div');
-            overlay.id = 'tpl-preview-overlay';
-            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
-            overlay.innerHTML = `<div style="background:var(--bg-secondary);border-radius:var(--radius-lg);max-width:920px;width:100%;max-height:95vh;display:flex;flex-direction:column;"><div style="padding:16px 24px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;"><h3 style="margin:0;">Preview Template</h3><button class="btn btn-secondary btn-sm" onclick="document.getElementById('tpl-preview-overlay').remove()">✕ Tutup</button></div><div style="padding:16px;overflow-y:auto;flex:1;">${finalHtml}</div></div>`;
-            document.body.appendChild(overlay);
-        } else {
-            Modal.open('Preview: ' + Fmt.escape(t.nama_template), finalHtml, '<button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>');
-            const modalEl = document.getElementById('modal');
-            if (modalEl) modalEl.style.maxWidth = '920px';
+    // ─── GOOGLE DOCS SYNC ─────────────────────────────
+    _parseGdocId(v) {
+        if (!v) return '';
+        const m = String(v).match(/\/d\/([a-zA-Z0-9-_]+)/);
+        return m ? m[1] : String(v).trim();
+    },
+
+    async syncGdoc(id) {
+        if (!id) { Toast.warning('Simpan template dulu sebelum sync'); return; }
+        const gdocId = this._parseGdocId(document.getElementById('tpl-gdoc')?.value);
+        if (!gdocId) { Toast.warning('Isi ID/URL Google Docs dulu'); return; }
+        const btn = document.getElementById('tpl-sync-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Sync...'; }
+        try {
+            const res = await API.syncTemplate(id, gdocId);
+            Toast.success(`Sync OK dari "${res.gdoc_name}" (${res.html_length} karakter)`);
+            this.openEditor(id); // muat ulang editor dengan HTML terbaru
+        } catch (e) {
+            Toast.error('Sync gagal: ' + e.message);
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw"></i> Sync'; lucide.createIcons(); }
         }
     },
 

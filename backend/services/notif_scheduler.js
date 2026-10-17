@@ -93,9 +93,10 @@ async function checkAndSendNotifications() {
                 const stageName = s.stage.toLowerCase();
                 
                 // A. PEMBERIAN PENJELASAN (ANWIJZING) - 30 Menit Sebelum Mulai
-                if (settings.wa_notif_penjelasan === 'true' && 
-                    !tender.notif_penjelasan_sent && 
-                    (stageName.includes('pemberian penjelasan') || stageName.includes('anwijzing')) && 
+                // ponytail: flag dikunci ke jadwal (s.start) — jadwal berubah → kirim ulang, bukan hangus
+                if (settings.wa_notif_penjelasan === 'true' &&
+                    !(tender.notif_penjelasan_sent && tender.notif_penjelasan_for === s.start) &&
+                    (stageName.includes('pemberian penjelasan') || stageName.includes('anwijzing')) &&
                     s.start) {
                     
                     const startDate = parseIndonesianDate(s.start);
@@ -118,8 +119,8 @@ async function checkAndSendNotifications() {
                             const res = await sendWhatsAppMessage(null, msg);
                             if (res.success) {
                                 await db.query(
-                                    "UPDATE followed_tenders SET notif_penjelasan_sent = true WHERE id = $1", 
-                                    [tender.id]
+                                    "UPDATE followed_tenders SET notif_penjelasan_sent = true, notif_penjelasan_for = $2 WHERE id = $1",
+                                    [tender.id, s.start]
                                 );
                             }
                         }
@@ -127,9 +128,10 @@ async function checkAndSendNotifications() {
                 }
                 
                 // B. UPLOAD DOKUMEN PENAWARAN - 1 Hari Sebelum Batas Akhir (Deadline) di Jam 8 Pagi
-                if (settings.wa_notif_upload === 'true' && 
-                    !tender.notif_upload_sent && 
-                    (stageName.includes('upload dokumen penawaran') || stageName.includes('upload penawaran') || stageName.includes('pemasukan penawaran')) && 
+                // ponytail: flag dikunci ke deadline (s.end) — kasus 24/25: flag true untuk jadwal lama, deadline baru tak pernah dikirim
+                if (settings.wa_notif_upload === 'true' &&
+                    !(tender.notif_upload_sent && tender.notif_upload_for === s.end) &&
+                    (stageName.includes('upload dokumen penawaran') || stageName.includes('upload penawaran') || stageName.includes('pemasukan penawaran')) &&
                     s.end) {
                     
                     const endDate = parseIndonesianDate(s.end);
@@ -153,8 +155,8 @@ async function checkAndSendNotifications() {
                             const res = await sendWhatsAppMessage(null, msg);
                             if (res.success) {
                                 await db.query(
-                                    "UPDATE followed_tenders SET notif_upload_sent = true WHERE id = $1", 
-                                    [tender.id]
+                                    "UPDATE followed_tenders SET notif_upload_sent = true, notif_upload_for = $2 WHERE id = $1",
+                                    [tender.id, s.end]
                                 );
                             }
                         }
@@ -162,9 +164,9 @@ async function checkAndSendNotifications() {
                 }
                 
                 // C. PENETAPAN PEMENANG - Sesuai Jadwal (Saat Tahap Dimulai)
-                if (settings.wa_notif_pemenang === 'true' && 
-                    !tender.notif_pemenang_sent && 
-                    stageName.includes('penetapan pemenang') && 
+                if (settings.wa_notif_pemenang === 'true' &&
+                    !(tender.notif_pemenang_sent && tender.notif_pemenang_for === s.start) &&
+                    stageName.includes('penetapan pemenang') &&
                     s.start) {
                     
                     const startDate = parseIndonesianDate(s.start);
@@ -183,8 +185,8 @@ async function checkAndSendNotifications() {
                         const res = await sendWhatsAppMessage(null, msg);
                         if (res.success) {
                             await db.query(
-                                "UPDATE followed_tenders SET notif_pemenang_sent = true WHERE id = $1", 
-                                [tender.id]
+                                "UPDATE followed_tenders SET notif_pemenang_sent = true, notif_pemenang_for = $2 WHERE id = $1",
+                                [tender.id, s.start]
                             );
                         }
                     }

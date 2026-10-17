@@ -95,8 +95,9 @@ const PersonnelPage = {
             </div>
             <div class="form-row">
                 <div class="form-group"><label class="form-label">Tempat Lahir</label><input class="form-input" id="f-tmplahir" value="${Fmt.escape(p.tempat_lahir || '')}"></div>
-                <div class="form-group"><label class="form-label">Tanggal Lahir</label><input type="date" class="form-input" id="f-tgllahir" value="${p.tanggal_lahir || ''}"></div>
+                <div class="form-group"><label class="form-label">Tanggal Lahir</label><input type="date" class="form-input" id="f-tgllahir" value="${String(p.tanggal_lahir || '').slice(0, 10)}"></div>
             </div>
+            <div class="form-group"><label class="form-label">Alamat (opsional — untuk dokumen)</label><input class="form-input" id="f-alamat" value="${Fmt.escape(p.alamat || '')}" placeholder="Jl. ..., Kota"></div>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Upload KTP (PDF/Image)</label>
@@ -248,6 +249,7 @@ const PersonnelPage = {
                 tempat_lahir: document.getElementById('f-tmplahir').value.trim() || null,
                 tanggal_lahir: document.getElementById('f-tgllahir').value || null,
                 tahun_pengalaman: parseInt(document.getElementById('f-pengalaman').value) || null,
+                alamat: document.getElementById('f-alamat')?.value.trim() || null,
                 ktp_url,
                 npwp_url,
                 ttd_image_url: ttd_url
@@ -267,14 +269,18 @@ const PersonnelPage = {
     async viewDetail(id) {
         try {
             const { data: p } = await API.getPersonnelById(id);
+            this._detail = p;
 
             const eduRows = (p.education_history || []).map(e => `
                 <tr>
                     <td>${Fmt.escape(e.lembaga)}<br><small style="color:var(--text-muted);">${Fmt.escape(e.jenjang || '')} - ${Fmt.escape(e.jurusan || '')}</small></td>
                     <td>${Fmt.escape(e.tempat || '')}</td>
                     <td>${e.tahun_tamat || '-'}</td>
-                    <td style="text-align:center;">${e.ijazah_url ? `<a href="${e.ijazah_url}" target="_blank" class="btn btn-secondary btn-icon btn-sm" title="Lihat Ijazah"><i data-lucide="file"></i></a>` : '-'}</td>
-                    <td><button class="btn btn-danger btn-icon btn-sm" onclick="PersonnelPage.delEdu('${e.id}','${id}')"><i data-lucide="trash-2"></i></button></td>
+                    <td style="text-align:center;">${e.ijazah_url ? `<a href="${e.ijazah_url}" target="_blank" class="btn btn-secondary eq-btn" title="Lihat Ijazah"><i data-lucide="eye"></i></a>` : '-'}</td>
+                    <td><div class="eq-actions">
+                        <button class="btn btn-secondary eq-btn" onclick="PersonnelPage.addEduForm('${id}','${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>
+                        <button class="btn btn-danger eq-btn" onclick="PersonnelPage.delEdu('${e.id}','${id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
+                    </div></td>
                 </tr>`).join('');
 
             const expRows = (p.experience_history || []).map(e => `
@@ -283,8 +289,11 @@ const PersonnelPage = {
                     <td>${Fmt.escape(e.nama_kegiatan || '')}</td>
                     <td>${Fmt.escape(e.posisi || '')}</td>
                     <td>${Fmt.escape(e.perusahaan || '')}</td>
-                    <td style="text-align:center;">${e.surat_referensi_url ? `<a href="${e.surat_referensi_url}" target="_blank" class="btn btn-secondary btn-icon btn-sm" title="Surat Referensi"><i data-lucide="file-text"></i></a>` : '-'}</td>
-                    <td><button class="btn btn-danger btn-icon btn-sm" onclick="PersonnelPage.delExp('${e.id}','${id}')"><i data-lucide="trash-2"></i></button></td>
+                    <td style="text-align:center;">${e.surat_referensi_url ? `<a href="${e.surat_referensi_url}" target="_blank" class="btn btn-secondary eq-btn" title="Surat Referensi"><i data-lucide="eye"></i></a>` : '-'}</td>
+                    <td><div class="eq-actions">
+                        <button class="btn btn-secondary eq-btn" onclick="PersonnelPage.addExpForm('${id}','${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>
+                        <button class="btn btn-danger eq-btn" onclick="PersonnelPage.delExp('${e.id}','${id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
+                    </div></td>
                 </tr>`).join('');
 
             const skaRows = (p.ska || []).map(e => `
@@ -293,8 +302,11 @@ const PersonnelPage = {
                     <td>${Fmt.escape(e.no_registrasi || '')}</td>
                     <td>${Fmt.escape(e.sub_klasifikasi || '')}</td>
                     <td>${e.berlaku_sampai ? Fmt.date(e.berlaku_sampai) : '-'}</td>
-                    <td style="text-align:center;">${e.file_url ? `<a href="${e.file_url}" target="_blank" class="btn btn-secondary btn-icon btn-sm" title="Sertifikat"><i data-lucide="award"></i></a>` : '-'}</td>
-                    <td><button class="btn btn-danger btn-icon btn-sm" onclick="PersonnelPage.delSka('${e.id}','${id}')"><i data-lucide="trash-2"></i></button></td>
+                    <td style="text-align:center;">${e.file_url ? `<a href="${e.file_url}" target="_blank" class="btn btn-secondary eq-btn" title="Sertifikat"><i data-lucide="eye"></i></a>` : '-'}</td>
+                    <td><div class="eq-actions">
+                        <button class="btn btn-secondary eq-btn" onclick="PersonnelPage.addSkaForm('${id}','${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>
+                        <button class="btn btn-danger eq-btn" onclick="PersonnelPage.delSka('${e.id}','${id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
+                    </div></td>
                 </tr>`).join('');
 
             const body = `
@@ -317,21 +329,21 @@ const PersonnelPage = {
                     <span style="font-weight:600;font-size:0.95rem; color:var(--text-primary);">Sertifikat Keahlian (SKA/SKT)</span>
                     <button class="btn btn-secondary btn-sm" onclick="PersonnelPage.addSkaForm('${id}')"><i data-lucide="plus"></i> Tambah SKA</button>
                 </div>
-                <div class="table-container" style="margin-bottom:24px;"><table><thead><tr><th>Nama Sertifikat</th><th>No. Registrasi</th><th>Sub Klas</th><th>Berlaku</th><th width="50">Berkas</th><th width="40"></th></tr></thead><tbody>${skaRows || '<tr><td colspan="6" class="text-center">Belum ada data SKA</td></tr>'}</tbody></table></div>
+                <div class="table-container" style="margin-bottom:24px;"><table class="mini-table"><thead><tr><th>Nama Sertifikat</th><th>No. Registrasi</th><th>Sub Klas</th><th>Berlaku</th><th width="44">Berkas</th><th width="70"></th></tr></thead><tbody>${skaRows || '<tr><td colspan="6" class="text-center">Belum ada data SKA</td></tr>'}</tbody></table></div>
                 
                 <!-- Pendidikan -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span style="font-weight:600;font-size:0.95rem; color:var(--text-primary);">Riwayat Pendidikan</span>
                     <button class="btn btn-secondary btn-sm" onclick="PersonnelPage.addEduForm('${id}')"><i data-lucide="plus"></i> Tambah Pendidikan</button>
                 </div>
-                <div class="table-container" style="margin-bottom:24px;"><table><thead><tr><th>Lembaga</th><th>Tempat</th><th>Lulus</th><th width="50">Ijazah</th><th width="40"></th></tr></thead><tbody>${eduRows || '<tr><td colspan="5" class="text-center">Belum ada data pendidikan</td></tr>'}</tbody></table></div>
+                <div class="table-container" style="margin-bottom:24px;"><table class="mini-table"><thead><tr><th>Lembaga</th><th>Tempat</th><th>Lulus</th><th width="44">Ijazah</th><th width="70"></th></tr></thead><tbody>${eduRows || '<tr><td colspan="5" class="text-center">Belum ada data pendidikan</td></tr>'}</tbody></table></div>
                 
                 <!-- Pengalaman -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <span style="font-weight:600;font-size:0.95rem; color:var(--text-primary);">Pengalaman Kerja</span>
                     <button class="btn btn-secondary btn-sm" onclick="PersonnelPage.addExpForm('${id}')"><i data-lucide="plus"></i> Tambah Pengalaman</button>
                 </div>
-                <div class="table-container"><table><thead><tr><th>Thn</th><th>Kegiatan</th><th>Posisi</th><th>Perusahaan</th><th width="50">Ref.</th><th width="40"></th></tr></thead><tbody>${expRows || '<tr><td colspan="6" class="text-center">Belum ada data pengalaman</td></tr>'}</tbody></table></div>
+                <div class="table-container"><table class="mini-table"><thead><tr><th>Thn</th><th>Kegiatan</th><th>Posisi</th><th>Perusahaan</th><th width="44">Ref.</th><th width="70"></th></tr></thead><tbody>${expRows || '<tr><td colspan="6" class="text-center">Belum ada data pengalaman</td></tr>'}</tbody></table></div>
             </div>
             `;
             Modal.open('Detail Personil', body, '<button class="btn btn-secondary" onclick="Modal.close()">Tutup</button>');
@@ -342,45 +354,51 @@ const PersonnelPage = {
     },
 
     // ─── PENDIDIKAN ──────────────────────────────────
-    addEduForm(pid) {
+    addEduForm(pid, eid) {
+        const e = eid ? (this._detail?.education_history || []).find(x => x.id === eid) : {};
+        if (eid && !e) { Toast.error('Data tidak ditemukan'); return; }
         const body = `
-        <div class="form-group"><label class="form-label">Lembaga Pendidikan *</label><input class="form-input" id="f-edu-lembaga"></div>
+        <div class="form-group"><label class="form-label">Lembaga Pendidikan *</label><input class="form-input" id="f-edu-lembaga" value="${Fmt.escape(e?.lembaga || '')}"></div>
         <div class="form-row">
-            <div class="form-group"><label class="form-label">Jenjang (SD/SMP/SMA/S1)</label><input class="form-input" id="f-edu-jenjang"></div>
-            <div class="form-group"><label class="form-label">Jurusan</label><input class="form-input" id="f-edu-jurusan"></div>
+            <div class="form-group"><label class="form-label">Jenjang (SD/SMP/SMA/S1)</label><input class="form-input" id="f-edu-jenjang" value="${Fmt.escape(e?.jenjang || '')}"></div>
+            <div class="form-group"><label class="form-label">Jurusan</label><input class="form-input" id="f-edu-jurusan" value="${Fmt.escape(e?.jurusan || '')}"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label class="form-label">Tempat</label><input class="form-input" id="f-edu-tempat"></div>
-            <div class="form-group"><label class="form-label">Tahun Tamat</label><input type="number" class="form-input" id="f-edu-tahun"></div>
+            <div class="form-group"><label class="form-label">Tempat</label><input class="form-input" id="f-edu-tempat" value="${Fmt.escape(e?.tempat || '')}"></div>
+            <div class="form-group"><label class="form-label">Tahun Tamat</label><input type="number" class="form-input" id="f-edu-tahun" value="${e?.tahun_tamat || ''}"></div>
         </div>
         <div class="form-group">
             <label class="form-label">Upload Scan Ijazah (PDF/Image)</label>
             <input type="file" class="form-input" id="f-edu-file" accept="image/*,.pdf">
+            <input type="hidden" id="f-edu-url" value="${e?.ijazah_url || ''}">
+            ${e?.ijazah_url ? `<small style="font-size:0.75rem;">Berkas saat ini: <a href="${e.ijazah_url}" target="_blank">Lihat</a> — pilih file baru untuk mengganti</small>` : ''}
         </div>`;
-        Modal.open('Tambah Riwayat Pendidikan', body,
-            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveEdu('${pid}')">Simpan</button>`);
+        Modal.open(eid ? 'Edit Riwayat Pendidikan' : 'Tambah Riwayat Pendidikan', body,
+            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveEdu('${pid}','${eid || ''}')">Simpan</button>`);
     },
 
-    async saveEdu(pid) {
+    async saveEdu(pid, eid) {
         const btn = document.querySelector('#modal-footer .btn-primary');
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Menyimpan...'; }
         try {
             const file = document.getElementById('f-edu-file').files[0];
-            let url = null;
+            let url = document.getElementById('f-edu-url')?.value || null;
             if (file) {
                 const res = await API.uploadFile(file, 'personnel_docs');
+                if (url) await API.deleteFile(url).catch(err => console.warn('Failed to delete old file:', err.message));
                 url = res.url;
             }
 
-            await API.addEducation(pid, {
+            const data = {
                 lembaga: document.getElementById('f-edu-lembaga').value.trim(),
                 jenjang: document.getElementById('f-edu-jenjang').value.trim() || null,
                 jurusan: document.getElementById('f-edu-jurusan').value.trim() || null,
                 tempat: document.getElementById('f-edu-tempat').value.trim() || null,
                 tahun_tamat: parseInt(document.getElementById('f-edu-tahun').value) || null,
                 ijazah_url: url
-            });
-            Toast.success('Pendidikan ditambahkan');
+            };
+            if (eid) { await API.updateEducation(eid, data); Toast.success('Pendidikan diperbarui'); }
+            else { await API.addEducation(pid, data); Toast.success('Pendidikan ditambahkan'); }
             this.viewDetail(pid);
         } catch (e) {
             Toast.error(e.message);
@@ -390,42 +408,47 @@ const PersonnelPage = {
     async delEdu(id, pid) { try { await API.deleteEducation(id); Toast.success('Dihapus'); this.viewDetail(pid); } catch (e) { Toast.error(e.message); } },
 
     // ─── PENGALAMAN ──────────────────────────────────
-    addExpForm(pid) {
+    addExpForm(pid, eid) {
+        const e = eid ? (this._detail?.experience_history || []).find(x => x.id === eid) : {};
+        if (eid && !e) { Toast.error('Data tidak ditemukan'); return; }
         const body = `
         <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Tahun</label><input class="form-input" id="f-exp-tahun" placeholder="2020-2022"></div>
-                <div class="form-group"><label class="form-label">Posisi Penugasan</label><input class="form-input" id="f-exp-posisi"></div>
+                <div class="form-group"><label class="form-label">Tahun</label><input class="form-input" id="f-exp-tahun" placeholder="2020-2022" value="${Fmt.escape(e?.tahun || '')}"></div>
+                <div class="form-group"><label class="form-label">Posisi Penugasan</label><input class="form-input" id="f-exp-posisi" value="${Fmt.escape(e?.posisi || '')}"></div>
             </div>
-            <div class="form-group"><label class="form-label">Nama Kegiatan/Proyek *</label><input class="form-input" id="f-exp-kegiatan"></div>
+            <div class="form-group"><label class="form-label">Nama Kegiatan/Proyek *</label><input class="form-input" id="f-exp-kegiatan" value="${Fmt.escape(e?.nama_kegiatan || '')}"></div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Lokasi</label><input class="form-input" id="f-exp-lokasi"></div>
-                <div class="form-group"><label class="form-label">Nama Perusahaan (Employer)</label><input class="form-input" id="f-exp-perusahaan"></div>
+                <div class="form-group"><label class="form-label">Lokasi</label><input class="form-input" id="f-exp-lokasi" value="${Fmt.escape(e?.lokasi || '')}"></div>
+                <div class="form-group"><label class="form-label">Nama Perusahaan (Employer)</label><input class="form-input" id="f-exp-perusahaan" value="${Fmt.escape(e?.perusahaan || '')}"></div>
             </div>
-            <div class="form-group"><label class="form-label">Pengguna Jasa / Instansi</label><input class="form-input" id="f-exp-pengguna"></div>
-            <div class="form-group"><label class="form-label">Uraian Tugas</label><textarea class="form-textarea" id="f-exp-uraian" rows="2"></textarea></div>
-            <div class="form-group"><label class="form-label">Waktu Pelaksanaan</label><input class="form-input" id="f-exp-waktu" placeholder="6 bulan"></div>
+            <div class="form-group"><label class="form-label">Pengguna Jasa / Instansi</label><input class="form-input" id="f-exp-pengguna" value="${Fmt.escape(e?.pengguna_jasa || '')}"></div>
+            <div class="form-group"><label class="form-label">Uraian Tugas</label><textarea class="form-textarea" id="f-exp-uraian" rows="2">${Fmt.escape(e?.uraian_tugas || '')}</textarea></div>
+            <div class="form-group"><label class="form-label">Waktu Pelaksanaan</label><input class="form-input" id="f-exp-waktu" placeholder="6 bulan" value="${Fmt.escape(e?.waktu_pelaksanaan || '')}"></div>
             <div class="form-group">
                 <label class="form-label">Upload Surat Referensi (PDF/Image)</label>
                 <input type="file" class="form-input" id="f-exp-file" accept="image/*,.pdf">
+                <input type="hidden" id="f-exp-url" value="${e?.surat_referensi_url || ''}">
+                ${e?.surat_referensi_url ? `<small style="font-size:0.75rem;">Berkas saat ini: <a href="${e.surat_referensi_url}" target="_blank">Lihat</a> — pilih file baru untuk mengganti</small>` : ''}
             </div>
         </div>`;
-        Modal.open('Tambah Pengalaman Kerja', body,
-            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveExp('${pid}')">Simpan</button>`);
+        Modal.open(eid ? 'Edit Pengalaman Kerja' : 'Tambah Pengalaman Kerja', body,
+            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveExp('${pid}','${eid || ''}')">Simpan</button>`);
     },
 
-    async saveExp(pid) {
+    async saveExp(pid, eid) {
         const btn = document.querySelector('#modal-footer .btn-primary');
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Menyimpan...'; }
         try {
             const file = document.getElementById('f-exp-file').files[0];
-            let url = null;
+            let url = document.getElementById('f-exp-url')?.value || null;
             if (file) {
                 const res = await API.uploadFile(file, 'personnel_docs');
+                if (url) await API.deleteFile(url).catch(err => console.warn('Failed to delete old file:', err.message));
                 url = res.url;
             }
 
-            await API.addExperience(pid, {
+            const data = {
                 tahun: document.getElementById('f-exp-tahun').value.trim(),
                 nama_kegiatan: document.getElementById('f-exp-kegiatan').value.trim(),
                 lokasi: document.getElementById('f-exp-lokasi').value.trim(),
@@ -435,8 +458,9 @@ const PersonnelPage = {
                 waktu_pelaksanaan: document.getElementById('f-exp-waktu').value.trim(),
                 posisi: document.getElementById('f-exp-posisi').value.trim(),
                 surat_referensi_url: url
-            });
-            Toast.success('Pengalaman kerja ditambahkan');
+            };
+            if (eid) { await API.updateExperience(eid, data); Toast.success('Pengalaman kerja diperbarui'); }
+            else { await API.addExperience(pid, data); Toast.success('Pengalaman kerja ditambahkan'); }
             this.viewDetail(pid);
         } catch (e) {
             Toast.error(e.message);
@@ -446,41 +470,47 @@ const PersonnelPage = {
     async delExp(id, pid) { try { await API.deleteExperience(id); Toast.success('Dihapus'); this.viewDetail(pid); } catch (e) { Toast.error(e.message); } },
 
     // ─── SKA / SKT ───────────────────────────────────
-    addSkaForm(pid) {
+    addSkaForm(pid, eid) {
+        const e = eid ? (this._detail?.ska || []).find(x => x.id === eid) : {};
+        if (eid && !e) { Toast.error('Data tidak ditemukan'); return; }
         const body = `
-        <div class="form-group"><label class="form-label">Nama Sertifikat *</label><input class="form-input" id="f-ska-nama" placeholder="Ahli Teknik Bangunan Gedung - Madya"></div>
+        <div class="form-group"><label class="form-label">Nama Sertifikat *</label><input class="form-input" id="f-ska-nama" placeholder="Ahli Teknik Bangunan Gedung - Madya" value="${Fmt.escape(e?.nama_sertifikat || '')}"></div>
         <div class="form-row">
-            <div class="form-group"><label class="form-label">No. Registrasi</label><input class="form-input" id="f-ska-noreg"></div>
-            <div class="form-group"><label class="form-label">Sub Klasifikasi</label><input class="form-input" id="f-ska-sub"></div>
+            <div class="form-group"><label class="form-label">No. Registrasi</label><input class="form-input" id="f-ska-noreg" value="${Fmt.escape(e?.no_registrasi || '')}"></div>
+            <div class="form-group"><label class="form-label">Sub Klasifikasi</label><input class="form-input" id="f-ska-sub" value="${Fmt.escape(e?.sub_klasifikasi || '')}"></div>
         </div>
-        <div class="form-group"><label class="form-label">Berlaku Sampai</label><input type="date" class="form-input" id="f-ska-tgl"></div>
+        <div class="form-group"><label class="form-label">Berlaku Sampai</label><input type="date" class="form-input" id="f-ska-tgl" value="${e?.berlaku_sampai ? String(e.berlaku_sampai).slice(0, 10) : ''}"></div>
         <div class="form-group">
             <label class="form-label">Upload File Sertifikat (PDF/Image)</label>
             <input type="file" class="form-input" id="f-ska-file" accept="image/*,.pdf">
+            <input type="hidden" id="f-ska-url" value="${e?.file_url || ''}">
+            ${e?.file_url ? `<small style="font-size:0.75rem;">Berkas saat ini: <a href="${e.file_url}" target="_blank">Lihat</a> — pilih file baru untuk mengganti</small>` : ''}
         </div>`;
-        Modal.open('Tambah SKA/SKT', body,
-            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveSka('${pid}')">Simpan</button>`);
+        Modal.open(eid ? 'Edit SKA/SKT' : 'Tambah SKA/SKT', body,
+            `<button class="btn btn-secondary" onclick="PersonnelPage.viewDetail('${pid}')">Kembali</button><button class="btn btn-primary" onclick="PersonnelPage.saveSka('${pid}','${eid || ''}')">Simpan</button>`);
     },
 
-    async saveSka(pid) {
+    async saveSka(pid, eid) {
         const btn = document.querySelector('#modal-footer .btn-primary');
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Menyimpan...'; }
         try {
             const file = document.getElementById('f-ska-file').files[0];
-            let url = null;
+            let url = document.getElementById('f-ska-url')?.value || null;
             if (file) {
                 const res = await API.uploadFile(file, 'personnel_docs');
+                if (url) await API.deleteFile(url).catch(err => console.warn('Failed to delete old file:', err.message));
                 url = res.url;
             }
 
-            await API.addSka(pid, {
+            const data = {
                 nama_sertifikat: document.getElementById('f-ska-nama').value.trim(),
                 no_registrasi: document.getElementById('f-ska-noreg').value.trim(),
                 sub_klasifikasi: document.getElementById('f-ska-sub').value.trim(),
                 berlaku_sampai: document.getElementById('f-ska-tgl').value || null,
                 file_url: url
-            });
-            Toast.success('Sertifikat ditambahkan');
+            };
+            if (eid) { await API.updateSka(eid, data); Toast.success('Sertifikat diperbarui'); }
+            else { await API.addSka(pid, data); Toast.success('Sertifikat ditambahkan'); }
             this.viewDetail(pid);
         } catch (e) {
             Toast.error(e.message);

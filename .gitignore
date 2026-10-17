@@ -34,3 +34,8 @@ Thumbs.db
 tmp/
 temp/
 *.bak-*
+
+# tooling noise
+__pycache__/
+*.pyc
+.codegraph/

@@ -757,8 +757,8 @@ class CrawlerService {
                 // 1. Year filter (safety check)
                 const taText = String(t['Tahun Anggaran'] || t.tahun_anggaran || t.raw_data?.tahun_anggaran || '');
                 const cell1Text = String(t['Nama Paket'] || t.nama_paket || '');
-                // LPSE konsolidasi kadang serve nama berawal koma: ",Konsolidasi ..."
-                const namaPaket = cell1Text.replace(/^,\s*/, '').trim();
+                // LPSE konsolidasi kadang serve nama berawal koma: ",Konsolidasi ..." (+ sisa nomor urut "1 ")
+                const namaPaket = cell1Text.replace(/^,\s*/, '').replace(/^\d+[.\s]\s*/, '').trim();
                 const hasWrongYear = (taText && taText !== String(year)) || 
                                    (cell1Text.includes('TA ') && !cell1Text.includes(`TA ${year}`));
                 if (hasWrongYear && !cell1Text.includes(`TA ${year}`)) continue;
