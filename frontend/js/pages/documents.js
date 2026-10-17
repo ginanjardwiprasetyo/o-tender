@@ -91,7 +91,7 @@ const DocumentsPage = {
                     const delAll = `<button class="btn btn-danger eq-btn" onclick="event.stopPropagation(); DocumentsPage.removeBatch('${key}')" title="Hapus semua"><i data-lucide="trash-2"></i></button>`;
                     const parent = `<tr class="doc-parent" onclick="DocumentsPage.toggleBatch('${key}')">
                     <td style="text-align:center; color:var(--text-muted);"><i data-lucide="chevron-right" class="doc-chev" data-batch="${key}" style="width:16px; height:16px; transition:transform .15s;"></i></td>
-                    <td style="white-space:nowrap;">${first.r.created_at ? new Date(first.r.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                    <td style="white-space:nowrap;">${(() => { const d = first.r.created_at ? new Date(first.r.created_at) : null; return d && !isNaN(d) ? d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) + '<br>' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'; })()}</td>
                     <td>${Fmt.escape(v.tender?.nama || first.r.nama_tender || '-')}<br><small style="color:var(--text-muted);">${Fmt.escape(v.tender?.kode || first.r.kode_tender || '')}</small></td>
                     <td>${Fmt.escape(first.r.tender_sbu || '-')}</td>
                     <td>${Fmt.escape(first.r.nama_perusahaan || '-')}</td>
@@ -176,14 +176,22 @@ const DocumentsPage = {
         <div class="doc-wiz-pane" data-pane="5" style="display:none;">
             <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Review & Generate</div>
             <div id="doc-review-box"></div>
-            <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
-                <button class="btn btn-primary" id="doc-generate-btn" onclick="DocumentsPage.wzGenerate()"><i data-lucide="file-check"></i> Generate PDF</button>
-            </div>
         </div>`;
-        const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><span style="flex:1;"></span><button class="btn btn-secondary" id="doc-wiz-back" onclick="DocumentsPage._wizNav(-1)" style="display:none;">‹ Kembali</button><button class="btn btn-primary" id="doc-wiz-next" onclick="DocumentsPage._wizNav(1)">Lanjut ›</button>`;
+        const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><span style="flex:1;"></span><button class="btn btn-secondary" id="doc-wiz-back" onclick="DocumentsPage._wizNav(-1)" style="display:none;">‹ Kembali</button><button class="btn btn-primary" id="doc-wiz-next" onclick="DocumentsPage._wizNav(1)">Lanjut ›</button><button class="btn btn-primary" id="doc-generate-btn" onclick="DocumentsPage.wzGenerate()" style="display:none;"><i data-lucide="file-check"></i> Generate PDF</button>`;
         Modal.open('Buat Dokumen Lelang', body, footer, { maxWidth: 'calc(100vw - 40px)' });
         this._wzForm1(compOpts);
         this._wizShow(1);
+        // ponytail: Enter di langkah Review = Generate; guard overlay biar tak nyasar setelah modal tutup
+        document.removeEventListener('keydown', this._wzKeyH);
+        this._wzKeyH = (e) => {
+            if (e.key !== 'Enter' || this._wzStep !== 5) return;
+            if (document.getElementById('modal-overlay')?.classList.contains('hidden')) return;
+            const gen = document.getElementById('doc-generate-btn');
+            if (!gen || gen.style.display === 'none' || gen.disabled) return;
+            e.preventDefault();
+            this.wzGenerate();
+        };
+        document.addEventListener('keydown', this._wzKeyH);
         lucide.createIcons();
     },
 
@@ -197,6 +205,8 @@ const DocumentsPage = {
         });
         document.getElementById('doc-wiz-back').style.display = n > 1 ? '' : 'none';
         document.getElementById('doc-wiz-next').style.display = n < 5 ? '' : 'none';
+        const gen = document.getElementById('doc-generate-btn');
+        if (gen) gen.style.display = n === 5 ? '' : 'none';
         const hints = {
             1: 'Pilih paket yang belum lewat upload — data terisi otomatis, semua bisa diubah.',
             2: 'Nomor tersusun otomatis. Perihal menentukan segmen. Tanggal bisa diklik.',
@@ -238,34 +248,40 @@ const DocumentsPage = {
         const tenders = this._tenderAktif();
         pane.innerHTML = `
         <div style="font-weight:700; margin-bottom:10px; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">1. Proyek &amp; Perusahaan</div>
-        <div class="form-group"><label class="form-label">Cari Proyek *</label>
-            <div style="position:relative;">
-                <input class="form-input" id="wz-tender-search" placeholder="Ketik nama/kode paket..." autocomplete="off"
-                    oninput="DocumentsPage._wzTenderSearch(this.value)" onfocus="DocumentsPage._wzTenderSearch(this.value)">
-                <input type="hidden" id="wz-tender" value="">
-                <div id="wz-tender-drop" class="hidden" style="position:absolute; top:100%; left:0; right:0; z-index:30; max-height:240px; overflow:auto; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; box-shadow:0 8px 16px rgba(0,0,0,.15);"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 28px; align-items:start;">
+        <div>
+            <div class="form-group"><label class="form-label">Cari Proyek *</label>
+                <div style="position:relative;">
+                    <input class="form-input" id="wz-tender-search" placeholder="Ketik nama/kode paket..." autocomplete="off"
+                        oninput="DocumentsPage._wzTenderSearch(this.value)" onfocus="DocumentsPage._wzTenderSearch(this.value)">
+                    <input type="hidden" id="wz-tender" value="">
+                    <div id="wz-tender-drop" class="hidden" style="position:absolute; top:100%; left:0; right:0; z-index:30; max-height:240px; overflow:auto; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; box-shadow:0 8px 16px rgba(0,0,0,.15);"></div>
+                </div>
+                <small style="color:var(--text-muted);">Ketik untuk menyaring daftar panjang</small>
             </div>
-            <small style="color:var(--text-muted);">Ketik untuk menyaring daftar panjang</small>
+            <div style="display:grid; grid-template-columns:110px 1fr; gap:10px;">
+                <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Tahun</label><input class="form-input" id="wz-tahun" placeholder="2026"></div>
+                <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Lokasi</label><input class="form-input" id="wz-lokasi" placeholder="Kab. Sukoharjo"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group" style="margin-bottom:10px;"><label class="form-label">LPSE</label><input class="form-input" id="wz-lpse" placeholder="LPSE Kab. ..."></div>
+                <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Nomor Tender</label><input class="form-input" id="wz-kode" readonly style="background:var(--bg-tertiary);"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group" style="margin-bottom:0;"><label class="form-label">Pagu (angka)</label><input class="form-input" id="wz-pagu" inputmode="numeric" placeholder="480000000" oninput="DocumentsPage._wzTerbilang()"></div>
+                <div class="form-group" style="margin-bottom:0;"><label class="form-label">Terbilang (otomatis)</label><input class="form-input" id="wz-terbilang" placeholder="otomatis dari pagu"></div>
+            </div>
         </div>
-        <div style="display:grid; grid-template-columns:110px 1fr 1fr; gap:10px; margin-bottom:10px;">
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Tahun</label><input class="form-input" id="wz-tahun" placeholder="2026"></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Lokasi</label><input class="form-input" id="wz-lokasi" placeholder="Kab. Sukoharjo"></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Perusahaan *</label>
+        <div>
+            <div class="form-group"><label class="form-label">Perusahaan *</label>
                 <select class="form-select" id="wz-comp"><option value="">-- Pilih --</option>${compOpts}</select>
             </div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:10px;">
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">LPSE</label><input class="form-input" id="wz-lpse" placeholder="LPSE Kab. ..."></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Pokja (custom)</label><input class="form-input" id="wz-pokja" placeholder="Pokja Pemilihan ..."></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Alamat Pokja</label><input class="form-input" id="wz-alamat-pokja" placeholder="Jl. ..."></div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr 2fr 120px; gap:10px;">
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Nomor Tender</label><input class="form-input" id="wz-kode" readonly style="background:var(--bg-tertiary);"></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Pagu (angka)</label><input class="form-input" id="wz-pagu" inputmode="numeric" placeholder="480000000" oninput="DocumentsPage._wzTerbilang()"></div>
-            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Terbilang (otomatis)</label><input class="form-input" id="wz-terbilang" placeholder="otomatis dari pagu"></div>
+            <div class="form-group"><label class="form-label">Pokja (custom)</label><input class="form-input" id="wz-pokja" placeholder="Pokja Pemilihan ..."></div>
+            <div class="form-group"><label class="form-label">Alamat Pokja</label><input class="form-input" id="wz-alamat-pokja" placeholder="Jl. ..."></div>
             <div class="form-group" style="margin-bottom:0;"><label class="form-label">TTD &amp; Cap?</label>
                 <select class="form-select" id="wz-with-ttd"><option value="1">Ya, sertakan</option><option value="0">Tidak</option></select>
             </div>
+        </div>
         </div>`;
     },
 
@@ -341,24 +357,32 @@ const DocumentsPage = {
         const tglShow = (() => { const d = new Date(tgl + 'T00:00:00'); return isNaN(d) ? tgl : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); })();
         pane.innerHTML = `
         <div style="font-weight:700; margin-bottom:12px;">2. Surat <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— 04 surat • format 001/PA/SDG/UGM/X/2026</span></div>
-        <div class="form-row">
-            <div class="form-group" style="max-width:110px;"><label class="form-label">Urut</label><input class="form-input" id="wz-urut" readonly value="${Fmt.escape(L.urut || '')}" style="background:var(--bg-tertiary);"></div>
-            <div class="form-group" style="max-width:130px;"><label class="form-label">Segmen (otomatis)</label><input class="form-input" id="wz-pa" value="${Fmt.escape(L.pa)}" oninput="DocumentsPage._wzPaManual()" title="Otomatis dari perihal, bisa diubah manual"></div>
-            <div class="form-group" style="max-width:150px;"><label class="form-label">Kode Proyek</label><input class="form-input" id="wz-sdg" value="${Fmt.escape(L.sdg)}" placeholder="contoh: SDG" oninput="DocumentsPage._wzAutoNomor()"></div>
-            <div class="form-group" style="max-width:110px;"><label class="form-label">Perusahaan</label><input class="form-input" readonly value="${Fmt.escape(comp.singkatan || '')}" style="background:var(--bg-tertiary);"></div>
-            <div class="form-group" style="max-width:80px;"><label class="form-label">Bulan</label><input class="form-input" readonly value="${this._roman(dt.getMonth() + 1)}" style="background:var(--bg-tertiary);"></div>
-            <div class="form-group" style="max-width:90px;"><label class="form-label">Tahun</label><input class="form-input" readonly value="${dt.getFullYear()}" style="background:var(--bg-tertiary);"></div>
-        </div>
-        <div class="form-group"><label class="form-label">Nomor Surat Jadi <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">(otomatis setelah kode terisi)</span></label>
-            <div style="display:flex; gap:8px;">
-                <input class="form-input" id="wz-nomor" readonly value="${Fmt.escape(L.nomor)}" style="background:var(--bg-tertiary); font-weight:700; flex:1;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 28px; align-items:start;">
+        <div>
+            <div class="form-row">
+                <div class="form-group" style="max-width:110px;"><label class="form-label">Urut</label><input class="form-input" id="wz-urut" readonly value="${Fmt.escape(L.urut || '')}" style="background:var(--bg-tertiary);"></div>
+                <div class="form-group" style="max-width:130px;"><label class="form-label">Segmen (otomatis)</label><input class="form-input" id="wz-pa" value="${Fmt.escape(L.pa)}" oninput="DocumentsPage._wzPaManual()" title="Otomatis dari perihal, bisa diubah manual"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Perusahaan</label><input class="form-input" readonly value="${Fmt.escape(comp.singkatan || '')}" style="background:var(--bg-tertiary);"></div>
+                <div class="form-group"><label class="form-label">Direktur</label><input class="form-input" readonly value="${Fmt.escape(comp.direktur || '')}" style="background:var(--bg-tertiary);"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group" style="max-width:80px;"><label class="form-label">Bulan</label><input class="form-input" readonly value="${this._roman(dt.getMonth() + 1)}" style="background:var(--bg-tertiary);"></div>
+                <div class="form-group" style="max-width:90px;"><label class="form-label">Tahun</label><input class="form-input" readonly value="${dt.getFullYear()}" style="background:var(--bg-tertiary);"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Nomor Surat Jadi <span style="font-weight:400; font-size:0.75rem; color:var(--text-muted);">(otomatis setelah kode di kanan diisi)</span></label>
+                <div style="display:flex; gap:8px;">
+                    <input class="form-input" id="wz-nomor" readonly value="${Fmt.escape(L.nomor)}" style="background:var(--bg-tertiary); font-weight:700; flex:1;">
+                </div>
             </div>
         </div>
-        <div class="form-row">
-            <div class="form-group"><label class="form-label">Perihal</label><input class="form-input" id="wz-perihal" value="${Fmt.escape(L.perihal)}" placeholder="Penawaran Administrasi" oninput="DocumentsPage._wzPerihalChange()"></div>
-            <div class="form-group"><label class="form-label">Lampiran</label><input class="form-input" id="wz-lampiran" value="${Fmt.escape(L.lampiran)}"></div>
-        </div>
-        <div class="form-row">
+        <div>
+            <div class="form-group"><label class="form-label">Kode Proyek</label><input class="form-input" id="wz-sdg" value="${Fmt.escape(L.sdg)}" placeholder="contoh: SDG" oninput="DocumentsPage._wzAutoNomor()"></div>
+            <div class="form-row">
+                <div class="form-group"><label class="form-label">Perihal</label><input class="form-input" id="wz-perihal" value="${Fmt.escape(L.perihal)}" placeholder="Penawaran Administrasi" oninput="DocumentsPage._wzPerihalChange()"></div>
+                <div class="form-group"><label class="form-label">Lampiran</label><input class="form-input" id="wz-lampiran" value="${Fmt.escape(L.lampiran)}"></div>
+            </div>
             <div class="form-group"><label class="form-label">Tanggal Surat</label>
                 <div style="display:flex; gap:6px; align-items:center;">
                     <div style="position:relative; flex:1; display:flex; align-items:center;">
@@ -374,11 +398,8 @@ const DocumentsPage = {
                     <button type="button" class="btn btn-secondary btn-sm" style="white-space:nowrap; flex-shrink:0;" onclick="DocumentsPage._wzTglSet(new Date().toISOString().split('T')[0])" title="Isi hari ini">Hari ini</button>
                 </div>
             </div>
-            <div class="form-group"><label class="form-label">Direktur</label><input class="form-input" readonly value="${Fmt.escape(comp.direktur || '')}" style="background:var(--bg-tertiary);"></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Alamat Direktur</label><input class="form-input" id="wz-alamat-dir" value="${Fmt.escape(L.alamatDir || comp.alamat_direktur || comp.alamat || '')}"></div>
         </div>
-        <div class="form-row">
-            <div class="form-group"><label class="form-label">Alamat Direktur</label><input class="form-input" id="wz-alamat-dir" value="${Fmt.escape(L.alamatDir || comp.alamat_direktur || comp.alamat || '')}"></div>
-            <div class="form-group"><label class="form-label">Perusahaan</label><input class="form-input" readonly value="${Fmt.escape(comp.nama_perusahaan || '')}" style="background:var(--bg-tertiary);"></div>
         </div>`;
         lucide.createIcons();
         this._wzAutoNomor();
@@ -734,7 +755,7 @@ const DocumentsPage = {
         <div style="font-weight:700; margin-bottom:4px;">3. Peralatan <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— ceklis yang dipakai • klik nilai untuk ubah langsung</span></div>
         <div class="table-container" style="overflow-x:auto;"><table class="mini-table"><thead><tr>
             <th style="width:36px; text-align:center;"><input type="checkbox" onchange="DocumentsPage._wzEqAll(this.checked)" style="accent-color:var(--accent);"></th>
-            <th>Jenis</th><th>Kapasitas</th><th style="width:64px;">Jumlah</th><th style="width:70px;">Tahun</th><th>Merk/Type</th><th style="width:110px;">Kondisi</th><th>Lokasi</th><th>Bukti</th><th style="width:64px;">File</th>
+            <th>Jenis</th><th>Kapasitas</th><th style="width:64px;">Jumlah</th><th style="width:70px;">Tahun</th><th>Merk/Type</th><th style="width:110px;">Kondisi</th><th>Lokasi</th><th>Bukti</th><th style="width:64px;">File</th><th style="width:36px; text-align:center;"><input type="checkbox" onchange="DocumentsPage._wzEqAll(this.checked)" style="accent-color:var(--accent);" title="Pilih semua"></th>
         </tr></thead><tbody id="wz-eq-body"></tbody></table></div>
         <div id="wz-eq-pager" style="display:flex; gap:8px; align-items:center; margin-top:8px; font-size:0.8rem;"></div>
         <div id="wz-eq-files" style="margin-top:8px;"></div>
@@ -794,8 +815,9 @@ const DocumentsPage = {
                 <td><input class="form-input" style="${inp} min-width:90px;" value="${Fmt.escape(e.lokasi_sekarang || '')}" onchange="DocumentsPage._wzEqEdit('${e.id}','lokasi',this.value)"></td>
                 <td><small>${Fmt.escape(e.bukti_kepemilikan || '-')}</small></td>
                 <td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqFiles('${e.id}')">📎 <span id="wz-eq-n-${e.id}">${sel?.files ? sel.files.length : '…'}</span></button></td>
+                <td style="text-align:center;"><input type="checkbox" ${sel ? 'checked' : ''} onchange="DocumentsPage._wzEqToggle('${e.id}', this.checked)" style="accent-color:var(--accent); width:16px; height:16px;" title="Pilih alat ini"></td>
             </tr>`;
-        }).join('') || '<tr><td colspan="10" class="text-center">Belum ada data peralatan</td></tr>';
+        }).join('') || '<tr><td colspan="11" class="text-center">Belum ada data peralatan</td></tr>';
         pager.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqGo(-1)" ${this._wzEqPage <= 1 ? 'disabled' : ''}>‹</button>
             <span style="color:var(--text-muted);">Hal ${this._wzEqPage}/${pages} • ${list.length} alat • ${Object.keys(this._wz.equip).length} dipilih</span>
             <button class="btn btn-secondary btn-sm" onclick="DocumentsPage._wzEqGo(1)" ${this._wzEqPage >= pages ? 'disabled' : ''}>›</button>`;
@@ -869,12 +891,16 @@ const DocumentsPage = {
             if (on) { if (!this._wz.equip[e.id]) this._wz.equip[e.id] = { files: null }; }
             else delete this._wz.equip[e.id];
         });
+        // ceklis ganda (kiri+kanan) — sinkronkan dua header
+        document.querySelectorAll('.doc-wiz-pane[data-pane="3"] thead input[type="checkbox"]').forEach(c => { c.checked = on; });
         this._wzRenderEq();
     },
 
     _wzEqToggle(id, on) {
         if (on) { if (!this._wz.equip[id]) this._wz.equip[id] = { files: null }; }
         else delete this._wz.equip[id];
+        // ceklis ganda (kiri+kanan) — samakan pasangan pada baris yang sama
+        document.querySelectorAll(`input[onchange*="_wzEqToggle('${id}'"]`).forEach(c => { c.checked = on; });
         const n = Object.keys(this._wz.equip).length;
         const pg = document.getElementById('wz-eq-pager');
         if (pg) { const s = pg.querySelector('span'); if (s) s.textContent = s.textContent.replace(/• \d+ dipilih/, `• ${n} dipilih`); }
@@ -966,10 +992,11 @@ const DocumentsPage = {
         const pel = this._wzRoleOpts('pelaksana'), k3o = this._wzRoleOpts('k3');
         pane.innerHTML = `
         <div style="font-weight:700; margin-bottom:12px;">4. Personil <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— profil auto, semua editable • riwayat boleh kosong/1/banyak</span></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start;">
         ${['pelaksana', 'k3'].map(role => {
             const oo = role === 'pelaksana' ? pel : k3o;
             return `
-        <div style="border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--bg-secondary);">
+        <div style="border:1px solid var(--border-color); border-radius:8px; padding:12px; background:var(--bg-secondary);">
             <div class="form-group"><label class="form-label">${role === 'pelaksana' ? 'Pelaksana' : 'Petugas K3'}${oo.fallback ? ' <small style="color:var(--warning);">(belum ada jabatan ini — tampil semua)</small>' : ''}</label>
                 <select class="form-select" id="wz-${role}" onchange="DocumentsPage._wzRolePick('${role}')">
                     <option value="">-- Pilih personil --</option>${oo.opts}
@@ -987,6 +1014,7 @@ const DocumentsPage = {
                 <div id="wz-${role}-exp" style="display:flex; flex-direction:column; gap:6px;"><small style="color:var(--text-muted);">Pilih personil dulu.</small></div>
             </div>
         </div>`; }).join('')}
+        </div>
         <div class="form-row">
             <div class="form-group"><label class="form-label">Tampilkan</label>
                 <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:0.82rem; padding-top:8px;">
