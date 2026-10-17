@@ -5,8 +5,11 @@ FROM ghcr.io/puppeteer/puppeteer:23.0.0
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Set direktori kerja di dalam container
+# WORKDIR dibuat root saat build → chown dulu agar pptruser bisa npm install
+USER root
 WORKDIR /app
+RUN chown -R pptruser:pptruser /app
+USER pptruser
 
 # Salin package.json dan package-lock.json terlebih dahulu dengan ownership pptruser
 COPY --chown=pptruser:pptruser package*.json ./

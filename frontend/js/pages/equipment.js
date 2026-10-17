@@ -35,7 +35,7 @@ const EquipmentPage = {
                     <th class="th-sort" onclick="EquipmentPage.sort('kondisi')">Kondisi <span class="sort-ind" data-k="kondisi"></span></th>
                     <th class="th-sort" onclick="EquipmentPage.sort('lokasi_sekarang')">Lokasi <span class="sort-ind" data-k="lokasi_sekarang"></span></th>
                     <th class="th-sort" onclick="EquipmentPage.sort('bukti_kepemilikan')">Bukti <span class="sort-ind" data-k="bukti_kepemilikan"></span></th>
-                    <th>Berkas</th><th>Aksi</th>
+                    <th>Berkas</th><th class="col-aksi">Aksi</th>
                 </tr></thead>
                 <tbody id="eq-tbody"><tr><td colspan="12" class="text-center">Memuat...</td></tr></tbody>
             </table>
@@ -125,7 +125,7 @@ const EquipmentPage = {
                         ? `<a href="${e.file_url}" target="_blank" class="btn btn-secondary eq-btn" title="Lihat Berkas"><i data-lucide="eye"></i></a>`
                         : `<button class="btn btn-secondary eq-btn" onclick="EquipmentPage.showFiles('${e.id}')" title="Lihat ${(e.file_url ? 1 : 0) + (e.doc_count || 0)} berkas"><i data-lucide="eye"></i></button>`}
             </td>
-            <td><div class="eq-actions">
+            <td class="col-aksi"><div class="eq-actions">
                 <button class="btn btn-secondary eq-btn" onclick="EquipmentPage.openForm('${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>
                 <button class="btn btn-danger eq-btn" onclick="EquipmentPage.remove('${e.id}')" title="Hapus"><i data-lucide="trash-2"></i></button>
             </div></td>

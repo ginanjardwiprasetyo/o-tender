@@ -37,7 +37,7 @@ const App = {
         const needle = ['openform(', 'remove(', 'save', 'deledu(', 'delexp(', 'delska(',
             'addeduform(', 'addexpform(', 'addskaform(', 'addattachment', 'removeattachment',
             'deletefilefield', 'deleteimagefield', 'cropkop(', '_cropapply', 'syncfolder(',
-            'syncgdoc', 'openeditor(', 'removerecord(', 'wzgenerate(', '_wzeqmanual(',
+            'syncgdoc', 'openeditor(', 'removerecord(', 'removebatch(', 'wzgenerate(', '_wzeqmanual(',
             '_wzequpload(', '_wzeqdelfile(', '_wzeqpickshared(', '_wzequseshared(',
             'addexperiencestart(', 'gotoaddform(', 'startmanualcrawl(', 'stopcrawl(',
             'startcrawl(', 'markasread(', 'markallasread', 'markasunread', 'kirimpdf(',
@@ -55,7 +55,7 @@ const App = {
         this._roleObs = true;
         const mo = new MutationObserver(() => {
             clearTimeout(this._roleT);
-            this._roleT = setTimeout(() => this.applyRole(), 60);
+            this._roleT = setTimeout(() => this.applyRole(), 16);
         });
         mo.observe(document.getElementById('page-container'), { childList: true, subtree: true });
         mo.observe(document.getElementById('modal-overlay'), { childList: true, subtree: true });
@@ -183,6 +183,8 @@ const App = {
 
     enterApp() {
         this._authed = true;
+        // role-viewer dipasang SEBELUM konten halaman dirender → CSS sembunyikan tombol tulis dari paint pertama (tanpa flash)
+        this.applyRole();
         document.body.classList.add('is-authed');
         this.hideLogin();
         this._observeRole();

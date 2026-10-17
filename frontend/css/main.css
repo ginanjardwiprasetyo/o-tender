@@ -1145,5 +1145,29 @@ body.is-authed #app { visibility: visible; }
 /* ponytail: viewer = lihat saja — nav Pengaturan & Template disembunyikan */
 body.role-viewer [data-page="settings"],
 body.role-viewer [data-page="templates"] { display: none !important; }
-/* ponytail: section SISTEM isinya tinggal Pengaturan → ikut hilang bila kosong */
+
 body.role-viewer .nav-section:has([data-page="settings"]) { display: none !important; }
+
+/* Viewer: pemicu tulis disembunyikan SEJAK PAINT via CSS — tanpa flash, cover <a> juga.
+   (JS applyRole tetap jalan sebagai fallback untuk elemen tanpa onclick.) */
+body.role-viewer [onclick*="remove" i],
+body.role-viewer [onclick*="delete" i],
+body.role-viewer [onclick*="save" i],
+body.role-viewer [onclick*="openform" i],
+body.role-viewer [onclick*="openeditor" i],
+body.role-viewer [onclick*="syncfolder" i],
+body.role-viewer [onclick*="syncgdoc" i],
+body.role-viewer [onclick*="crop" i],
+body.role-viewer [onclick*="crawl" i],
+body.role-viewer [onclick*="markas" i],
+body.role-viewer [onclick*="kirimpdf" i],
+body.role-viewer [onclick*="followtender" i],
+body.role-viewer [onclick*="createsurat" i],
+body.role-viewer [onclick*="wz" i],
+body.role-viewer [onclick*="add" i]:not([onclick*="classList" i]),
+body.role-viewer [onclick*="dokpil-file-input" i],
+body.role-viewer #btn-follow-tender,
+body.role-viewer input[type="file"] { display: none !important; }
+
+/* Kolom aksi (edit/hapus) disembunyikan penuh untuk viewer — bukan cuma isinya */
+body.role-viewer .col-aksi { display: none !important; }

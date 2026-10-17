@@ -1,0 +1,12 @@
+# Dockerignore — context = ./backend
+node_modules
+.env
+*.log
+nohup.out
+uploads
+services/drission_data
+services/drission_test_profile
+services/drission_test_profile2
+services/drission_data_*/
+.gdrive-key.json
+.git
