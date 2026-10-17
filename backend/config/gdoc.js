@@ -6,21 +6,42 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { google } = require('googleapis');
 
-let drive = null;
+let drive = null, docs = null, authInstance = null;
 
-function getDrive() {
-    if (drive) return drive;
+function getAuth() {
+    if (authInstance) return authInstance;
     const inlineJson = process.env.GOOGLE_SA_JSON;
     const keyFile = process.env.GOOGLE_SA_KEYFILE
         ? path.resolve(__dirname, '..', process.env.GOOGLE_SA_KEYFILE)
         : null;
     if (!inlineJson && !keyFile) throw new Error('Kredensial Google belum dikonfigurasi (GOOGLE_SA_JSON / GOOGLE_SA_KEYFILE)');
-    const auth = new google.auth.GoogleAuth({
+    authInstance = new google.auth.GoogleAuth({
         ...(inlineJson ? { credentials: JSON.parse(inlineJson) } : { keyFile }),
-        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+        scopes: ['https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/documents.readonly'],
     });
-    drive = google.drive({ version: 'v3', auth });
+    return authInstance;
+}
+
+function getDrive() {
+    if (drive) return drive;
+    drive = google.drive({ version: 'v3', auth: getAuth() });
     return drive;
+}
+
+function getDocs() {
+    if (docs) return docs;
+    docs = google.docs({ version: 'v1', auth: getAuth() });
+    return docs;
+}
+
+/** Struktur section (orientasi/margin per section) — bahan render multi-segment. */
+async function fetchDocStructure(gdocId) {
+    const { data } = await getDocs().documents.get({
+        documentId: gdocId,
+        fields: 'body(content),documentStyle',
+    });
+    return data;
 }
 
 /** Export Google Doc → HTML ({{variabel}} dipertahankan sebagai teks). */
@@ -53,4 +74,4 @@ async function listDocs(folderId) {
     return res.data.files || [];
 }
 
-module.exports = { getDrive, exportDocHtml, fetchHtml, listDocs };
+module.exports = { getDrive, getDocs, exportDocHtml, fetchHtml, fetchDocStructure, listDocs };

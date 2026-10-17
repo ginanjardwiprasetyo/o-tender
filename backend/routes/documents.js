@@ -220,6 +220,17 @@ router.post('/preview', async (req, res) => {
 router.post('/generate', async (req, res) => {
     try {
         const ctx = await loadContext(req.body);
+        // ponytail: 04 surat digabung template "04 form kualifikasi_<singkatan>" perusahaan terpilih; tidak ada → skip
+        if (!req.body.templates_inline?.length && ctx.tpl.length === 1
+            && /^04 surat$/i.test((ctx.tpl[0].nama_template || '').trim())) {
+            const sing = (ctx.comp.singkatan || '').trim().toLowerCase();
+            if (sing) {
+                const { rows } = await db.query(
+                    'SELECT * FROM templates WHERE lower(trim(nama_template)) = $1 AND id <> $2',
+                    [`04 form kualifikasi_${sing}`, ctx.tpl[0].id]);
+                if (rows[0]) ctx.tpl.push(rows[0]);
+            }
+        }
         const ttdAdjust = req.body.ttd_adjust || {};
         const built = buildDocHtml({
             templates: ctx.tpl, company: ctx.comp, signer: ctx.signer,

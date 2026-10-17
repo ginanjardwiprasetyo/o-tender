@@ -29,6 +29,88 @@ function bodyInner(html) {
     return m ? m[1] : html.replace(/<\/?(html|head|body)[^>]*>/gi, '');
 }
 
+/** Normalisasi teks — pembanding anchor section GDocs ↔ teks render (huruf kecil, tanda → spasi). */
+function normText(s) {
+    return String(s || '')
+        .replace(/&nbsp;|&#160;|&#32;/gi, ' ')
+        .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"').replace(/&apos;|&#39;/gi, "'")
+        .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(+d))
+        .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16)))
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+// ponytail: decode entity + offset per char (teks ≠ posisi sumber setelah &amp; dst) — cukup akurat per tag
+function decodeWithOffsets(tok, base) {
+    const out = [], off = [];
+    let i = 0;
+    while (i < tok.length) {
+        if (tok[i] === '&') {
+            const ent = /^&(amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-f]+);/i.exec(tok.slice(i));
+            if (ent) {
+                const k = ent[1];
+                const ch = k[0] === '#'
+                    ? String.fromCharCode(k[1] === 'x' || k[1] === 'X' ? parseInt(k.slice(1), 16) : parseInt(k.slice(1), 10))
+                    : ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' })[k.toLowerCase()];
+                out.push(ch); off.push(base + i);
+                i += ent[0].length;
+                continue;
+            }
+        }
+        out.push(tok[i]); off.push(base + i); i++;
+    }
+    return { out, off };
+}
+
+/** Teks normalisasi + peta char → posisi di sumber HTML (untuk memecah konten di titik section). */
+function indexedText(html) {
+    let text = ''; const map = [];
+    const re = /<[^>]+>|&#x[0-9a-f]+;|&#\d+;|&[a-zA-Z]+;|[^<]+/gi;
+    let m;
+    while ((m = re.exec(html))) {
+        if (m[0][0] === '<') continue;
+        const { out, off } = decodeWithOffsets(m[0], m.index);
+        for (let i = 0; i < out.length; i++) {
+            const ch = out[i].toLowerCase();
+            if (/[^a-z0-9]/.test(ch)) {
+                if (text.endsWith(' ')) { if (map.length) map[map.length - 1] = Math.min(map[map.length - 1], off[i]); continue; }
+                text += ' '; map.push(off[i]);
+            } else { text += ch; map.push(off[i]); }
+        }
+    }
+    const st = text.replace(/^ +| +$/g, '');
+    const lead = text.length - text.replace(/^ +/, '').length;
+    return { text: st, map: map.slice(lead, lead + st.length) };
+}
+
+/** Keseimbangan tag blok pada prefiks — jaminan split tak memotong di dalam wadah terbuka. */
+function blockBalanced(s) {
+    const cnt = {};
+    const re = /<(\/?)(div|table|tbody|thead|tr|td|th|li|ul|ol|p|h[1-6]|blockquote)\b[^>]*>/g;
+    let m;
+    while ((m = re.exec(s))) cnt[m[2]] = (cnt[m[2]] || 0) + (m[1] ? -1 : 1);
+    return Object.keys(cnt).every(k => cnt[k] === 0);
+}
+
+/**
+ * Titik split konten tepat sebelum blok pembawa anchor: mundur ke akhir tag </...>
+ * terakhir sebelumnya; bila tak seimbang, mundur lagi (maks 30 langkah). -1 = gagal → section dilewati.
+ */
+function sectionSplitPos(html, srcPos) {
+    let searchFrom = srcPos;
+    for (let tries = 0; tries < 30 && searchFrom > 0; tries++) {
+        const c = html.lastIndexOf('</', searchFrom - 1);
+        if (c < 0) return -1;
+        const gt = html.indexOf('>', c);
+        if (gt < 0) return -1;
+        searchFrom = c;
+        if (blockBalanced(html.slice(0, gt + 1))) return gt + 1;
+    }
+    return -1;
+}
+
 function fmtDateID(s) {    if (!s || s === '-') return '-';
     const d = new Date(s);
     if (isNaN(d.getTime())) return s;
@@ -86,9 +168,10 @@ function buildDocHtml(o) {
     const mainTpl = templates[0] || null;
     // ponytail: kertas per-template (campur portrait/landscape) via named pages Chromium
     const paperOf = (t) => {
-        let w = t?.paper_size === 'F4' ? 215 : 210, h = t?.paper_size === 'F4' ? 330 : 297;
-        if (t?.orientation === 'landscape') { const x = w; w = h; h = x; }
-        return { w, h, key: `pg_${t?.paper_size === 'F4' ? 'F4' : 'A4'}${t?.orientation === 'landscape' ? 'L' : 'P'}` };
+        const bw = t?.paper_size === 'F4' ? 215 : 210, bh = t?.paper_size === 'F4' ? 330 : 297;
+        let w = bw, h = bh;
+        if (t?.orientation === 'landscape') { w = bh; h = bw; }
+        return { w, h, bw, bh, key: `pg_${t?.paper_size === 'F4' ? 'F4' : 'A4'}${t?.orientation === 'landscape' ? 'L' : 'P'}` };
     };
     const mainPaper = paperOf(mainTpl);
     const kota = comp?.kota || '';
@@ -250,12 +333,33 @@ function buildDocHtml(o) {
     const serif = /times|georgia|garamond|bookman|palatino|serif|roman/i.test(fontName);
     const fontStack = serif ? `'${fontName}', Georgia, 'Times New Roman', Times, serif`
         : `'${fontName}', Calibri, 'Segoe UI', Helvetica, Arial, sans-serif`;
-    let fullHtml = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title><style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4P { size: 210mm 297mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4L { size: 297mm 210mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4P { size: 215mm 330mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4L { size: 330mm 215mm; margin: 15mm 25mm 25mm 30mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }</style></head><body>`;
+    // ponytail: <style> export GDocs ikut dirender — format penomoran list (I., a., 1) hidup di counter CSS <head>,
+    // tanpa ini marker list jatuh ke native <ol> dan beda dgn Docs
+    const gdocsCss = templates.map(t => String(t.html_content || '').match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).flat().join('\n');
+    // ponytail: @page per-section (orientasi/margin GDocs) diisi dari dynCss — head ditutup SETELAH loop
+    const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4P { size: 210mm 297mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4L { size: 297mm 210mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4P { size: 215mm 330mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4L { size: 330mm 215mm; margin: 15mm 25mm 25mm 30mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }`;
+    const dynCss = [];
+    let bodyHtml = '';
     templates.forEach((t, idx) => {
         let content = bodyInner(t.html_content || '');
         // ponytail: page-break Docs (<hr display:none>) → div break nyata agar PDF terpotong seperti Docs
         const BRK = '<div style="page-break-before:always;"></div>';
         content = content.replace(/<hr[^>]*page-break-before[^>]*>/gi, BRK);
+        // ponytail: export GDocs → <ol start="N"> sering TANPA class .start → aturan counter-reset CSS tak aktif
+        // (marker salah: "A." padahal "G."). Inline counter-reset per <ol> (lst-ctn-<class> = N-1) —
+        // menang atas aturan .start dan bebas tabrakan selector antar-ol yang sekelas.
+        content = content.replace(/<ol\b[^>]*>/gi, (tag) => {
+            const st = /\bstart="(\d+)"/i.exec(tag);
+            const cls = /\bclass="([^"]*)"/i.exec(tag);
+            if (!st || !cls) return tag;
+            const first = cls[1].trim().split(/\s+/)[0];
+            if (!/^lst-/i.test(first)) return tag;
+            const counter = 'lst-ctn-' + first.replace(/^lst-/i, '');
+            const N = Math.max(0, (parseInt(st[1], 10) || 1) - 1);
+            const inject = `counter-reset:${counter} ${N};`;
+            if (/style="/i.test(tag)) return tag.replace(/style="([^"]*)"/i, (m, s) => `style="${s.replace(/;\s*$/, '')};${inject}"`);
+            return tag.replace(/\s*>$/, ` style="${inject}">`);
+        });
         // ponytail: garis kop dihapus bila {{garis_bawah_surat}} ada (hindari garis ganda)
         const kopUse = /\{\{garis_bawah_surat\}\}/.test(t.html_content || '') ? kopHtml.replace(/border-bottom:[^;]+;/g, '') : kopHtml;
         // ponytail: {{no_enter}} = hapus seluruh baris/blok yang memuatnya (enter di Docs tak bisa dihapus)
@@ -395,17 +499,49 @@ function buildDocHtml(o) {
         const pp = paperOf(t);
         const tmt = t.margin_top ?? 25, tmb = t.margin_bottom ?? 25, tml = t.margin_left ?? 30, tmr = t.margin_right ?? 25;
         // ponytail: min-height dihapus agar halaman tidak mengembang jadi kosong di SKP/lembar pendek
-        fullHtml += `<div class="doc-page ${pp.key}" style="padding: ${tmt}mm ${tmr}mm ${tmb}mm ${tml}mm;">${kopAuto}${content}</div>`;
-        // ponytail: page-break HANYA di antara template (bukan setelah terakhir) → cegah halaman kosong trailing
-        if (idx < templates.length - 1) fullHtml += '<div class="page-break"></div>';
+        // ponytail: page-break antar template INLINE di doc-page — div kosong terpisah di natural page
+        // boundary menghasilkan 1 halaman kosong; break di top-of-page di-collapse Chromium tanpa blank
+        const brk = idx > 0 ? 'page-break-before:always; ' : '';
+        // ponytail: layout_sections (struktur section GDocs) → konten dipecah jadi segmen per section —
+        // orientasi/margin persis Docs (@page bernama per segmen); tanpa data → satu doc-page seperti biasa
+        // ponytail: segmen tunggal (1 section) sengaja TIDAK dipakai — surat/alat/personil pakai hardcode yang sudah terverifikasi
+        const secs = Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
+        if (secs) {
+            const { text, map } = indexedText(content);
+            const bounds = [];
+            let from = 0;
+            for (let k = 1; k < secs.length; k++) {
+                const a = secs[k].anchor || '';
+                const p = a ? text.indexOf(a, from) : -1;
+                if (p < 0) { console.warn('[docbuilder] anchor section tak ditemukan:', t.nama_template, JSON.stringify(a).slice(0, 60)); continue; }
+                from = p + a.length;
+                const cut = sectionSplitPos(content, map[p]);
+                if (cut < 0) { console.warn('[docbuilder] split section tak seimbang, section dilewati:', t.nama_template, JSON.stringify(a).slice(0, 60)); continue; }
+                bounds.push({ cut, sec: k });
+            }
+            let start = 0, si = 0, segSec = 0;
+            const emitSeg = (end) => {
+                if (end <= start) return;
+                const st = secs[segSec] || secs[0];
+                const page = `x${idx}s${si}`;
+                dynCss.push(`@page ${page}{size:${st.orient === 'L' ? `${pp.bh}mm ${pp.bw}mm` : `${pp.bw}mm ${pp.bh}mm`};margin:${st.mt}mm ${st.mr}mm ${st.mb}mm ${st.ml}mm;} .doc-page.${page}{page:${page};}`);
+                const bk = si > 0 ? 'page-break-before:always; ' : '';
+                bodyHtml += `<div class="doc-page ${page}" style="${bk}padding: ${tmt}mm ${tmr}mm ${tmb}mm ${tml}mm;">${si === 0 ? kopAuto : ''}${content.slice(start, end)}</div>`;
+                si++;
+            };
+            bounds.forEach(b => { emitSeg(b.cut); start = b.cut; segSec = b.sec; });
+            emitSeg(content.length);
+        } else {
+            bodyHtml += `<div class="doc-page ${pp.key}" style="${brk}padding: ${tmt}mm ${tmr}mm ${tmb}mm ${tml}mm;">${kopAuto}${content}</div>`;
+        }
     });
     const imgAtts = attachments.filter(att => att.url && att.url.match(/\.(jpeg|jpg|gif|png|webp)$/i));
     imgAtts.forEach((att, idx) => {
-        fullHtml += `<div class="attachment-page"><img src="${absUrl(att.url)}" class="attachment-img"></div>`;
-        if (idx < imgAtts.length - 1) fullHtml += '<div class="page-break"></div>';
+        bodyHtml += `<div class="attachment-page"><img src="${absUrl(att.url)}" class="attachment-img"></div>`;
+        if (idx < imgAtts.length - 1) bodyHtml += '<div class="page-break"></div>';
     });
-    fullHtml += '</body></html>';
+    const fullHtml = headOpen + dynCss.join('') + '</style></head><body>' + bodyHtml + '</body></html>';
     return { html: fullHtml, paper: { pwmm: mainPaper.w, phmm: mainPaper.h, landscape: mainTpl?.orientation === 'landscape' }, capVariants: capVariantsUsed, sigMarks, capSize: capSz };
 }
 
-module.exports = { buildDocHtml, esc, absUrl, terbilang };
+module.exports = { buildDocHtml, esc, absUrl, terbilang, normText };
