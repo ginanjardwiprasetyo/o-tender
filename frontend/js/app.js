@@ -118,7 +118,9 @@ const App = {
         // Auth gate — login mulai tersembunyi; hanya tampil bila session invalid
         try {
             const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
-            if (res.ok) {
+            const pendingLogout = localStorage.getItem('tenderbuild-logout-pending');
+            localStorage.removeItem('tenderbuild-logout-pending');
+            if (res.ok && !pendingLogout) {
                 const json = await res.json();
                 this.role = json.data?.role || 'admin';
                 this.enterApp();
@@ -216,10 +218,8 @@ const App = {
         } catch { /* abaikan — login tetap jalan */ }
     },
 
-    async logout() {
-        try {
-            await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-        } catch { /* tetap keluar lokal */ }
+    logout() {
+        // UI lokal dulu — jangan await server (Render cold start bisa 30-60s, tombol jadi terasa mati)
         this._authed = false;
         this.role = 'admin';
         document.body.classList.remove('is-authed');
@@ -227,6 +227,13 @@ const App = {
         location.hash = '';
         this.showLogin();
         Toast.info('Anda telah logout', { duration: 2500 });
+        // fire-and-forget: bersihkan cookie sesi di server (keepalive → tetap jalan walau tab ditutup).
+        // ponytail: kalau POST gagal (proxy ke Render timeout), cookie utuh & reload = auto-login lagi —
+        // flag ini bikin load berikutnya tetap paksa layar login.
+        localStorage.setItem('tenderbuild-logout-pending', '1');
+        fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', keepalive: true })
+            .then(() => localStorage.removeItem('tenderbuild-logout-pending'))
+            .catch(() => {});
     },
 
     async checkDbStatus() {
