@@ -1091,7 +1091,6 @@ body.light-theme .soft-overlay {
 .pc-card form { text-align: left; }
 .pc-card .pc-domain { display: block; width: fit-content; margin-left: auto; margin-right: auto; }
 .pc-foot { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; padding-top: 1.5rem; font-size: 0.75rem; color: #475569; }
-.pc-foot .pc-links { color: #64748b; }
 
 /* ─── Topbar Logout ───────────────────────────────────────── */
 .topbar-logout:hover { color: var(--danger) !important; }
