@@ -56,6 +56,8 @@ const END_ITEM_RE = /^\s*(?:\d+\.\s+)?(?:Memiliki|Bagian|Pernyataan|Rencana|Cara
 // Noise header/footer halaman yang tak boleh jadi lanjutan baris tabel
 const NOISE_RE = /^(?:Paraf\b|HAL\b|KETENTUAN DAN INFORMASI|[-–—]\s*\d+\s*[-–—]$)/i;
 const HDR_FRAGMENT_RE = /^(?:No\.?|Jabatan|Kapasitas|Jumlah|Uraian|Identifikasi|Bahaya|Sertifikat Kompetensi|Pengalaman|Kerja|Jenis)$/i;
+// Baris placeholder template (bukan data nyata): garis bawah, titik-titik, "Dst Catatan"
+const PLACEHOLDER_RE = /^(?:_{3,}|\.{3,}|Dst\s+Catatan|Catatan\s*:)|\s+_{3,}$|\.{4,}/i;
 
 /** Baris dari setelah baris anchor sampai baris end (terakhir tidak diambil). */
 function sectionLines(lines, anchorRe, endRe) {
@@ -77,7 +79,7 @@ function groupRows(lines) {
     for (const raw of lines) {
         const l = raw.replace(/[ \t]+$/, '').trim();
         if (!l) continue;
-        if (HDR_FRAGMENT_RE.test(l) || NOISE_RE.test(l)) continue;
+        if (HDR_FRAGMENT_RE.test(l) || NOISE_RE.test(l) || PLACEHOLDER_RE.test(l)) continue;
         const m = l.match(/^(\d+)\.?\s+(.*)$/);
         const n = m ? parseInt(m[1], 10) : NaN;
         if (m && n === expected) {
@@ -86,6 +88,7 @@ function groupRows(lines) {
             expected = n + 1;
         } else if (cur) {
             if (/^\s*\d+\.\s+[A-Z]/.test(l)) break; // item daftar global baru → row selesai
+            if (/^\s*Keterangan\s*:/i.test(l)) break; // catatan bawah tabel → row selesai
             cur.parts.push(l);
         }
         // baris sebelum row pertama (header tabel/yaitu:) diabaikan
@@ -157,9 +160,8 @@ function extractLdp(text) {
     // ── Field berlabel (format standar SPSE) ──
     const LIST = '(?:[a-z]\\.\\s*|-\\s*)';
     let v;
-    // Pokja: stop di Alamat Pokja / Website / baris "b." / "c." — JANGAN stop di "Paket Pekerjaan"
-    // (di LDP BRSPA, "Paket Pekerjaan Rehab…" adalah LANJUTAN nama pokja di kolom PDF, bukan field terpisah)
-    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Pokja\\s+Pemilihan\\s*:\\s*`, '(?:^|\\n)\\s*(?:Alamat\\s+Pokja|Website\\s+LPSE|[b-z]\\.\\s+\\w)');
+    // Pokja: label "Pokja Pemilihan" (dengan/tanpa kolon) → stop di Alamat/Website/next item
+    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Pokja\\s+Pemilihan\\s*:?\\s*`, '(?:^|\\n)\\s*(?:Alamat\\s+Pokja|Website\\s+LPSE|[b-z]\\.\\s+\\w)');
     if (v) fields.pokja = cleanVal(v);
 
     v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Alamat\\s+Pokja(?:\\s+Pemilihan)?\\s*:?\\s*`, '(?:^|\\n)\\s*(?:[a-z]\\.\\s*|-\\s*)?Website\\s+LPSE');
@@ -171,10 +173,16 @@ function extractLdp(text) {
     v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Lokasi\\s+pekerjaan\\s*:?\\s*`, '(?:^|\\n)\\s*(?:[A-J]\\.\\s*[A-Z]|[a-z]\\.\\s+|-\\s+)');
     if (v) fields.lokasi = cleanVal(v);
 
-    // "Jangka waktu pelaksanaan…" bisa match judul seksi dulu → pola dipaksa sampai tanda ':' (isi field)
-    // end: seksi berikut ("D. Sumber") = huruf kapital A–J + titik + spasi/newline; hindari "unit 7" (huruf kecil) & "(unit" 
-    v = grab(ldp, `(?:^|\\n)\\s*(?:\\d+\\s+dan\\s+\\d+\\s*)?(?:${LIST}|\\d+\\.\\s*)?Jangka\\s+waktu\\s+pelaksanaa?n\\s+pekerjaan\\s*:\\s*`, '(?:^|\\n)\\s*[A-J]\\.\\s*\\w');
-    if (v) { const n = v.match(/(\d+)/); if (n) fields.jangka_waktu = n[1]; }
+    // Jangka waktu: baris label "Jangka waktu pelaksanaan pekerjaan" (SEMUA kata di 1 baris,
+    // bukan judul seksi yang terpecah "Jangka / Waktu / Pelaksanaan / Pekerjaan").
+    // Nilai = baris pertama setelah label ATAU sisa baris yang sama setelah label.
+    const jangkaM = ldp.match(/(?:^|\n)[ \t]*[^\n]*?Jangka\s+waktu\s+pelaksanaa?n\s+pekerjaan[ \t]*:[ \t]*(?:\n|[ \t]+)([^\n]*)/i)
+        || ldp.match(/(?:^|\n)[ \t]*[^\n]*?Jangka\s+waktu\s+pelaksanaa?n\s+pekerjaan[ \t]+(\d+[^\n]*)/i);
+    if (jangkaM) {
+        const raw = (jangkaM[1] || '').trim();
+        const n = raw.match(/(\d+)/);
+        if (n) fields.jangka_waktu = n[1];
+    }
 
     v = grab(ldp, `(?:^|\\n)\\s*(?:${LIST}|\\d+\\.\\s*)?Pagu\\s+[Aa]nggaran\\s*:?\\s*`, '(?:^|\\n)\\s*\\d+\\.\\s');
     if (v) {
@@ -189,10 +197,11 @@ function extractLdp(text) {
     fields.kir = /\bKIR\b/i.test(ldp) ? 'ya' : 'tidak';
 
     // ── Tabel dari seksi "F. Persyaratan Teknis" ──
+    // Anchor peralatan: "peralatan utama" bisa terpisah baris atau tanpa "utama"
     const lines = ldp.split(/\r?\n/);
-    const t1 = buildTable('peralatan', sectionLines(lines, /peralatan\s+utama/i, END_ITEM_RE));
+    const t1 = buildTable('peralatan', sectionLines(lines, /peralatan\s*(?:utama)?|menyediakan\s+peralatan/i, END_ITEM_RE));
     if (t1) tables.peralatan = t1;
-    const t2 = buildTable('personel', sectionLines(lines, /personel\s+manajerial|personil\s+manajerial/i, END_ITEM_RE));
+    const t2 = buildTable('personel', sectionLines(lines, /personel\s+manajerial|personil\s+manajerial|menyediakan\s+personel/i, END_ITEM_RE));
     if (t2) tables.personel = t2;
     const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
     if (t3) tables.rkk = t3;

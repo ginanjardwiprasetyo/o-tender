@@ -49,8 +49,8 @@ const DokpilPage = {
           <span style="margin-left:auto;display:flex;gap:8px;">
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.copyRaw()">Salin</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.toggleRaw()">
-              <i data-lucide="chevron-up" id="dokpil-raw-chevron" style="width:14px;height:14px;transition:transform 0.2s;"></i>
-              Sembunyikan
+              <i data-lucide="chevron-down" id="dokpil-raw-chevron" style="width:14px;height:14px;transition:transform 0.2s;"></i>
+              <span id="dokpil-raw-toggle-label">Tampilkan</span>
             </button>
           </span>
         </div>
@@ -258,6 +258,8 @@ const DokpilPage = {
         rawSection.classList.remove('hidden');
         const chevron = document.getElementById('dokpil-raw-chevron');
         if (chevron) chevron.style.transform = 'rotate(0deg)';
+        const label = document.getElementById('dokpil-raw-toggle-label');
+        if (label) label.textContent = 'Tampilkan';
       }
 
       this.renderFields();
@@ -274,11 +276,11 @@ const DokpilPage = {
   toggleRaw() {
     const rawText = document.getElementById('dokpil-raw-text');
     const chevron = document.getElementById('dokpil-raw-chevron');
+    const label = document.getElementById('dokpil-raw-toggle-label');
     if (!rawText) return;
     const hidden = rawText.classList.toggle('hidden');
     if (chevron) chevron.style.transform = hidden ? 'rotate(0deg)' : 'rotate(180deg)';
-    const btn = chevron?.closest('button');
-    if (btn) btn.childNodes[btn.childNodes.length - 1].textContent = hidden ? ' Tampilkan' : ' Sembunyikan';
+    if (label) label.textContent = hidden ? 'Tampilkan' : 'Sembunyikan';
   },
 
   copyRaw() {
