@@ -4,13 +4,16 @@ const DokpilPage = {
   rawText: '',
   aiSummary: '',
   aiEnabled: false,
+  driveFolderId: '',
+  driveCurrentFolder: '',
+  driveStack: [],
 
   async render() {
     return `
     <div class="page-header">
       <div>
         <h2>Dokumen Pemilihan (Dokpil)</h2>
-        <p>Upload Dokpil .PDF untuk ekstraksi data Lembar Data Pemilihan secara otomatis</p>
+        <p>Upload Dokpil .PDF atau ambil dari Google Drive untuk ekstraksi data Lembar Data Pemilihan</p>
       </div>
     </div>
 
@@ -25,6 +28,22 @@ const DokpilPage = {
           <i data-lucide="file-text"></i> Pilih File PDF
         </button>
         <div id="dokpil-file-name" style="margin-top:12px;font-size:0.9rem;color:var(--accent);font-weight:500;display:none;"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-title">
+        Ambil dari Google Drive
+        <span id="dokpil-drive-badge" style="float:right;font-size:0.75rem;font-weight:400;color:var(--text-muted);"></span>
+      </div>
+      <div id="dokpil-drive-panel">
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px;">Folder aktif: <code id="dokpil-drive-folder-label" style="color:var(--accent);">belum diatur</code></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <input type="text" id="dokpil-drive-folder-input" class="form-input" placeholder="Folder ID Google Drive" style="flex:1;min-width:200px;font-size:0.85rem;">
+          <button class="btn btn-secondary" onclick="DokpilPage.saveDriveFolder()"><i data-lucide="save"></i> Simpan</button>
+          <button class="btn btn-secondary" onclick="DokpilPage.loadDriveList()"><i data-lucide="refresh-cw"></i> Muat</button>
+        </div>
+        <div id="dokpil-drive-list" style="max-height:260px;overflow:auto;"></div>
       </div>
     </div>
 
@@ -65,6 +84,135 @@ const DokpilPage = {
 
   async afterRender() {
     lucide.createIcons();
+    await this.loadDriveFolder();
+  },
+
+  async loadDriveFolder() {
+    try {
+      const res = await fetch('/api/dokpil/drive/folder');
+      const json = await res.json();
+      this.driveFolderId = json.data?.folderId || '';
+      this.driveCurrentFolder = this.driveFolderId;
+      this.driveStack = [];
+      const inp = document.getElementById('dokpil-drive-folder-input');
+      const lbl = document.getElementById('dokpil-drive-folder-label');
+      if (inp) inp.value = this.driveFolderId;
+      if (lbl) lbl.textContent = this.driveFolderId || 'belum diatur';
+      if (this.driveFolderId) await this.loadDriveList();
+    } catch (e) { /* ignore */ }
+  },
+
+  async saveDriveFolder() {
+    const inp = document.getElementById('dokpil-drive-folder-input');
+    const folderId = (inp?.value || '').trim();
+    if (!folderId) { Toast.warning('Isi Folder ID dulu'); return; }
+    try {
+      const res = await fetch('/api/dokpil/drive/folder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId })
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+      this.driveFolderId = folderId;
+      this.driveCurrentFolder = folderId;
+      this.driveStack = [];
+      document.getElementById('dokpil-drive-folder-label').textContent = folderId;
+      Toast.success('Folder Drive disimpan');
+      await this.loadDriveList();
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  async loadDriveList(folderId) {
+    const target = folderId || this.driveCurrentFolder;
+    if (!target) return;
+    const listEl = document.getElementById('dokpil-drive-list');
+    if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-muted);">Memuat…</div>';
+    try {
+      const res = await fetch(`/api/dokpil/drive/list?folderId=${encodeURIComponent(target)}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+      const { folders, pdfs } = json.data;
+      this.driveCurrentFolder = target;
+      this.renderDriveList(folders, pdfs);
+    } catch (err) {
+      if (listEl) listEl.innerHTML = `<div style="color:var(--danger);padding:12px;font-size:0.85rem;">${Fmt.escape(err.message)}</div>`;
+    }
+  },
+
+  renderDriveList(folders, pdfs) {
+    const listEl = document.getElementById('dokpil-drive-list');
+    if (!listEl) return;
+    const back = this.driveStack.length ? `
+      <div class="dokpil-drive-row" onclick="DokpilPage.driveBack()" style="cursor:pointer;color:var(--text-muted);">
+        <i data-lucide="arrow-left" style="width:16px;height:16px;"></i> Kembali
+      </div>` : '';
+    const folderRows = folders.map(f => `
+      <div class="dokpil-drive-row" onclick="DokpilPage.driveInto('${f.id}','${Fmt.escape(f.name).replace(/'/g, "\\'")}')" style="cursor:pointer;">
+        <i data-lucide="folder" style="width:16px;height:16px;color:var(--accent);"></i> ${Fmt.escape(f.name)}
+      </div>`).join('');
+    const pdfRows = pdfs.map(f => `
+      <div class="dokpil-drive-row" style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="file-text" style="width:16px;height:16px;color:var(--text-muted);"></i>
+        <span style="flex:1;">${Fmt.escape(f.name)}</span>
+        <button class="btn btn-primary" style="padding:2px 10px;font-size:0.75rem;" onclick="DokpilPage.parseDriveFile('${f.id}','${Fmt.escape(f.name).replace(/'/g, "\\'")}')">Parse</button>
+      </div>`).join('');
+    listEl.innerHTML = back + folderRows + pdfRows ||
+      '<div style="color:var(--text-muted);padding:12px;font-size:0.85rem;">Folder kosong</div>';
+    lucide.createIcons();
+  },
+
+  driveInto(id, name) {
+    this.driveStack.push(this.driveCurrentFolder);
+    this.loadDriveList(id);
+  },
+
+  driveBack() {
+    const prev = this.driveStack.pop();
+    if (prev) this.loadDriveList(prev);
+  },
+
+  async parseDriveFile(fileId, fileName) {
+    document.getElementById('dokpil-file-name').textContent = '📄 ' + fileName + ' (Drive)';
+    document.getElementById('dokpil-file-name').style.display = 'block';
+    document.getElementById('dokpil-error').classList.add('hidden');
+    document.getElementById('dokpil-result-section').classList.add('hidden');
+    document.getElementById('dokpil-raw-section').classList.add('hidden');
+    document.getElementById('dokpil-loading').classList.remove('hidden');
+    const badge = document.getElementById('dokpil-drive-badge');
+    if (badge) badge.textContent = 'Sumber: Google Drive';
+
+    try {
+      const res = await fetch('/api/dokpil/drive/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId })
+      });
+      const json = await res.json();
+      document.getElementById('dokpil-loading').classList.add('hidden');
+      if (!json.success) throw new Error(json.error || 'Gagal memproses PDF dari Drive');
+
+      this.extractedFields = json.data.fields;
+      this.extractedTables = json.data.tables || {};
+      this.aiSummary = json.data.ai_summary || '';
+      this.aiEnabled = json.data.ai_enabled || false;
+      this.rawText = json.data.raw_text_preview || '';
+      const rawPreview = document.getElementById('dokpil-raw-text');
+      if (rawPreview && this.rawText) {
+        rawPreview.textContent = this.rawText;
+        document.getElementById('dokpil-raw-section').classList.remove('hidden');
+      }
+      this.renderFields();
+      document.getElementById('dokpil-result-section').classList.remove('hidden');
+      Toast.success('Data berhasil diekstrak dari Drive');
+    } catch (err) {
+      document.getElementById('dokpil-loading').classList.add('hidden');
+      document.getElementById('dokpil-error-msg').textContent = err.message;
+      document.getElementById('dokpil-error').classList.remove('hidden');
+      Toast.error(err.message);
+    }
   },
 
   onDrop(e) {

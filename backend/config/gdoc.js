@@ -74,4 +74,34 @@ async function listDocs(folderId) {
     return res.data.files || [];
 }
 
-module.exports = { getDrive, getDocs, exportDocHtml, fetchHtml, fetchDocStructure, listDocs };
+/** Daftar isi folder Drive (folder & file) — untuk browse dokpil. */
+async function listFiles(folderId, opts = {}) {
+    const d = getDrive();
+    const q = opts.query
+        ? `'${folderId}' in parents and trashed=false and (${opts.query})`
+        : `'${folderId}' in parents and trashed=false`;
+    const res = await d.files.list({
+        q,
+        fields: 'files(id,name,mimeType,modifiedTime,size)',
+        orderBy: 'name',
+        pageSize: opts.pageSize || 100,
+        pageToken: opts.pageToken,
+    });
+    return { files: res.data.files || [], nextPageToken: res.data.nextPageToken };
+}
+
+/** Metadata satu file. */
+async function getFileMeta(fileId) {
+    const d = getDrive();
+    const { data } = await d.files.get({ fileId, fields: 'id,name,mimeType,modifiedTime,size' });
+    return data;
+}
+
+/** Download file (PDF/dll) sebagai Buffer. */
+async function downloadFile(fileId) {
+    const d = getDrive();
+    const res = await d.files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+    return Buffer.from(res.data);
+}
+
+module.exports = { getDrive, getDocs, exportDocHtml, fetchHtml, fetchDocStructure, listDocs, listFiles, getFileMeta, downloadFile };

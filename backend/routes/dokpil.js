@@ -580,4 +580,111 @@ router.post('/extract-text', upload.single('file'), async (req, res) => {
   }
 });
 
+// ===== Drive browsing =====
+const db = require('../config/db');
+const { listFiles, getFileMeta, downloadFile } = require('../config/gdoc');
+
+async function getDriveFolder() {
+  const { rows } = await db.query("SELECT value FROM settings WHERE key='dokpil_drive_folder'");
+  return rows[0]?.value || process.env.GDRIVE_TEMPLATE_FOLDER || '';
+}
+
+// GET /api/dokpil/drive/folder — folder aktif (setting)
+router.get('/drive/folder', async (req, res) => {
+  try {
+    res.json({ success: true, data: { folderId: await getDriveFolder() } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/dokpil/drive/folder — simpan folder aktif
+router.put('/drive/folder', async (req, res) => {
+  try {
+    const { folderId } = req.body;
+    if (!folderId) return res.status(400).json({ success: false, error: 'folderId wajib' });
+    await db.query(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('dokpil_drive_folder', $1, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [folderId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/dokpil/drive/list — daftar isi folder (folder & file PDF)
+router.get('/drive/list', async (req, res) => {
+  try {
+    const folderId = req.query.folderId || await getDriveFolder();
+    if (!folderId) return res.status(400).json({ success: false, error: 'Folder Drive belum diatur' });
+    const { files, nextPageToken } = await listFiles(folderId, {
+      query: "mimeType='application/vnd.google-apps.folder' or mimeType='application/pdf'",
+      pageToken: req.query.pageToken,
+    });
+    // pisahkan folder & file
+    const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+    const pdfs = files.filter(f => f.mimeType === 'application/pdf');
+    res.json({ success: true, data: { folders, pdfs, nextPageToken, folderId } });
+  } catch (err) {
+    console.warn('[Dokpil Drive list]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/dokpil/drive/parse — download PDF dari Drive lalu parse (jalur yang sama dgn /parse)
+router.post('/drive/parse', async (req, res) => {
+  let buf = null;
+  try {
+    const { fileId } = req.body;
+    if (!fileId) return res.status(400).json({ success: false, error: 'fileId wajib' });
+    const meta = await getFileMeta(fileId);
+    buf = await downloadFile(fileId);
+
+    let text = '';
+    try {
+      const origWrite = process.stderr.write.bind(process.stderr);
+      process.stderr.write = (chunk, ...args) => {
+        if (chunk && chunk.toString().includes('TT: undefined function')) return true;
+        return origWrite(chunk, ...args);
+      };
+      const data = await pdfParse(buf);
+      process.stderr.write = origWrite;
+      text = data.text;
+    } catch (e) {
+      console.warn('[Dokpil] pdf-parse failed:', e.message);
+    }
+
+    if (!text || text.trim().length < 10) {
+      return res.status(422).json({ success: false, error: 'Tidak dapat membaca isi PDF. Pastikan bukan hasil scan/gambar.' });
+    }
+
+    const { fields, tables, debug } = extractLdp(text);
+    debug.ldpLength = text.length;
+    debug.source = 'drive';
+    debug.fileName = meta.name;
+
+    const ldpStart = findLDP(text);
+    let previewText = ldpStart !== -1 ? text.substring(ldpStart) : text;
+    const babVIdx = previewText.search(/\bBAB\s+V\.?\b/i);
+    if (babVIdx !== -1) previewText = previewText.substring(0, babVIdx);
+
+    res.json({
+      success: true,
+      data: {
+        fields,
+        tables,
+        debug,
+        file_name: meta.name,
+        source: 'drive',
+        raw_text_preview: previewText.substring(0, 30000),
+      }
+    });
+  } catch (err) {
+    console.error('[Dokpil Drive parse]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
