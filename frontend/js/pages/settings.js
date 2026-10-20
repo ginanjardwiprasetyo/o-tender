@@ -178,6 +178,12 @@ const SettingsPage = {
                 </div>
 
                 <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label">Kata Kunci Nama Paket Notifikasi</label>
+                    <input type="text" class="form-input" id="s-wakeywords" placeholder="Contoh: jalan tol, bendungan, jembatan">
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Pisahkan dengan koma, huruf besar/kecil sama. Notif terkirim bila kode SBU cocok <b>ATAU</b> nama paket mengandung salah satu kata kunci ini — berguna saat kode SBU tidak terdeteksi di halaman. Kosongkan = tidak pakai filter kata kunci.</p>
+                </div>
+
+                <div class="form-group" style="margin-top: 16px;">
                     <label class="form-label">Batasan HPS Maksimal Notifikasi (Rp)</label>
                     <input type="number" class="form-input" id="s-wamaxhps" placeholder="Contoh: 3500000000">
                     <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Hanya tender dengan HPS lebih kecil atau sama dengan nominal ini yang akan dikirimkan ke WhatsApp/Grup (kosongkan atau isi 0 untuk mengirim semua).</p>
@@ -301,6 +307,7 @@ const SettingsPage = {
             if (data.wa_api_key) document.getElementById('s-wakey').value = data.wa_api_key;
             if (data.wa_target_numbers) document.getElementById('s-wanum').value = data.wa_target_numbers;
             if (data.wa_target_sbu) document.getElementById('s-wasbu').value = data.wa_target_sbu;
+            if (data.wa_target_keywords) document.getElementById('s-wakeywords').value = data.wa_target_keywords;
             if (data.wa_target_max_hps) document.getElementById('s-wamaxhps').value = data.wa_target_max_hps;
             
             // Set notif preferences switches
@@ -551,6 +558,7 @@ const SettingsPage = {
                 wa_api_key: document.getElementById('s-wakey').value.trim(),
                 wa_target_numbers: document.getElementById('s-wanum').value.trim(),
                 wa_target_sbu: document.getElementById('s-wasbu').value.trim(),
+                wa_target_keywords: document.getElementById('s-wakeywords').value.trim(),
                 wa_target_max_hps: document.getElementById('s-wamaxhps').value.trim(),
                 crawl_lpse_targets: JSON.stringify(this.selectedLpse),
                 default_lpse: document.getElementById('s-default-lpse-val').value ? JSON.stringify({

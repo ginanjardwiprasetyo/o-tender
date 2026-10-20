@@ -65,7 +65,7 @@ router.put('/', async (req, res) => {
         const allowedKeys = [
             'company_name', 'company_address', 'company_npwp', 
             'wa_api_key', 'wa_target_numbers', 'wa_target_sbu', 
-            'wa_target_max_hps',
+            'wa_target_max_hps', 'wa_target_keywords',
             'crawl_lpse_targets', 'default_lpse',
             'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang',
             'wa_target_group_id', 'wa_target_group_name',

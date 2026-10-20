@@ -562,6 +562,26 @@ class CrawlerService {
         }
     }
 
+    // Kata kunci nama paket (setting wa_target_keywords, pisah koma, case-insensitive).
+    // Berguna saat kode SBU tidak terdeteksi di halaman list/detail.
+    notifKeywordMatch(namaPaket) {
+        const kw = this.status.waTargetKeywords || [];
+        if (!kw.length || !namaPaket) return false;
+        const nama = String(namaPaket).toLowerCase();
+        return kw.some(k => nama.includes(k));
+    }
+
+    // Notifikasi match bila: tanpa filter apa pun (match semua), ATAU kode SBU cocok,
+    // ATAU salah satu kata kunci nama paket cocok.
+    notifTargetMatch(sbuRaw, namaPaket) {
+        const sbuT = this.status.waTargetSbu || [];
+        const kwT = this.status.waTargetKeywords || [];
+        if (!sbuT.length && !kwT.length) return true;
+        const sbus = String(sbuRaw || '').split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+        const bySbu = sbuT.length > 0 && sbus.some(s => sbuT.includes(s));
+        return bySbu || this.notifKeywordMatch(namaPaket);
+    }
+
     async crawlAllLPSE(year = new Date().getFullYear()) {
         if (this.status.state === 'running') {
             throw new Error('Crawl is already running');
@@ -597,10 +617,11 @@ class CrawlerService {
             const rawLpse = await getLPSEList();
             
             // Read targets from settings
-            const { rows: settings } = await db.query("SELECT key, value FROM settings WHERE key IN ('crawl_lpse_targets', 'wa_target_sbu', 'wa_target_max_hps')");
+            const { rows: settings } = await db.query("SELECT key, value FROM settings WHERE key IN ('crawl_lpse_targets', 'wa_target_sbu', 'wa_target_max_hps', 'wa_target_keywords')");
             let targets = [];
             this.status.waTargetSbu = [];
             this.status.waTargetMaxHps = 0;
+            this.status.waTargetKeywords = [];
             this.status.newTendersMap = {};
             
             for (const row of settings) {
@@ -612,6 +633,9 @@ class CrawlerService {
                 }
                 if (row.key === 'wa_target_max_hps' && row.value) {
                     this.status.waTargetMaxHps = parseInt(row.value) || 0;
+                }
+                if (row.key === 'wa_target_keywords' && row.value) {
+                    this.status.waTargetKeywords = row.value.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
                 }
             }
             
@@ -870,13 +894,13 @@ class CrawlerService {
                 {
                     const { t, tenderKodeStr, namaPaket, instansi, paguVal, hpsVal, batasUpload } = r;
                     const tenderSbu = t.SBU || '-';
-                    if (tenderSbu !== '-') {
-                        const sbus = tenderSbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
-                        const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
+                    // SBU '-' tetap lanjut bila nama paket kena kata kunci target
+                    if (tenderSbu !== '-' || this.notifKeywordMatch(namaPaket)) {
+                        const matchesTarget = this.notifTargetMatch(tenderSbu, namaPaket);
                         const maxHps = this.status.waTargetMaxHps || 0;
                         const matchesHps = maxHps === 0 || hpsVal <= maxHps;
                         if (!matchesTarget) {
-                            this.log(`Skip notif ${tenderKodeStr}: SBU [${tenderSbu}] tidak match target [${this.status.waTargetSbu.join(',') || '*'}]`);
+                            this.log(`Skip notif ${tenderKodeStr}: [${tenderSbu}] "${namaPaket}" tidak match target SBU [${this.status.waTargetSbu.join(',') || '*'}]${this.status.waTargetKeywords && this.status.waTargetKeywords.length ? ' / kata kunci [' + this.status.waTargetKeywords.join(',') + ']' : ''}`);
                         } else if (!matchesHps) {
                             this.log(`Skip notif ${tenderKodeStr}: HPS ${hpsVal} > batas ${maxHps}`);
                         } else {
@@ -1070,17 +1094,17 @@ class CrawlerService {
 
                             if (this.status.newTendersMap && this.status.newTendersMap[kode]) {
                                 const tenderInfo = this.status.newTendersMap[kode];
-                                if (!hasSbu) {
+                                // SBU tak terbaca pun tetap boleh notif bila nama paket kena kata kunci target
+                                if (!hasSbu && !this.notifKeywordMatch(tenderInfo.nama_paket)) {
                                     this.log(`Notif ${kode}: SBU tidak terbaca di halaman detail, notif dibatalkan.`);
                                 } else {
-                                    const sbus = res.sbu.split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, ''));
-                                    const matchesTarget = this.status.waTargetSbu.length === 0 || sbus.some(s => this.status.waTargetSbu.includes(s));
+                                    const matchesTarget = this.notifTargetMatch(res.sbu || '-', tenderInfo.nama_paket);
                                     const finalHps = parsedHps || tenderInfo.hps || 0;
                                     const maxHps = this.status.waTargetMaxHps || 0;
                                     const matchesHps = maxHps === 0 || finalHps <= maxHps;
 
                                     if (!matchesTarget) {
-                                        this.log(`Skip notif ${kode}: SBU [${res.sbu}] tidak match target [${this.status.waTargetSbu.join(',') || '*'}]`);
+                                        this.log(`Skip notif ${kode}: [${res.sbu || '-'}] "${tenderInfo.nama_paket}" tidak match target SBU [${this.status.waTargetSbu.join(',') || '*'}]${this.status.waTargetKeywords && this.status.waTargetKeywords.length ? ' / kata kunci [' + this.status.waTargetKeywords.join(',') + ']' : ''}`);
                                     } else if (!matchesHps) {
                                         this.log(`Skip notif ${kode}: HPS ${finalHps} > batas ${maxHps}`);
                                     } else {
