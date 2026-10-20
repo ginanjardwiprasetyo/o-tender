@@ -323,11 +323,19 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Upload ─────────────────────────────────────────────────
+  function failedListText(failedItems) {
+    const list = (failedItems || []).slice(0, 3).map((f) => f.name);
+    if (!list.length) return '';
+    const more = failedItems.length > 3 ? ' …' : '';
+    return '\nGagal: ' + list.join(', ') + more;
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action !== 'UPLOAD_PROGRESS') return;
     if (msg.finished) {
       if (msg.error) {
-        setStatus('Selesai: ' + msg.error + ' (' + msg.done + '/' + msg.total + ')', 'err');
+        setStatus('Selesai: ' + msg.error + ' (' + msg.done + '/' + msg.total + ')' +
+          failedListText(msg.failedItems), 'err');
       } else {
         setStatus('Selesai! ' + msg.done + '/' + msg.total + ' file \u2192 ' + (msg.dest || dest.name), 'ok');
       }
@@ -404,7 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (response && response.success) {
               setStatus(
                 'Selesai! ' + response.done + '/' + response.total +
-                (response.failed ? ' (' + response.failed + ' gagal)' : ''),
+                (response.failed ? ' (' + response.failed + ' gagal)' : '') +
+                failedListText(response.failedItems),
                 response.failed ? 'err' : 'ok'
               );
               btnProcess.disabled = false;

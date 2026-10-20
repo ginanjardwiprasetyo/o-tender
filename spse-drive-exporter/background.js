@@ -1,3 +1,5 @@
+importScripts('retry.js');
+
 const DELAY_MS = 400;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -68,17 +70,29 @@ async function handleUploadProcess({ folderName, downloadUrls, parentFolderId, p
 
   let done = 0;
   let failed = 0;
+  const failedItems = [];
   const total = downloadUrls.length;
 
   for (let i = 0; i < downloadUrls.length; i++) {
     const item = downloadUrls[i];
     progress(tab, { current: i + 1, total, done, dest: parentFolderName || 'My Drive' });
     try {
-      await uploadFileToDrive(item, folderId, token);
+      // Gagal sementara (jaringan/5xx/token expired) diulang 3x dulu —
+      // 1 file gagal pun tak boleh hilang diam-diam dari Drive.
+      await withRetry(() => uploadFileToDrive(item, folderId), {
+        tries: 3,
+        onRetry: (attempt, e) => {
+          console.warn(`[SPSE Drive] percobaan ${attempt} gagal (${e.message}), ulang:`, item.url);
+        }
+      });
       done++;
     } catch (e) {
       failed++;
-      console.error('[SPSE Drive] gagal', item.url, e.message);
+      failedItems.push({
+        name: (typeof item === 'object' && item.name) || item.url,
+        error: e.message
+      });
+      console.error('[SPSE Drive] gagal setelah 3x', item.url, e.message);
     }
     if (i < downloadUrls.length - 1) await sleep(DELAY_MS);
   }
@@ -89,9 +103,10 @@ async function handleUploadProcess({ folderName, downloadUrls, parentFolderId, p
     total,
     finished: true,
     dest: parentFolderName || 'My Drive',
-    error: failed ? `${failed} file gagal` : null
+    error: failed ? `${failed} file gagal` : null,
+    failedItems
   });
-  return { done, failed, total };
+  return { done, failed, total, failedItems };
 }
 
 function sleep(ms) {
@@ -256,7 +271,7 @@ async function fetchFileBlob(url) {
   throw new Error(`Download HTTP ${res.status}`);
 }
 
-async function uploadFileToDrive(item, folderId, token) {
+async function uploadFileToDrive(item, folderId) {
   const url = typeof item === 'string' ? item : item.url;
   const { blob, response } = await fetchFileBlob(url);
   if (blob.size === 0) throw new Error('File kosong');
@@ -273,16 +288,15 @@ async function uploadFileToDrive(item, folderId, token) {
   form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
   form.append('file', blob, fileName);
 
-  const res = await fetch(
+  // apiFetch → token di-refresh otomatis bila 401/403 (batch panjang, token bisa kedaluwarsa)
+  const res = await apiFetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: form
-    }
+    { method: 'POST', body: form }
   );
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
+  const data = await res.json().catch(() => ({}));
+  if (data.error) throw new Error(data.error.message || 'HTTP ' + res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  if (!data.id) throw new Error('Respons Drive tanpa id file');
   return data;
 }
 
