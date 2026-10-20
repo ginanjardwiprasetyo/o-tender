@@ -57,6 +57,19 @@ const listDiag = [];
 // ponytail: hitung timeout HTTP list berturut-turut (semua list di 1 host yang sama,
 // spse.inaproc.id) - kalau sudah 2x, sisa LPSE langsung Playwright tanpa bayar timeout.
 let listHttpTimeouts = 0;
+// ponytail: sama utk jalur detail — di log Actions 99/99 HTTP detail gagal
+// (ETIMEDOUT / challenge CF), 0 sukses. 2x gagal berturut → sisa detail langsung
+// Playwright, tak bayar timeout 20s + FlareSolverr 30s per paket.
+let detailHttpFails = 0;
+// Status yang masa upload-nya sudah lewat — antrean deep scan utk mereka selalu buang
+// waktu: data 20 Okt, 89% antrean (181/203) = Selesai/Gagal/Batal, deadline sudah lewat.
+const STATUS_LEWAT = ['tender sudah selesai', 'tender gagal', 'tender batal',
+    'penandatanganan kontrak', 'masa sanggah', 'surat penunjukan',
+    'evaluasi ', 'pembukaan dokumen', 'pengumuman pascakualifikasi'];
+function statusLewat(status) {
+    const v = String(status || '').toLowerCase().trim();
+    return STATUS_LEWAT.some(p => v.startsWith(p));
+}
 
 async function runScraper(type, url, yearStr) {
     // Try to free memory first
@@ -909,7 +922,7 @@ class CrawlerService {
     async deepScanMissingData(year, targetKds = null) {
         // Find all tenders from this year that are missing SBU, batas_upload, or HPS (HPS=0 usually means list API kosong)
         let query = `
-            SELECT kode_tender, slug, batas_upload FROM crawled_tenders 
+            SELECT kode_tender, slug, batas_upload, status_tender FROM crawled_tenders 
             WHERE tahun_anggaran = $1 AND (sbu IS NULL OR sbu = '-' OR batas_upload IS NULL OR batas_upload = '-' OR hps IS NULL OR hps = 0)
         `;
         const params = [year];
@@ -931,14 +944,17 @@ class CrawlerService {
             return;
         }
 
-        // Skip tenders whose deadline is already past — no need to complete them
+        // Skip: (1) status sudah lewat masa upload (Selesai/Gagal/Batal/Kontrak/...) —
+        // batas upload mereka selalu sudah lewat, fetch detailnya cuma buang waktu;
+        // (2) deadline sudah lewat. Sisa baris = yang masih bisa nerima upload.
         const filteredRows = rows.filter(r => {
+            if (statusLewat(r.status_tender)) return false;
             if (!r.batas_upload || r.batas_upload === '-') return true;
             return isDeadlineFuture(r.batas_upload);
         });
         const skipped = rows.length - filteredRows.length;
         if (skipped > 0) {
-            this.log(`Melewati ${skipped} tender: batas upload sudah lewat.`);
+            this.log(`Melewati ${skipped} tender: status sudah selesai / batas upload sudah lewat.`);
         }
 
         if (filteredRows.length === 0) {
@@ -988,10 +1004,16 @@ class CrawlerService {
 
                         // Try HTTP scraper first (axios+cheerio, near-zero memory)
                         let res = null;
-                        try {
-                            res = await httpDetailScraper(pengumumanUrl);
-                        } catch (httpErr) {
-                            this.log(`HTTP ${kode}: ${httpErr.message}`);
+                        if (detailHttpFails < 2) {
+                            try {
+                                res = await httpDetailScraper(pengumumanUrl);
+                            } catch (httpErr) {
+                                this.log(`HTTP ${kode}: ${httpErr.message}`);
+                            }
+                            if (res) detailHttpFails = 0;
+                            else detailHttpFails++;
+                        } else {
+                            this.log(`Skip HTTP ${kode}: ${detailHttpFails}x gagal berturut → langsung Playwright`);
                         }
 
                         // Fall back to Playwright if HTTP failed and memory permits
@@ -1115,4 +1137,5 @@ class CrawlerService {
 const instance = new CrawlerService();
 instance.httpDetailScraper = httpDetailScraper;
 instance.httpListScraper = httpListScraper;
+instance.statusLewat = statusLewat; // untuk test cepat (test_status_lewat.js)
 module.exports = instance;

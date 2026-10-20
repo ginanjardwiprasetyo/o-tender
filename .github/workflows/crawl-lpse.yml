@@ -38,7 +38,9 @@ permissions:
 jobs:
   crawl:
     runs-on: ${{ vars.CRAWLER_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 60
+    # 90 menit: list 32 LPSE + deep scan bisa >60 menit (run 20 Okt keburu kepotong timeout).
+    # Antrean deep scan sudah dipangkas (status selesai/gagal/batal dibuang di crawler.js).
+    timeout-minutes: 90
     env:
       EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE || secrets.TAILSCALE_EXIT_NODE }}
     steps:
