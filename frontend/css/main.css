@@ -998,6 +998,8 @@ body.light-theme .soft-overlay {
 .dokpil-result-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .dokpil-td-label { font-weight: 600; color: var(--text-1); font-size: 0.85rem; width: 32%; }
 .dokpil-td-value textarea { width: 100%; }
+.dokpil-cell-input { width: 100%; min-width: 60px; background: transparent; border: none; outline: none; font: inherit; color: var(--text-1); padding: 0; }
+.dokpil-cell-input:focus { background: var(--bg-input); }
 .dokpil-drive-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--text-1); }
 .dokpil-drive-row:hover { background: var(--bg-input); }
 .dokpil-drive-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }

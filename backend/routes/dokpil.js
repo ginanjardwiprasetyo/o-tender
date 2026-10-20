@@ -7,6 +7,9 @@ const os = require('os');
 const pdfParse = require('pdf-parse');
 const { extractLdp } = require('../services/dokpil_extract');
 
+// Cache teks PDF terakhir (untuk /reextract — layout beda → user pilih teks BAB IV, re-parse)
+let LAST_TEXT = '';
+
 // === AI Config (Cloudflare Workers AI) ===
 const CLOUDFLARE_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CLOUDFLARE_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
@@ -664,6 +667,7 @@ router.post('/drive/parse', async (req, res) => {
     debug.ldpLength = text.length;
     debug.source = 'drive';
     debug.fileName = meta.name;
+    LAST_TEXT = text; // cache utk /reextract (layout beda → user pilih teks, re-parse)
 
     const ldpStart = findLDP(text);
     let previewText = ldpStart !== -1 ? text.substring(ldpStart) : text;
@@ -722,6 +726,32 @@ router.get('/saved/:kodeTender', async (req, res) => {
     );
     res.json({ success: true, data: rows[0] || null });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/dokpil/reextract — parse ulang dari teks yang DIPILIH user (handle layout PDF beda)
+// body: { text } — jika kosong, pakai cache teks PDF terakhir (LAST_TEXT)
+router.post('/reextract', async (req, res) => {
+  try {
+    const bodyText = (req.body.text || '').trim();
+    const text = bodyText || LAST_TEXT;
+    if (!text || text.length < 5) {
+      return res.status(400).json({ success: false, error: 'Tidak ada teks. Parse PDF dulu, atau pilih teks di Preview BAB IV.' });
+    }
+    const { fields, tables, debug } = extractLdp(text);
+    debug.source = 'reextract';
+    debug.ldpLength = text.length;
+    const ldpStart = findLDP(text);
+    let previewText = ldpStart !== -1 ? text.substring(ldpStart) : text;
+    const babVIdx = previewText.search(/\bBAB\s+V\.?\b/i);
+    if (babVIdx !== -1) previewText = previewText.substring(0, babVIdx);
+    res.json({
+      success: true,
+      data: { fields, tables, debug, raw_text_preview: previewText.substring(0, 30000) }
+    });
+  } catch (err) {
+    console.error('[Dokpil Reextract]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

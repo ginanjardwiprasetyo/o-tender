@@ -1,0 +1,12 @@
+# .dockerignore — context = repo root (.)
+**/node_modules
+**/.git
+**/.env
+**/*.log
+backend/uploads
+backend/services/drission_data
+backend/services/drission_test_profile
+backend/services/drission_test_profile2
+backend/services/drission_data_*/
+backend/.gdrive-key.json
+nohup.out

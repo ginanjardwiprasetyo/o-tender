@@ -18,9 +18,13 @@ app.use(cors());
 app.use(express.json({ limit: '100gb' }));
 app.use(express.urlencoded({ limit: '100gb', extended: true }));
 
-// ─── Static Files ─────────────────────────────────────────────
+// ── Static Files ─────────────────────────────────────────────
 // js/css tanpa versi → no-cache agar browser selalu ambil yang terbaru (hindari "perubahan tidak muncul" karena cache)
-app.use(express.static(path.join(__dirname, '..', 'frontend'), {
+// path frontend: monorepo = sibling ../frontend; Docker (context ./backend) = /app/frontend (di dalam __dirname)
+const FRONTEND_DIR = fs.existsSync(path.join(__dirname, 'frontend'))
+    ? path.join(__dirname, 'frontend')
+    : path.join(__dirname, '..', 'frontend');
+app.use(express.static(FRONTEND_DIR, {
     setHeaders: (res, filePath) => { if (/\.(js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache'); }
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -32,13 +36,14 @@ app.use('/migrations', express.static(path.join(__dirname, 'migrations')));
 const crypto = require('crypto');
 const _verHash = crypto.createHash('sha1');
 const _walkVer = (dir) => {
+    if (!fs.existsSync(dir)) return; // container: frontend ada di /app/frontend (bukan sibling) → skip bila tidak ada
     for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, f.name);
         if (f.isDirectory()) _walkVer(p);
         else if (/\.(js|css|html)$/.test(f.name)) _verHash.update(fs.readFileSync(p));
     }
 };
-_walkVer(path.join(__dirname, '..', 'frontend'));
+_walkVer(FRONTEND_DIR);
 _verHash.update(fs.readFileSync(__filename));
 const APP_VER = _verHash.digest('hex').slice(0, 12);
 app.use('/api', (req, res, next) => { res.setHeader('X-App-Ver', APP_VER); next(); });
@@ -122,7 +127,7 @@ app.post('/api/db-migrate', async (req, res) => {
 
 // ─── Security: blok akses direct ke path sirup → 404 elegan ──
 const send404 = (res) => {
-    const p = path.join(__dirname, '..', 'frontend', '404.html');
+    const p = path.join(FRONTEND_DIR, '404.html');
     if (fs.existsSync(p)) return res.status(404).sendFile(p);
     res.status(404).send('Not Found');
 };
@@ -151,7 +156,7 @@ app.get('*', (req, res) => {
         // path API tak dikenal → 404 (jangan diam / hang)
         return res.status(404).json({ success: false, error: 'Not Found' });
     }
-    const indexPath = path.join(__dirname, '..', 'frontend', 'index.html');
+    const indexPath = path.join(FRONTEND_DIR, 'index.html');
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {

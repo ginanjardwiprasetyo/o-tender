@@ -62,7 +62,11 @@ const DashboardPage = {
             if (this.calY === null) { this.calY = now.getFullYear(); this.calM = now.getMonth(); }
             if (!this.calSelected) this.calSelected = now.toISOString().slice(0, 10);
             const { data } = await API.getFollowedUpcoming(62, 7);
-            this.calEvents = (data || []).map(s => ({ ...s, d: new Date(s.end_date) })).filter(s => !isNaN(s.d));
+            this.calEvents = (data || []).map(s => {
+                const end = new Date(s.end_date);
+                const start = s.start_date ? new Date(s.start_date) : end;
+                return { ...s, d: end, startD: start, endD: end };
+            }).filter(s => !isNaN(s.endD));
             this.renderCalendar(el);
             this.renderDeadlines();
         } catch {
@@ -81,17 +85,21 @@ const DashboardPage = {
         const k = this.calSelected;
         const d = new Date(k + 'T00:00:00');
         if (title) title.textContent = 'Agenda — ' + d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
-        const items = (this.calEvents || []).filter(s => this._dayKey(s.d) === k).sort((a, b) => a.d - b.d);
+        // agenda tanggal ini = rentang [start, end] yang mencakup hari terpilih (klik)
+        const items = (this.calEvents || []).filter(s => k >= this._dayKey(s.startD) && k <= this._dayKey(s.endD)).sort((a, b) => a.endD - b.endD);
         if (!items.length) {
             el.innerHTML = '<div class="empty-state" style="padding:20px;"><i data-lucide="calendar-check"></i><p>Tidak ada agenda tanggal ini</p></div>';
             lucide.createIcons({ nodes: [el] }); return;
         }
         el.innerHTML = items.map(s => {
             const up = this._isUpload(s);
-            const hh = `${String(s.d.getHours()).padStart(2, '0')}:${String(s.d.getMinutes()).padStart(2, '0')}`;
+            const sameDay = this._dayKey(s.startD) === this._dayKey(s.endD);
+            const timeTxt = sameDay
+                ? `${String(s.endD.getHours()).padStart(2, '0')}:${String(s.endD.getMinutes()).padStart(2, '0')}`
+                : `${s.startD.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${s.endD.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
             return `<div class="dl-group" style="cursor:pointer;" onclick="DashboardPage._dlPop(this)" data-tip="${Fmt.escape(s.tenders?.nama_paket || '')}">
                 <div class="dl-head"><strong>${Fmt.escape(s.stage_name)}</strong>${up ? '<span class="badge badge-danger">upload</span>' : ''}${s.passed ? '<span class="badge badge-gray">lewat</span>' : ''}</div>
-                <div class="dl-item"><span class="dl-time"${up ? '' : ' style="color:var(--accent);"'}>${hh}</span>
+                <div class="dl-item"><span class="dl-time"${up ? '' : ' style="color:var(--accent);"'}>${timeTxt}</span>
                 <span class="dl-name">${Fmt.escape(s.tenders?.nama_paket || '')}</span></div>
             </div>`;
         }).join('');
@@ -123,10 +131,17 @@ const DashboardPage = {
         const todayK = this._dayKey(new Date());
         const byDay = {};
         this.calEvents.forEach(s => {
-            const k = this._dayKey(s.d);
-            (byDay[k] = byDay[k] || []).push(s);
+            // tandai semua hari dalam rentang [startD, endD] (maks 60 hari utk hindari loop liar)
+            let cur = new Date(s.startD.getFullYear(), s.startD.getMonth(), s.startD.getDate());
+            const last = new Date(s.endD.getFullYear(), s.endD.getMonth(), s.endD.getDate());
+            let guard = 0;
+            while (cur <= last && guard++ < 60) {
+                const k = this._dayKey(cur);
+                (byDay[k] = byDay[k] || []).push(s);
+                cur.setDate(cur.getDate() + 1);
+            }
         });
-        Object.values(byDay).forEach(arr => arr.sort((a, b) => a.d - b.d));
+        Object.values(byDay).forEach(arr => arr.sort((a, b) => a.endD - b.endD));
         // Senin = 0 (id-ID)
         const first = new Date(Y, M, 1);
         const startOff = (first.getDay() + 6) % 7;
@@ -144,11 +159,15 @@ const DashboardPage = {
             const evs = byDay[k] || [];
             const nowMs = Date.now();
             const chips = evs.slice(0, 2).map(s => {
-                const left = s.d - nowMs;
+                const left = s.endD - nowMs;
                 const up = this._isUpload(s);
                 const cls = up ? 'ev-upload' : left < 24 * 3600e3 ? 'ev-danger' : left < 3 * 86400e3 ? 'ev-warning' : 'ev-accent';
-                const hh = `${String(s.d.getHours()).padStart(2, '0')}:${String(s.d.getMinutes()).padStart(2, '0')}`;
-                return `<div class="cal-chip ${cls}" title="${Fmt.escape(s.stage_name)} • ${Fmt.escape(s.tenders?.nama_paket || '')}">${up ? '⏰ ' : ''}${hh} ${Fmt.escape(s.stage_name)}</div>`;
+                const sameDay = this._dayKey(s.startD) === this._dayKey(s.endD);
+                const label = sameDay
+                    ? `${String(s.endD.getHours()).padStart(2, '0')}:${String(s.endD.getMinutes()).padStart(2, '0')}`
+                    : `${s.startD.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} → ${s.endD.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
+                const span = sameDay ? '' : ' ⇄';
+                return `<div class="cal-chip ${cls}" title="${Fmt.escape(s.stage_name)} • ${Fmt.escape(s.tenders?.nama_paket || '')}">${up ? '⏰ ' : ''}${label}${span} ${Fmt.escape(s.stage_name)}</div>`;
             }).join('');
             const count = evs.length > 1 ? `<span class="cal-count" title="${evs.length} jadwal tanggal ini">${evs.length}</span>` : '';
             const hasUp = evs.some(s => this._isUpload(s));

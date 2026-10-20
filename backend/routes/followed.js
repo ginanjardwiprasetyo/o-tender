@@ -54,9 +54,19 @@ router.get('/upcoming', async (req, res) => {
                         const mo = months[m[2].toLowerCase()];
                         if (mo !== undefined) {
                             const endDate = new Date(+m[3], mo, +m[1], +m[4], +m[5]);
-                            if (endDate >= since && endDate <= until) {
+                            // rentang: start (opsional) → end; overlap jendela [since, until], bukan hanya end di dalam
+                            let startDate = null;
+                            if (s.start) {
+                                const ms = s.start.match(/(\d{1,2})\s+(\w+)\s+(\d{4})\s+(\d{1,2}):(\d{2})/i);
+                                const smo = ms && months[ms[2].toLowerCase()];
+                                if (smo !== undefined) startDate = new Date(+ms[3], smo, +ms[1], +ms[4], +ms[5]);
+                            }
+                            const rangeStart = startDate || endDate;
+                            const overlaps = rangeStart <= until && endDate >= since;
+                            if (overlaps) {
                                 upcoming.push({
                                     stage_name: s.stage,
+                                    start_date: (startDate || endDate).toISOString(),
                                     end_date: endDate.toISOString(),
                                     passed: endDate < now,
                                     tender_id: tender.id,

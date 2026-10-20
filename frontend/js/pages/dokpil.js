@@ -47,6 +47,7 @@ const DokpilPage = {
           <i data-lucide="eye" style="width:16px;height:16px;"></i>
           Preview BAB IV
           <span style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.reextractSelected()" title="Pilih teks di Preview lalu klik ini — untuk PDF dengan layout beda"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> Parse ulang pilihan</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.copyRaw()">Salin</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.toggleRaw()">
               <i data-lucide="chevron-down" id="dokpil-raw-chevron" style="width:14px;height:14px;transition:transform 0.2s;"></i>
@@ -291,6 +292,56 @@ const DokpilPage = {
     });
   },
 
+  // Parse ulang dari teks yang DIPILIH user di Preview BAB IV (handle PDF dgn layout beda)
+  async reextractSelected() {
+    const sel = window.getSelection();
+    const selected = (sel && sel.toString() ? sel.toString() : '').trim();
+    const rawEl = document.getElementById('dokpil-raw-text');
+    // pastikan preview terbuka agar user bisa pilih teks
+    if (rawEl && rawEl.classList.contains('hidden')) {
+      rawEl.classList.remove('hidden');
+      const chev = document.getElementById('dokpil-raw-chevron');
+      if (chev) chev.style.transform = 'rotate(180deg)';
+      const lbl = document.getElementById('dokpil-raw-toggle-label');
+      if (lbl) lbl.textContent = 'Sembunyikan';
+      Toast.info('Preview dibuka. Blok teks yang mau diparse, lalu klik "Parse ulang pilihan" lagi.');
+      return;
+    }
+    if (!selected) {
+      Toast.warning('Blok dulu teks di Preview BAB IV (atau klik tanpa blok untuk parse ulang teks penuh)');
+    }
+    const loading = document.getElementById('dokpil-loading');
+    const errEl = document.getElementById('dokpil-error');
+    if (loading) loading.classList.remove('hidden');
+    if (errEl) errEl.classList.add('hidden');
+    try {
+      const res = await fetch('/api/dokpil/reextract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: selected })
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Gagal parse ulang');
+      this.extractedFields = json.data.fields || {};
+      this.extractedTables = json.data.tables || {};
+      if (json.data.raw_text_preview) this.rawText = json.data.raw_text_preview;
+      const rawTextEl = document.getElementById('dokpil-raw-text');
+      if (rawTextEl) rawTextEl.textContent = this.rawText;
+      const resultSection = document.getElementById('dokpil-result-section');
+      if (resultSection) resultSection.classList.remove('hidden');
+      this.renderFields();
+      lucide.createIcons();
+      Toast.success(selected ? 'Berhasil parse ulang pilihan teks' : 'Berhasil parse ulang');
+    } catch (err) {
+      if (errEl) errEl.classList.remove('hidden');
+      const msgEl = document.getElementById('dokpil-error-msg');
+      if (msgEl) msgEl.textContent = err.message;
+      Toast.error(err.message);
+    } finally {
+      if (loading) loading.classList.add('hidden');
+    }
+  },
+
   // ── Followed tenders ──
   async loadFollowedTenders() {
     try {
@@ -322,6 +373,7 @@ const DokpilPage = {
     }
 
     const fields = this.getFields();
+    const tables = this.getTables();
     const payload = {
       kode_tender: kodeTender,
       nama_file: this.currentFileName,
@@ -333,9 +385,9 @@ const DokpilPage = {
       pagu_anggaran: fields.pagu_anggaran || '',
       pagu_terbilang: this.extractedFields.pagu_terbilang || '',
       kir: fields.kir || this.extractedFields.kir || 'tidak',
-      peralatan: this.extractedTables.peralatan?.rows || [],
-      personel: this.extractedTables.personel?.rows || [],
-      rkk: this.extractedTables.rkk?.rows || [],
+      peralatan: tables.peralatan || [],
+      personel: tables.personel || [],
+      rkk: tables.rkk || [],
     };
 
     btn.disabled = true;
@@ -442,12 +494,16 @@ const DokpilPage = {
         const headerCells = t.header
           ? `<tr><th>${t.header.map(h => Fmt.escape(h)).join('</th><th>')}</th></tr>`
           : '';
-        const bodyRows = t.rows.map(r =>
-          `<tr>${r.map(c => `<td>${Fmt.escape(c)}</td>`).join('')}</tr>`
+        const colCount = t.header ? t.header.length : (t.rows[0] ? t.rows[0].length : 0);
+        // editable: each cell = <input data-table data-row data-col>
+        const bodyRows = t.rows.map((r, ri) =>
+          `<tr>${Array.from({ length: colCount }, (_, ci) =>
+            `<td><input class="dokpil-cell-input" data-table="${key}" data-row="${ri}" data-col="${ci}" value="${Fmt.escape(r[ci] || '')}" /></td>`
+          ).join('')}</tr>`
         ).join('');
         return `
         <div class="dokpil-subtable">
-          <div class="dokpil-subtable-title">${titles[key]}</div>
+          <div class="dokpil-subtable-title">${titles[key]} <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(bisa diedit)</span></div>
           <div style="overflow:auto;">
             <table class="structured-table">
               <thead>${headerCells}</thead>
@@ -471,9 +527,37 @@ const DokpilPage = {
     return fields;
   },
 
+  // baca nilai tabel yang diedit (berdasarkan data-table/row/col), fallback ke extractedTables
+  getTables() {
+    const out = {};
+    const inputs = document.querySelectorAll('.dokpil-cell-input');
+    if (!inputs.length) {
+      // belum dirender / tidak ada tabel → pakai hasil ekstraksi mentah
+      return {
+        peralatan: this.extractedTables.peralatan?.rows || [],
+        personel: this.extractedTables.personel?.rows || [],
+        rkk: this.extractedTables.rkk?.rows || [],
+      };
+    }
+    const grouped = {};
+    inputs.forEach(inp => {
+      const t = inp.getAttribute('data-table');
+      const r = parseInt(inp.getAttribute('data-row'), 10);
+      const c = parseInt(inp.getAttribute('data-col'), 10);
+      (grouped[t] = grouped[t] || []);
+      (grouped[t][r] = grouped[t][r] || [])[c] = inp.value;
+    });
+    return {
+      peralatan: grouped.peralatan || [],
+      personel: grouped.personel || [],
+      rkk: grouped.rkk || [],
+    };
+  },
+
   copyResult() {
     const fields = this.getFields();
-    const text = Object.entries(fields)
+    const tables = this.getTables();
+    const fieldText = Object.entries(fields)
       .filter(([_, v]) => v)
       .map(([k, v]) => {
         const label = {
@@ -487,6 +571,16 @@ const DokpilPage = {
         return `${label}: ${v}`;
       }).join('\n\n');
 
+    const titles = { peralatan: 'Peralatan Utama', personel: 'Personel Manajerial', rkk: 'RKK' };
+    const tableText = Object.keys(titles).map(key => {
+      const rows = tables[key];
+      if (!rows || !rows.length) return '';
+      const lines = rows.map(r => '  • ' + (Array.isArray(r) ? r.filter(Boolean).join(' | ') : r)).join('\n');
+      return `\n${titles[key]}:\n${lines}`;
+    }).join('\n');
+
+    const text = fieldText + tableText;
+
     navigator.clipboard.writeText(text).then(() => {
       Toast.success('Data disalin ke clipboard');
     }).catch(() => {
@@ -496,7 +590,8 @@ const DokpilPage = {
 
   downloadResult() {
     const fields = this.getFields();
-    const blob = new Blob([JSON.stringify(fields, null, 2)], { type: 'application/json' });
+    const tables = this.getTables();
+    const blob = new Blob([JSON.stringify({ ...fields, tables }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
