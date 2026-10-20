@@ -45,4 +45,14 @@ assert.deepStrictEqual(tables.rkk.rows, [
 const kir = extractLdp('LEMBAR DATA PEMILIHAN\nIdentitas Pokja\n1. KIR disyaratkan untuk paket ini\n2. Pagu Anggaran: Rp50.000,00');
 assert.strictEqual(kir.fields.kir, 'ya', 'kir = ya');
 
-console.log('OK: dokpil_extract — 12 assertion lulus (BRSPA + KIR)');
+// ── Layout beda (ldp-new.txt): kolom pengalaman "1 tahun" & kolom pengalaman ter-merge/absen ──
+// Regresi: parsePersonel dulu salah split — jabatan menelan teks sertifikat (SKK) & "Jenjang 3" jadi tahun.
+const n = extractLdp(fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-new.txt'), 'utf8'));
+assert.deepStrictEqual(n.tables.personel.rows, [
+  ['1', 'Pelaksana Lapangan', '1 Tahun', 'Pelaksana Lapangan Pekerjaan Gedung minimal Jenjang 4'],
+  ['2', 'Petugas Keselamatan Konstruksi', '', 'SKK Petugas Keselamatan dan Kesehatan Kerja (K3) Konstruksi atau Petugas Keselamatan Konstruksi Jenjang 3 atau Personil Keselamatan dan Kesehatan Kerja minimal jenjang 4'],
+], 'personel rows (layout baru)');
+assert.strictEqual(n.fields.pokja, 'Pokja 1 Putaran Ke Delapan UKPBJ Sekretariat Daerah Kabupaten Sleman', 'pokja (layout baru)');
+assert.strictEqual(n.fields.jangka_waktu, '60', 'jangka_waktu (layout baru)');
+
+console.log('OK: dokpil_extract — 15 assertion lulus (BRSPA + KIR + layout baru)');

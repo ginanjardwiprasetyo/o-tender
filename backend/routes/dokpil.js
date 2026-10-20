@@ -108,7 +108,13 @@ ATURAN:
     });
     const data = await res.json();
     if (!data.success) { console.warn('[Dokpil AI] API error:', JSON.stringify(data.errors)); return null; }
-    return data.result.response;
+    // OpenAI-compatible: teks LLM di choices[0].message.content.
+    // result.response kadang object (parsed) — kalau string mentah mentah, pakai itu.
+    const r = data.result || {};
+    if (r.choices && r.choices[0] && r.choices[0].message) return r.choices[0].message.content;
+    if (typeof r.response === 'string') return r.response;
+    if (r.response && typeof r.response === 'object') return JSON.stringify(r.response);
+    return null;
   } catch (e) {
     console.warn('[Dokpil AI]', e.message);
     return null;

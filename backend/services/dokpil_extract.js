@@ -113,15 +113,25 @@ function parsePeralatan(no, text) {
     return [no, jenis.trim(), kap, jumlah];
 }
 
-/** personel: <jabatan> <angka tahun> <sertifikat…> */
+/** personel: <jabatan> [N] <sertifikat…> — kolom bisa beda layout.
+ * Pilih batas kolom sertifikat: kata kunci (SKK/SKT/…) bila ada → before = jabatan (+N pengalaman di ujung).
+ * Tanpa kata kunci → token "N tahun". Menangani: pengalaman "1 tahun", "0" polos, atau kosong (kolom ter-merge). */
 function parsePersonel(no, text) {
     if (!text) return null;
     const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)';
-    let m = text.match(new RegExp(`^(.*?)\\s+(\\d+)\\s*(?:\\([^)]*\\))?\\s+(?=${CERT}\\b)`, 'i'));
-    if (!m) m = text.match(/^(.*?)\s+(\d+)\s*(?:\([^)]*\))?\s+(.*)$/);
-    if (!m) return [no, text, '', ''];
-    const sert = m[3] !== undefined ? m[3].trim() : text.substring(m.index + m[0].length).trim();
-    return [no, m[1].trim(), `${m[2]} Tahun`, sert];
+    const cm = text.match(new RegExp(CERT, 'i'));
+    if (cm && cm.index > 0) {
+        let before = text.slice(0, cm.index).trim();
+        const sert = text.slice(cm.index).trim();
+        const pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)?\s*$/i); // pengalaman polos di ujung
+        let peng = '';
+        if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
+        before = before.replace(/\s*[-–—:.]\s*$/, '').trim();
+        if (before) return [no, before, peng, sert];
+    }
+    const ym = text.match(/^(.*?)\s*(\d+)\s*(?:tahun|thn|th)\b\s*(?:\([^)]*\))?\s+(.*)$/i);
+    if (ym && ym[1] && ym[3]) return [no, ym[1].trim(), `${ym[2]} Tahun`, ym[3].trim()];
+    return [no, text, '', ''];
 }
 
 // ponytail: split RKK (uraian | bahaya) — 2+ spasi dulu, lalu leksikon awal kata bahaya;
