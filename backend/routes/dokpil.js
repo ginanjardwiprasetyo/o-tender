@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const pdfParse = require('pdf-parse');
+const { extractLdp } = require('../services/dokpil_extract');
 
 // === AI Config (Cloudflare Workers AI) ===
 const CLOUDFLARE_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -457,8 +458,13 @@ router.post('/parse', upload.single('file'), async (req, res) => {
       return res.status(422).json({ success: false, error: 'Tidak dapat membaca isi PDF. Pastikan file bukan hasil scan/gambar.' });
     }
 
-    // ===== AI extraction (primary) =====
-    let fields = {}, tables = {}, aiSummary = '', debug = { ai: false, error: null };
+    // ===== Deterministik (primary — ground truth = panel Preview BAB IV) =====
+    const { fields, tables, debug } = extractLdp(text);
+    let aiSummary = '';
+    debug.ai = false;
+    debug.ldpLength = text.length;
+
+    // ===== AI (opsional — hanya isi field/tabel yang masih kosong, TIDAK override) =====
     const tryAI = CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN;
     if (tryAI) {
       const raw = await aiExtract(text);
@@ -480,37 +486,46 @@ router.post('/parse', upload.single('file'), async (req, res) => {
             }
           }
           aiSummary = aiData.summary || '';
-          // Build fields dari AI
-          if (aiData.pokja && aiData.pokja !== 'null') fields.pokja = aiData.pokja;
-          if (aiData.alamat_pokja && aiData.alamat_pokja !== 'null') fields.alamat_pokja = aiData.alamat_pokja;
-          if (aiData.nama_paket && aiData.nama_paket !== 'null') fields.nama_paket = aiData.nama_paket;
-          if (aiData.lokasi && aiData.lokasi !== 'null') fields.lokasi = aiData.lokasi;
-          if (aiData.jangka_waktu && aiData.jangka_waktu !== 'null') fields.jangka_waktu = aiData.jangka_waktu.replace(/\D/g, '');
-          if (aiData.pagu_anggaran && aiData.pagu_anggaran !== 'null') {
-            fields.pagu_anggaran = aiData.pagu_anggaran.replace(/\D/g, '');
+          if (!fields.pokja && aiData.pokja && aiData.pokja !== 'null') fields.pokja = aiData.pokja;
+          if (!fields.alamat_pokja && aiData.alamat_pokja && aiData.alamat_pokja !== 'null') fields.alamat_pokja = aiData.alamat_pokja;
+          if (!fields.nama_paket && aiData.nama_paket && aiData.nama_paket !== 'null') fields.nama_paket = aiData.nama_paket;
+          if (!fields.lokasi && aiData.lokasi && aiData.lokasi !== 'null') fields.lokasi = aiData.lokasi;
+          if (!fields.jangka_waktu && aiData.jangka_waktu && aiData.jangka_waktu !== 'null') fields.jangka_waktu = String(aiData.jangka_waktu).replace(/\D/g, '');
+          if (!fields.pagu_anggaran && aiData.pagu_anggaran && aiData.pagu_anggaran !== 'null') {
+            fields.pagu_anggaran = String(aiData.pagu_anggaran).replace(/\D/g, '');
             const parsed = parseInt(fields.pagu_anggaran, 10);
             if (parsed) fields.pagu_terbilang = terbilang(parsed);
           }
-          // Tabel: pake regex (lebih akurat), AI jangan override tabel
-          const aiKeys = Object.keys(aiData).filter(k => aiData[k] && aiData[k] !== 'null' && (!Array.isArray(aiData[k]) || aiData[k].length));
-          debug = { ai: true, matches: Object.fromEntries(aiKeys.map(k => [k, true])), ldpLength: text.length, tables: Object.keys(tables).filter(k => tables[k]?.rows?.length) };
+          // Tabel: hanya isi yang kosong — parser deterministik jangan di-override AI
+          if (!tables.peralatan && Array.isArray(aiData.peralatan) && aiData.peralatan.length) {
+            tables.peralatan = { header: ['No', 'Jenis Alat', 'Kapasitas', 'Jumlah'], rows: aiData.peralatan.map(r => [r.no || '', r.jenis_alat || '', r.kapasitas || '', r.jumlah || '']) };
+          }
+          if (!tables.personel && Array.isArray(aiData.personel) && aiData.personel.length) {
+            tables.personel = { header: ['No', 'Jabatan', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], rows: aiData.personel.map(r => [r.no || '', r.jabatan || '', r.pengalaman || '', r.sertifikat || '']) };
+          }
+          if (!tables.rkk && Array.isArray(aiData.rkk) && aiData.rkk.length) {
+            tables.rkk = { header: ['No', 'Uraian Pekerjaan', 'Identifikasi Bahaya'], rows: aiData.rkk.map(r => [r.no || '', r.uraian || '', r.bahaya || '']) };
+          }
+          debug.ai = true;
         } catch (e) {
           console.warn('[Dokpil AI] Parse JSON gagal:', e.message);
         }
       }
     }
 
-    // ===== Fallback regex untuk field/tabel yang masih kosong =====
-    const parsed = parseLDP(text);
-    const { _debug: dbg, ...regexFields } = parsed.result;
-    for (const k of Object.keys(regexFields)) {
-      if (!fields[k] && regexFields[k] !== null && regexFields[k] !== undefined && regexFields[k] !== '') {
-        fields[k] = regexFields[k];
+    // Fallback terakhir: parser regex lama bila extractor gagal total
+    if (!Object.keys(fields).length && !Object.keys(tables).length) {
+      const parsed = parseLDP(text);
+      const { _debug: dbg, ...regexFields } = parsed.result;
+      for (const k of Object.keys(regexFields)) {
+        if (!fields[k] && regexFields[k] !== null && regexFields[k] !== undefined && regexFields[k] !== '') {
+          fields[k] = regexFields[k];
+        }
       }
-    }
-    for (const k of Object.keys(parsed.tables)) {
-      if (!tables[k] || !tables[k].rows || !tables[k].rows.length) {
-        tables[k] = parsed.tables[k];
+      for (const k of Object.keys(parsed.tables)) {
+        if (!tables[k] || !tables[k].rows || !tables[k].rows.length) {
+          tables[k] = parsed.tables[k];
+        }
       }
     }
 
