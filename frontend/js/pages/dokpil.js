@@ -47,7 +47,6 @@ const DokpilPage = {
           <i data-lucide="eye" style="width:16px;height:16px;"></i>
           Preview BAB IV
           <span style="margin-left:auto;display:flex;gap:8px;">
-            <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.reextractSelected()" title="Pilih teks di Preview lalu klik ini — untuk PDF dengan layout beda"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> Parse ulang pilihan</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.copyRaw()">Salin</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.toggleRaw()">
               <i data-lucide="chevron-down" id="dokpil-raw-chevron" style="width:14px;height:14px;transition:transform 0.2s;"></i>
@@ -290,56 +289,6 @@ const DokpilPage = {
     }).catch(() => {
       Toast.warning('Gagal menyalin, salin manual');
     });
-  },
-
-  // Parse ulang dari teks yang DIPILIH user di Preview BAB IV (handle PDF dgn layout beda)
-  async reextractSelected() {
-    const sel = window.getSelection();
-    const selected = (sel && sel.toString() ? sel.toString() : '').trim();
-    const rawEl = document.getElementById('dokpil-raw-text');
-    // pastikan preview terbuka agar user bisa pilih teks
-    if (rawEl && rawEl.classList.contains('hidden')) {
-      rawEl.classList.remove('hidden');
-      const chev = document.getElementById('dokpil-raw-chevron');
-      if (chev) chev.style.transform = 'rotate(180deg)';
-      const lbl = document.getElementById('dokpil-raw-toggle-label');
-      if (lbl) lbl.textContent = 'Sembunyikan';
-      Toast.info('Preview dibuka. Blok teks yang mau diparse, lalu klik "Parse ulang pilihan" lagi.');
-      return;
-    }
-    if (!selected) {
-      Toast.warning('Blok dulu teks di Preview BAB IV (atau klik tanpa blok untuk parse ulang teks penuh)');
-    }
-    const loading = document.getElementById('dokpil-loading');
-    const errEl = document.getElementById('dokpil-error');
-    if (loading) loading.classList.remove('hidden');
-    if (errEl) errEl.classList.add('hidden');
-    try {
-      const res = await fetch('/api/dokpil/reextract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: selected })
-      });
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || 'Gagal parse ulang');
-      this.extractedFields = json.data.fields || {};
-      this.extractedTables = json.data.tables || {};
-      if (json.data.raw_text_preview) this.rawText = json.data.raw_text_preview;
-      const rawTextEl = document.getElementById('dokpil-raw-text');
-      if (rawTextEl) rawTextEl.textContent = this.rawText;
-      const resultSection = document.getElementById('dokpil-result-section');
-      if (resultSection) resultSection.classList.remove('hidden');
-      this.renderFields();
-      lucide.createIcons();
-      Toast.success(selected ? 'Berhasil parse ulang pilihan teks' : 'Berhasil parse ulang');
-    } catch (err) {
-      if (errEl) errEl.classList.remove('hidden');
-      const msgEl = document.getElementById('dokpil-error-msg');
-      if (msgEl) msgEl.textContent = err.message;
-      Toast.error(err.message);
-    } finally {
-      if (loading) loading.classList.add('hidden');
-    }
   },
 
   // ── Followed tenders ──

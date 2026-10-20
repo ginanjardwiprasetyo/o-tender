@@ -7,8 +7,54 @@ const os = require('os');
 const pdfParse = require('pdf-parse');
 const { extractLdp } = require('../services/dokpil_extract');
 
-// Cache teks PDF terakhir (untuk /reextract — layout beda → user pilih teks BAB IV, re-parse)
-let LAST_TEXT = '';
+// Isi field/tabel yang masih KOSONG dari hasil AI (TIDAK override hasil deterministik).
+// Dipakai path upload & path Drive supaya PDF dgn layout beda tetap terbantu.
+function applyAiFill(fields, tables, aiDataRaw) {
+  let aiSummary = '';
+  if (!aiDataRaw) return aiSummary;
+  try {
+    let aiData = aiDataRaw;
+    if (typeof aiDataRaw === 'string') {
+      // cari { pertama, potong teks sebelum JSON
+      let jsonStart = aiDataRaw.indexOf('{');
+      let cleaned = jsonStart >= 0 ? aiDataRaw.substring(jsonStart) : aiDataRaw;
+      cleaned = cleaned.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '').trim();
+      // cari } terakhir
+      const jsonEnd = cleaned.lastIndexOf('}');
+      if (jsonEnd >= 0) cleaned = cleaned.substring(0, jsonEnd + 1);
+      try { aiData = JSON.parse(cleaned); }
+      catch (_) {
+        cleaned = cleaned.replace(/(\s*|,)([a-zA-Z_]\w*)(\s*):/g, '$1"$2"$3:').replace(/'/g, '"');
+        aiData = JSON.parse(cleaned);
+      }
+    }
+    aiSummary = aiData.summary || '';
+    if (!fields.pokja && aiData.pokja && aiData.pokja !== 'null') fields.pokja = aiData.pokja;
+    if (!fields.alamat_pokja && aiData.alamat_pokja && aiData.alamat_pokja !== 'null') fields.alamat_pokja = aiData.alamat_pokja;
+    if (!fields.nama_paket && aiData.nama_paket && aiData.nama_paket !== 'null') fields.nama_paket = aiData.nama_paket;
+    if (!fields.lokasi && aiData.lokasi && aiData.lokasi !== 'null') fields.lokasi = aiData.lokasi;
+    if (!fields.jangka_waktu && aiData.jangka_waktu && aiData.jangka_waktu !== 'null') fields.jangka_waktu = String(aiData.jangka_waktu).replace(/\D/g, '');
+    if (!fields.pagu_anggaran && aiData.pagu_anggaran && aiData.pagu_anggaran !== 'null') {
+      fields.pagu_anggaran = String(aiData.pagu_anggaran).replace(/\D/g, '');
+      const parsed = parseInt(fields.pagu_anggaran, 10);
+      if (parsed) fields.pagu_terbilang = terbilang(parsed);
+    }
+    if (!fields.kir && aiData.kir) fields.kir = /ya|yes|1|true/i.test(String(aiData.kir)) ? 'ya' : 'tidak';
+    // Tabel: hanya isi yang kosong — parser deterministik jangan di-override AI
+    if (!tables.peralatan && Array.isArray(aiData.peralatan) && aiData.peralatan.length) {
+      tables.peralatan = { header: ['No', 'Jenis Alat', 'Kapasitas', 'Jumlah'], rows: aiData.peralatan.map(r => [r.no || '', r.jenis_alat || '', r.kapasitas || '', r.jumlah || '']) };
+    }
+    if (!tables.personel && Array.isArray(aiData.personel) && aiData.personel.length) {
+      tables.personel = { header: ['No', 'Jabatan', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], rows: aiData.personel.map(r => [r.no || '', r.jabatan || '', r.pengalaman || '', r.sertifikat || '']) };
+    }
+    if (!tables.rkk && Array.isArray(aiData.rkk) && aiData.rkk.length) {
+      tables.rkk = { header: ['No', 'Uraian Pekerjaan', 'Identifikasi Bahaya'], rows: aiData.rkk.map(r => [r.no || '', r.uraian || '', r.bahaya || '']) };
+    }
+  } catch (e) {
+    console.warn('[Dokpil AI] Parse JSON gagal:', e.message);
+  }
+  return aiSummary;
+}
 
 // === AI Config (Cloudflare Workers AI) ===
 const CLOUDFLARE_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -27,6 +73,7 @@ FORMAT PERSIS (gunakan key names ini, jangan diubah):
   "lokasi": "lokasi pekerjaan",
   "jangka_waktu": "150",
   "pagu_anggaran": "2909753000",
+  "kir": "tidak",
   "peralatan": [{"no":"1","jenis_alat":"Dump Truck","kapasitas":"4000 - 10000 kg","jumlah":"1 unit"}],
   "personel": [{"no":"1","jabatan":"Pelaksana","pengalaman":"2 Tahun","sertifikat":"SKT Pelaksana"}],
   "rkk": [{"no":"1","uraian":"Pekerjaan atap","bahaya":"Terjadi insiden"}],
@@ -40,6 +87,7 @@ ATURAN:
 - "lokasi" → ambil dari "Lokasi pekerjaan:"
 - "jangka_waktu" → ANGKA SAJA. Contoh "150" bukan "150 hari kalender"
 - "pagu_anggaran" → ANGKA SAJA. Contoh "2909753000" bukan "Rp 2.909.753.000,00"
+- "kir" → "ya" jika dokumen mensyaratkan KIR (Kartu Izin Usaha Jasa Konstruksi / laporan KIR), "tidak" jika tidak disebutkan
 - tabel "peralatan": ekstrak SEMUA baris (No, Jenis Alat, Kapasitas, Jumlah). Cari dari subjudul "peralatan utama"
 - tabel "personel": ekstrak SEMUA baris (No, Jabatan, Pengalaman thn, Sertifikat). Jangan lewatkan baris manapun. Cari dari subjudul "personel manajerial" atau tabel yg ada kolom "Jabatan" dan "Sertifikat Kompetensi"
 - tabel "rkk": ekstrak SEMUA baris dari "Rencana Keselamatan Konstruksi (RKK)"
@@ -468,52 +516,9 @@ router.post('/parse', upload.single('file'), async (req, res) => {
     debug.ldpLength = text.length;
 
     // ===== AI (opsional — hanya isi field/tabel yang masih kosong, TIDAK override) =====
-    const tryAI = CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN;
-    if (tryAI) {
-      const raw = await aiExtract(text);
-      if (raw) {
-        try {
-          let aiData = raw;
-          if (typeof raw === 'string') {
-            // cari { pertama, potong teks sebelum JSON
-            let jsonStart = raw.indexOf('{');
-            let cleaned = jsonStart >= 0 ? raw.substring(jsonStart) : raw;
-            cleaned = cleaned.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '').trim();
-            // cari } terakhir
-            const jsonEnd = cleaned.lastIndexOf('}');
-            if (jsonEnd >= 0) cleaned = cleaned.substring(0, jsonEnd + 1);
-            try { aiData = JSON.parse(cleaned); }
-            catch (_) {
-              cleaned = cleaned.replace(/(\s*|,)([a-zA-Z_]\w*)(\s*):/g, '$1"$2"$3:').replace(/'/g, '"');
-              aiData = JSON.parse(cleaned);
-            }
-          }
-          aiSummary = aiData.summary || '';
-          if (!fields.pokja && aiData.pokja && aiData.pokja !== 'null') fields.pokja = aiData.pokja;
-          if (!fields.alamat_pokja && aiData.alamat_pokja && aiData.alamat_pokja !== 'null') fields.alamat_pokja = aiData.alamat_pokja;
-          if (!fields.nama_paket && aiData.nama_paket && aiData.nama_paket !== 'null') fields.nama_paket = aiData.nama_paket;
-          if (!fields.lokasi && aiData.lokasi && aiData.lokasi !== 'null') fields.lokasi = aiData.lokasi;
-          if (!fields.jangka_waktu && aiData.jangka_waktu && aiData.jangka_waktu !== 'null') fields.jangka_waktu = String(aiData.jangka_waktu).replace(/\D/g, '');
-          if (!fields.pagu_anggaran && aiData.pagu_anggaran && aiData.pagu_anggaran !== 'null') {
-            fields.pagu_anggaran = String(aiData.pagu_anggaran).replace(/\D/g, '');
-            const parsed = parseInt(fields.pagu_anggaran, 10);
-            if (parsed) fields.pagu_terbilang = terbilang(parsed);
-          }
-          // Tabel: hanya isi yang kosong — parser deterministik jangan di-override AI
-          if (!tables.peralatan && Array.isArray(aiData.peralatan) && aiData.peralatan.length) {
-            tables.peralatan = { header: ['No', 'Jenis Alat', 'Kapasitas', 'Jumlah'], rows: aiData.peralatan.map(r => [r.no || '', r.jenis_alat || '', r.kapasitas || '', r.jumlah || '']) };
-          }
-          if (!tables.personel && Array.isArray(aiData.personel) && aiData.personel.length) {
-            tables.personel = { header: ['No', 'Jabatan', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], rows: aiData.personel.map(r => [r.no || '', r.jabatan || '', r.pengalaman || '', r.sertifikat || '']) };
-          }
-          if (!tables.rkk && Array.isArray(aiData.rkk) && aiData.rkk.length) {
-            tables.rkk = { header: ['No', 'Uraian Pekerjaan', 'Identifikasi Bahaya'], rows: aiData.rkk.map(r => [r.no || '', r.uraian || '', r.bahaya || '']) };
-          }
-          debug.ai = true;
-        } catch (e) {
-          console.warn('[Dokpil AI] Parse JSON gagal:', e.message);
-        }
-      }
+    if (CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN) {
+      aiSummary = applyAiFill(fields, tables, await aiExtract(text));
+      debug.ai = !!aiSummary;
     }
 
     // Fallback terakhir: parser regex lama bila extractor gagal total
@@ -667,7 +672,14 @@ router.post('/drive/parse', async (req, res) => {
     debug.ldpLength = text.length;
     debug.source = 'drive';
     debug.fileName = meta.name;
-    LAST_TEXT = text; // cache utk /reextract (layout beda → user pilih teks, re-parse)
+
+    // AI fallback (sama dgn path upload) — isi field/tabel yang masih kosong utk layout beda
+    let aiSummary = '';
+    debug.ai = false;
+    if (CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN) {
+      aiSummary = applyAiFill(fields, tables, await aiExtract(text));
+      debug.ai = !!aiSummary;
+    }
 
     const ldpStart = findLDP(text);
     let previewText = ldpStart !== -1 ? text.substring(ldpStart) : text;
@@ -680,6 +692,8 @@ router.post('/drive/parse', async (req, res) => {
         fields,
         tables,
         debug,
+        ai_summary: aiSummary,
+        ai_enabled: !!(CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN),
         file_name: meta.name,
         source: 'drive',
         raw_text_preview: previewText.substring(0, 30000),
@@ -726,32 +740,6 @@ router.get('/saved/:kodeTender', async (req, res) => {
     );
     res.json({ success: true, data: rows[0] || null });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// POST /api/dokpil/reextract — parse ulang dari teks yang DIPILIH user (handle layout PDF beda)
-// body: { text } — jika kosong, pakai cache teks PDF terakhir (LAST_TEXT)
-router.post('/reextract', async (req, res) => {
-  try {
-    const bodyText = (req.body.text || '').trim();
-    const text = bodyText || LAST_TEXT;
-    if (!text || text.length < 5) {
-      return res.status(400).json({ success: false, error: 'Tidak ada teks. Parse PDF dulu, atau pilih teks di Preview BAB IV.' });
-    }
-    const { fields, tables, debug } = extractLdp(text);
-    debug.source = 'reextract';
-    debug.ldpLength = text.length;
-    const ldpStart = findLDP(text);
-    let previewText = ldpStart !== -1 ? text.substring(ldpStart) : text;
-    const babVIdx = previewText.search(/\bBAB\s+V\.?\b/i);
-    if (babVIdx !== -1) previewText = previewText.substring(0, babVIdx);
-    res.json({
-      success: true,
-      data: { fields, tables, debug, raw_text_preview: previewText.substring(0, 30000) }
-    });
-  } catch (err) {
-    console.error('[Dokpil Reextract]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
