@@ -571,15 +571,24 @@ class CrawlerService {
         return kw.some(k => nama.includes(k));
     }
 
-    // Notifikasi match bila: tanpa filter apa pun (match semua), ATAU kode SBU cocok,
-    // ATAU salah satu kata kunci nama paket cocok.
+    // Notif match:
+    // - Tanpa filter apa pun → match semua.
+    // - SBU terdetek → hanya kode SBU yang menentukan (kata kunci TIDAK dipakai,
+    //   jadi tak ada notif dobel/redundan dari kata kunci).
+    // - SBU tak terdetek ('-'/'') → kata kunci nama paket yang menentukan.
     notifTargetMatch(sbuRaw, namaPaket) {
         const sbuT = this.status.waTargetSbu || [];
         const kwT = this.status.waTargetKeywords || [];
         if (!sbuT.length && !kwT.length) return true;
         const sbus = String(sbuRaw || '').split(',').map(s => s.toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
-        const bySbu = sbuT.length > 0 && sbus.some(s => sbuT.includes(s));
-        return bySbu || this.notifKeywordMatch(namaPaket);
+        if (sbus.length && sbuT.length) return sbus.some(s => sbuT.includes(s));
+        return this.notifKeywordMatch(namaPaket);
+    }
+
+    // Catatan khusus utk notif yang dikirim via kata kunci karena SBU tak terdeteksi
+    notifSbuNote(sbuRaw) {
+        const terdetek = String(sbuRaw || '').split(',').some(s => s.replace(/[^A-Z0-9]/g, ''));
+        return terdetek ? '' : '\n⚠️ *SBU belum terdeteksi otomatis — cek kode SBU di dalam dokpil.*';
     }
 
     async crawlAllLPSE(year = new Date().getFullYear()) {
@@ -911,7 +920,7 @@ class CrawlerService {
                                 const { sendWhatsAppMessage } = require('../utils/whatsapp');
                                 const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                 const aanwizingDate = extractAanwizingDate(t.Jadwal || t.schedules || null) || '-';
-                                const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${namaPaket}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
+                                const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${namaPaket}\n*SBU:* ${tenderSbu}\n*Instansi:* ${instansi}\n*Pagu:* Rp ${formatRp(paguVal)}\n*HPS:* Rp ${formatRp(hpsVal)}\n*Tgl Upload:* ${batasUpload || '-'}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.` + this.notifSbuNote(tenderSbu);
                                 sendWhatsAppMessage(null, msg)
                                     .then(res => { if (!res || !res.success) this.log(`WA GAGAL ${tenderKodeStr}: ${(res && res.error) || 'respons tidak valid'}`); })
                                     .catch(e => this.log(`WA ERROR ${tenderKodeStr}: ${e.message}`));
@@ -1116,7 +1125,7 @@ class CrawlerService {
                                             const { sendWhatsAppMessage } = require('../utils/whatsapp');
                                             const formatRp = (v) => new Intl.NumberFormat('id-ID').format(v || 0);
                                             const aanwizingDate = res.aanwijzing_date || extractAanwizingDate(res.schedules) || '-';
-                                            const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(parsedPagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(parsedHps || tenderInfo.hps)}\n*Batas Upload:* ${normDeadline}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.`;
+                                            const msg = `*Tender Konstruksi Baru Terdeteksi* 🚀\n\n*Nama Paket:* ${tenderInfo.nama_paket}\n*SBU:* ${res.sbu}\n*Instansi:* ${tenderInfo.instansi}\n*Pagu:* Rp ${formatRp(parsedPagu || tenderInfo.pagu)}\n*HPS:* Rp ${formatRp(parsedHps || tenderInfo.hps)}\n*Batas Upload:* ${normDeadline}\n*Aanwijzing:* ${aanwizingDate}\n*LPSE:* ${tenderInfo.nama_lpse}\n\n⚠️ *Catatan:* Masih diperlukan cek alat, personil, dll secara manual di dokpil.` + this.notifSbuNote(res.sbu);
                                             sendWhatsAppMessage(null, msg)
                                                 .then(r => { if (!r || !r.success) this.log(`WA GAGAL ${kode}: ${(r && r.error) || 'respons tidak valid'}`); })
                                                 .catch(e => this.log(`WA ERROR ${kode}: ${e.message}`));

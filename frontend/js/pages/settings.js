@@ -180,7 +180,7 @@ const SettingsPage = {
                 <div class="form-group" style="margin-top: 16px;">
                     <label class="form-label">Kata Kunci Nama Paket Notifikasi</label>
                     <input type="text" class="form-input" id="s-wakeywords" placeholder="Contoh: jalan tol, bendungan, jembatan">
-                    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Pisahkan dengan koma, huruf besar/kecil sama. Notif terkirim bila kode SBU cocok <b>ATAU</b> nama paket mengandung salah satu kata kunci ini — berguna saat kode SBU tidak terdeteksi di halaman. Kosongkan = tidak pakai filter kata kunci.</p>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Pisahkan dengan koma, huruf besar/kecil sama. <b>Cara kerja:</b> jika kode SBU terdetek di halaman → hanya kode SBU ini yang menentukan notif (kata kunci diabaikan, tidak dobel). Jika kode SBU TIDAK terdetek → kata kunci nama paket yang menentukan, dan pesan diberi tambahan "cek kode SBU di dalam dokpil". Kosongkan = tidak pakai filter kata kunci.</p>
                 </div>
 
                 <div class="form-group" style="margin-top: 16px;">
