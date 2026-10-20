@@ -687,4 +687,43 @@ router.post('/drive/parse', async (req, res) => {
   }
 });
 
+// POST /api/dokpil/save — simpan hasil ekstraksi ke tender (Tender Saya)
+router.post('/save', async (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.kode_tender) return res.status(400).json({ success: false, error: 'kode_tender wajib' });
+    const { rows } = await db.query(
+      `INSERT INTO dokpil_data
+         (kode_tender, nama_file, pokja, alamat_pokja, nama_paket, lokasi,
+          jangka_waktu, pagu_anggaran, pagu_terbilang, kir, peralatan, personel, rkk, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, NOW())
+       RETURNING id`,
+      [
+        b.kode_tender, b.nama_file || null,
+        b.pokja || null, b.alamat_pokja || null, b.nama_paket || null, b.lokasi || null,
+        b.jangka_waktu || null, b.pagu_anggaran || null, b.pagu_terbilang || null,
+        b.kir || 'tidak',
+        JSON.stringify(b.peralatan || []), JSON.stringify(b.personel || []), JSON.stringify(b.rkk || []),
+      ]
+    );
+    res.json({ success: true, data: { id: rows[0].id } });
+  } catch (err) {
+    console.error('[Dokpil Save]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/dokpil/saved/:kodeTender — ambil data dokpil terakhir untuk tender
+router.get('/saved/:kodeTender', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT * FROM dokpil_data WHERE kode_tender=$1 ORDER BY updated_at DESC LIMIT 1',
+      [req.params.kodeTender]
+    );
+    res.json({ success: true, data: rows[0] || null });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

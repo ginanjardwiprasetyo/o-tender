@@ -9,7 +9,7 @@ const text = fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-brspa.txt'), 
 const { fields, tables } = extractLdp(text);
 
 // ── Field ──
-assert.strictEqual(fields.pokja, 'Pokja Pemilihan Pengadaan Konstruksi Pemeliharaan Barang Milik Daerah Penunjang Urusan Pemerintahan Daerah', 'pokja');
+assert.strictEqual(fields.pokja, 'Pokja Pemilihan Pengadaan Konstruksi Pemeliharaan Barang Milik Daerah Penunjang Urusan Pemerintahan Daerah Paket Pekerjaan Rehab Ruang Bermain, Ruang Konseling dan Aula BRSPA Unit Sleman', 'pokja');
 assert.strictEqual(fields.alamat_pokja, 'Gedung Janaka (unit 7) Lantai 2 Kompleks Kepatihan, Danurejan, Yogyakarta', 'alamat_pokja');
 assert.strictEqual(fields.nama_paket, 'Rehab Ruang Bermain, Ruang Konseling dan Aula BRSPA Unit Sleman', 'nama_paket');
 assert.strictEqual(fields.lokasi, 'BRSPA Unit Sleman, Kalurahan Bimomartani, Kapanewon Ngemplak, Kab. Sleman', 'lokasi');

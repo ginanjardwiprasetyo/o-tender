@@ -157,7 +157,9 @@ function extractLdp(text) {
     // ── Field berlabel (format standar SPSE) ──
     const LIST = '(?:[a-z]\\.\\s*|-\\s*)';
     let v;
-    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Pokja\\s+Pemilihan\\s*:\\s*`, '(?:^|\\n)\\s*(?:[a-z]\\.\\s*|-\\s*)?(?:Alamat\\s+Pokja|Nama\\s+paket|Lingkup|Website\\s+LPSE)|\\bPaket\\s+Pekerjaan\\b');
+    // Pokja: stop di Alamat Pokja / Website / baris "b." / "c." — JANGAN stop di "Paket Pekerjaan"
+    // (di LDP BRSPA, "Paket Pekerjaan Rehab…" adalah LANJUTAN nama pokja di kolom PDF, bukan field terpisah)
+    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Pokja\\s+Pemilihan\\s*:\\s*`, '(?:^|\\n)\\s*(?:Alamat\\s+Pokja|Website\\s+LPSE|[b-z]\\.\\s+\\w)');
     if (v) fields.pokja = cleanVal(v);
 
     v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Alamat\\s+Pokja(?:\\s+Pemilihan)?\\s*:?\\s*`, '(?:^|\\n)\\s*(?:[a-z]\\.\\s*|-\\s*)?Website\\s+LPSE');

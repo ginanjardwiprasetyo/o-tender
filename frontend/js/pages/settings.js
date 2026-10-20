@@ -106,6 +106,22 @@ const SettingsPage = {
                 </div>
             </div>
 
+            <!-- Dokpil Drive Folder Card -->
+            <div class="card" style="margin-bottom:24px; padding:28px;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+                    <div style="width:40px; height:40px; border-radius:10px; background:rgba(52,168,83,0.1); color:#34a853; display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="folder-open"></i>
+                    </div>
+                    <h3 style="font-size:1.1rem; font-weight:700;">Dokpil — Folder Google Drive</h3>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">Folder induk berisi sub-folder tahun → proyek → file PDF dokpil. Service account harus di-share ke folder ini sebagai Viewer.</p>
+                <div class="form-group">
+                    <label class="form-label">Folder ID Google Drive</label>
+                    <input type="text" class="form-input" id="s-dokpil-drive-folder" placeholder="Contoh: 1V6Jdaj6ybN4qgN0n4T-byvHVljU5Kt7-">
+                    <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Ambil dari URL folder: <code>drive.google.com/drive/folders/<b>FOLDER_ID</b></code></p>
+                </div>
+            </div>
+
             <!-- Upload Berkas Card -->
             <div class="card" style="margin-bottom:24px; padding:28px;">
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
@@ -331,6 +347,9 @@ const SettingsPage = {
                     document.getElementById('s-default-lpse-val').value = def.kd_lpse;
                     document.getElementById('s-default-lpse-search').value = def.nama_lpse;
                 } catch {}
+            }
+            if (data.dokpil_drive_folder) {
+                document.getElementById('s-dokpil-drive-folder').value = data.dokpil_drive_folder;
             }
         } catch(e) { /* not configured yet */ }
         
@@ -569,7 +588,8 @@ const SettingsPage = {
                 wa_notif_upload: document.getElementById('s-notif-upload').checked ? 'true' : 'false',
                 wa_notif_pemenang: document.getElementById('s-notif-pemenang').checked ? 'true' : 'false',
                 wa_target_group_id: this.selectedGroupId,
-                wa_target_group_name: this.selectedGroupName
+                wa_target_group_name: this.selectedGroupName,
+                dokpil_drive_folder: document.getElementById('s-dokpil-drive-folder').value.trim()
             });
             Toast.success('Pengaturan berhasil disimpan');
         } catch(e) { Toast.error(e.message); }
