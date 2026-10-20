@@ -27,8 +27,20 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/migrations', express.static(path.join(__dirname, 'migrations')));
 
 // ─── API Auth (cookie session) ───────────────────────────────
-// penanda versi server (id proses) → tab lama yang tidak pernah reload dapat notifikasi muat ulang
-const APP_VER = String(Date.now());
+// penanda versi = hash isi kode (server.js + frontend js/css/html) — hanya berubah saat
+// deploy, TIDAK saat cold start (Date.now() bikin toast "aplikasi diperbarui" muncul terus)
+const crypto = require('crypto');
+const _verHash = crypto.createHash('sha1');
+const _walkVer = (dir) => {
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, f.name);
+        if (f.isDirectory()) _walkVer(p);
+        else if (/\.(js|css|html)$/.test(f.name)) _verHash.update(fs.readFileSync(p));
+    }
+};
+_walkVer(path.join(__dirname, '..', 'frontend'));
+_verHash.update(fs.readFileSync(__filename));
+const APP_VER = _verHash.digest('hex').slice(0, 12);
 app.use('/api', (req, res, next) => { res.setHeader('X-App-Ver', APP_VER); next(); });
 const { requireAuth, requireWrite } = require('./utils/auth');
 app.use('/api', requireAuth, requireWrite);

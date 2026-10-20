@@ -4,7 +4,7 @@
 const TenderBrowsePage = {
     lpseList: [],
     _lpseLoaded: false,
-    _dropdownsSetup: false,
+    _lpseLoading: null,
     _crawlLoading: false,
     _debounceTimers: {},
     
@@ -196,26 +196,30 @@ const TenderBrowsePage = {
         document.getElementById(`tab-${tabId}`).classList.remove('hidden');
     },
 
-    async loadLPSE() {
-        if (this._lpseLoaded) return;
-        try {
-            const { data } = await API.getLPSEList();
-            this.lpseList = data || [];
-            this._lpseLoaded = true;
-        } catch { Toast.error('Gagal memuat daftar LPSE'); }
+    // loadLPSE: boleh dipanggil ulang — gagal sekali (mis. backend cold start) tak bikin
+    // daftar LPSE kosong selamanya; silent=true untuk retry dari dropdown (tanpa toast spam)
+    loadLPSE(silent = false) {
+        if (this._lpseLoaded) return Promise.resolve();
+        if (this._lpseLoading) return this._lpseLoading;
+        this._lpseLoading = API.getLPSEList()
+            .then(({ data }) => { this.lpseList = data || []; this._lpseLoaded = true; })
+            .catch(() => { if (!silent) Toast.error('Gagal memuat daftar LPSE'); })
+            .finally(() => { this._lpseLoading = null; });
+        return this._lpseLoading;
     },
 
+    // ponytail: tanpa guard "_dropdownsSetup" — app.js mengganti #page-container.innerHTML
+    // tiap navigasi, listener lama menempel di DOM mati → dropdown harus di-bind ulang tiap render
     _setupDropdowns() {
-        if (this._dropdownsSetup) return;
-        this._dropdownsSetup = true;
-
         const setup = (inputId, hiddenId, dropdownId) => {
             const input    = document.getElementById(inputId);
             const hidden   = document.getElementById(hiddenId);
             const dropdown = document.getElementById(dropdownId);
             if (!input || !dropdown) return;
 
-            const renderDropdown = (q) => {
+            const renderDropdown = async (q) => {
+                if (!this._lpseLoaded) await this.loadLPSE(true);
+                if (input.value.trim() !== q) return; // teks sudah berubah selagi load LPSE
                 const matches = this.lpseList
                     .filter(l => l.nama_lpse.toLowerCase().includes(q.toLowerCase()))
                     .slice(0, 60);
@@ -238,12 +242,8 @@ const TenderBrowsePage = {
             input.addEventListener('input', (e) => {
                 hidden.value = '';
                 const q = e.target.value.trim();
-                if (q.length >= 2) {
-                    this._debounce('dropdown-' + inputId, () => renderDropdown(q), 150);
-                } else {
-                    clearTimeout(this._debounceTimers['dropdown-' + inputId]);
-                    dropdown.classList.add('hidden');
-                }
+                if (q.length >= 2) renderDropdown(q); // langsung, tanpa debounce — filter lokal < 1ms
+                else dropdown.classList.add('hidden');
             });
             input.addEventListener('focus', (e) => {
                 if (e.target.value.trim().length >= 2) renderDropdown(e.target.value.trim());
@@ -251,7 +251,6 @@ const TenderBrowsePage = {
             input.addEventListener('blur', () => setTimeout(() => dropdown.classList.add('hidden'), 150));
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
-                    clearTimeout(this._debounceTimers['dropdown-' + inputId]);
                     dropdown.classList.add('hidden');
                     if(inputId === 'crawl-lpse') this.loadCrawledData();
                     else this.searchManual();
