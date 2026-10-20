@@ -164,10 +164,12 @@ const TenderBrowsePage = {
 
         if (this.crawlFilter.search) document.getElementById('crawl-search').value = this.crawlFilter.search;
 
-        if (this.crawlFilter.lpse) {
-            document.getElementById('crawl-lpse-val').value = this.crawlFilter.lpse;
-            const match = this.lpseList.find(l => String(l.kd_lpse) === String(this.crawlFilter.lpse));
-            if (match) document.getElementById('crawl-lpse').value = match.nama_lpse;
+        // Filter LPSE: pilihan terakhir user DIINGAT di localStorage — termasuk saat
+        // dikosongkan ("semua LPSE"), jadi reload tidak balik ke default_lpse.
+        // default_lpse hanya dipakai saat belum pernah memilih sama sekali.
+        const savedLpse = localStorage.getItem('tenderbuild-crawl-lpse');
+        if (savedLpse !== null) {
+            this.crawlFilter.lpse = savedLpse;
         } else if (settingsRes.status === 'fulfilled' && settingsRes.value?.data?.default_lpse) {
             try {
                 const def = JSON.parse(settingsRes.value.data.default_lpse);
@@ -175,6 +177,11 @@ const TenderBrowsePage = {
                 document.getElementById('crawl-lpse-val').value = def.kd_lpse;
                 document.getElementById('crawl-lpse').value = def.nama_lpse;
             } catch {}
+        }
+        if (this.crawlFilter.lpse && !document.getElementById('crawl-lpse-val').value) {
+            document.getElementById('crawl-lpse-val').value = this.crawlFilter.lpse;
+            const match = this.lpseList.find(l => String(l.kd_lpse) === String(this.crawlFilter.lpse));
+            if (match) document.getElementById('crawl-lpse').value = match.nama_lpse;
         }
 
         this.loadCrawledData(this.crawlPage);
@@ -419,6 +426,8 @@ const TenderBrowsePage = {
         this.crawlFilter.search = document.getElementById('crawl-search').value.trim();
         this.crawlFilter.lpse = document.getElementById('crawl-lpse-val').value;
         this.crawlSort = document.getElementById('crawl-sort').value;
+        // Ingat pilihan LPSE (termasuk '' = semua) agar reload tidak balik ke default
+        try { localStorage.setItem('tenderbuild-crawl-lpse', this.crawlFilter.lpse); } catch {}
 
         const el = document.getElementById('crawl-results-container');
         if (!el) { this._crawlLoading = false; return; }
@@ -514,16 +523,26 @@ const TenderBrowsePage = {
     renderPagination() {
         const totalPages = Math.ceil(this.crawlTotal / 20);
         const el = document.getElementById('crawl-pagination');
+        if (!el) return;
         if (totalPages <= 1) { el.innerHTML = ''; return; }
 
-        let html = '';
-        if (this.crawlPage > 1) {
-            html += `<button class="btn btn-secondary btn-sm" onclick="TenderBrowsePage.loadCrawledData(${this.crawlPage - 1})">Prev</button>`;
+        const cur = this.crawlPage;
+        const mk = (p, label, opts = {}) =>
+            `<button class="btn btn-sm ${opts.active ? 'btn-primary' : 'btn-secondary'}"${opts.disabled ? ' disabled' : ''} onclick="TenderBrowsePage.loadCrawledData(${p})">${label}</button>`;
+
+        // Halaman: 1 2 … cur-1 cur cur+1 … last (window ±2, dedup, sisip … bila celah)
+        const pages = [...new Set([1, 2, cur - 2, cur - 1, cur, cur + 1, cur + 2, totalPages - 1, totalPages])]
+            .filter(p => p >= 1 && p <= totalPages)
+            .sort((a, b) => a - b);
+
+        let html = mk(cur - 1, 'Prev', { disabled: cur <= 1 });
+        let prev = 0;
+        for (const p of pages) {
+            if (p - prev > 1) html += `<span style="align-self:center; padding:0 2px; color:var(--text-muted);">&hellip;</span>`;
+            html += mk(p, p, { active: p === cur });
+            prev = p;
         }
-        html += `<span style="padding:4px 12px; font-size:0.85rem;">Hal ${this.crawlPage} dari ${totalPages}</span>`;
-        if (this.crawlPage < totalPages) {
-            html += `<button class="btn btn-secondary btn-sm" onclick="TenderBrowsePage.loadCrawledData(${this.crawlPage + 1})">Next</button>`;
-        }
+        html += mk(cur + 1, 'Next', { disabled: cur >= totalPages });
         el.innerHTML = html;
     },
 
