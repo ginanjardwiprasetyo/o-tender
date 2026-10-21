@@ -969,13 +969,18 @@ const DocumentsPage = {
         } catch (e) { Toast.error(e.message); }
     },
 
-    async _wzEqDelFile(equipId, fileId, url) {
-        try {
-            if (url && confirm('Hapus juga berkas dari storage? (Batal = catatan saja)')) await API.deleteFile(url).catch(() => {});
-            await API.deleteEquipmentFile(fileId);
-            Toast.success('Dihapus');
-            this._wzEqFiles(equipId);
-        } catch (e) { Toast.error(e.message); }
+    _wzEqDelFile(equipId, fileId, url) {
+        Modal.confirm('Hapus Lampiran Alat',
+            'Hapus catatan lampiran ini?',
+            async () => {
+                try {
+                    if (url) await API.deleteFile(url).catch(() => {});
+                    await API.deleteEquipmentFile(fileId);
+                    Toast.success('Dihapus');
+                    this._wzEqFiles(equipId);
+                } catch (e) { Toast.error(e.message); }
+            },
+            { confirmLabel: 'Ya, Hapus', detail: 'Berkas di storage juga ikut terhapus.' });
     },
 
     // ── FORM 4: personil (pelaksana + K3 + riwayat masing-masing) ──

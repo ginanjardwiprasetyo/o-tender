@@ -409,7 +409,19 @@ const PersonnelPage = {
             if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan'; }
         }
     },
-    async delEdu(id, pid) { try { await API.deleteEducation(id); Toast.success('Dihapus'); this.viewDetail(pid); } catch (e) { Toast.error(e.message); } },
+    delEdu(id, pid) {
+        const e = (this._detail?.education_history || []).find(x => x.id === id);
+        Modal.confirm('Hapus Riwayat Pendidikan',
+            'Yakin menghapus riwayat pendidikan ini?',
+            async () => {
+                try {
+                    await API.deleteEducation(id);
+                    Toast.success('Riwayat pendidikan dihapus');
+                    this.viewDetail(pid);
+                } catch (e) { Toast.error(e.message); }
+            },
+            { confirmLabel: 'Ya, Hapus', detail: e ? (e.lembaga || e.jenjang || '') : '' });
+    },
 
     // ─── PENGALAMAN ──────────────────────────────────
     addExpForm(pid, eid) {
@@ -471,7 +483,19 @@ const PersonnelPage = {
             if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan'; }
         }
     },
-    async delExp(id, pid) { try { await API.deleteExperience(id); Toast.success('Dihapus'); this.viewDetail(pid); } catch (e) { Toast.error(e.message); } },
+    delExp(id, pid) {
+        const e = (this._detail?.experience_history || []).find(x => x.id === id);
+        Modal.confirm('Hapus Riwayat Pengalaman',
+            'Yakin menghapus riwayat pengalaman kerja ini?',
+            async () => {
+                try {
+                    await API.deleteExperience(id);
+                    Toast.success('Riwayat pengalaman dihapus');
+                    this.viewDetail(pid);
+                } catch (e) { Toast.error(e.message); }
+            },
+            { confirmLabel: 'Ya, Hapus', detail: e ? (e.nama_kegiatan || e.posisi || '') : '' });
+    },
 
     // ─── SKA / SKT ───────────────────────────────────
     addSkaForm(pid, eid) {
@@ -521,7 +545,19 @@ const PersonnelPage = {
             if (btn) { btn.disabled = false; btn.innerHTML = 'Simpan'; }
         }
     },
-    async delSka(id, pid) { try { await API.deleteSka(id); Toast.success('Dihapus'); this.viewDetail(pid); } catch (e) { Toast.error(e.message); } },
+    delSka(id, pid) {
+        const e = (this._detail?.ska || []).find(x => x.id === id);
+        Modal.confirm('Hapus SKA',
+            'Yakin menghapus data SKA ini? Data ini dipakai untuk penilaian kompetensi Constructor.',
+            async () => {
+                try {
+                    await API.deleteSka(id);
+                    Toast.success('SKA dihapus');
+                    this.viewDetail(pid);
+                } catch (e) { Toast.error(e.message); }
+            },
+            { confirmLabel: 'Ya, Hapus', detail: e ? (e.nama_sertifikat || e.no_registrasi || '') : '' });
+    },
 
     remove(id) {
         Modal.confirm('Hapus Personil', 'Yakin menghapus personil ini? Semua riwayat akan terhapus.', async () => {
