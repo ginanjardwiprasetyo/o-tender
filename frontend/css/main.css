@@ -1078,6 +1078,10 @@ body.light-theme .soft-overlay {
 .structured-table th, .structured-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; color: var(--text-1); word-break: break-word; }
 .structured-table td:first-child { text-align: center; padding: 6px 4px; min-width: 20px; }
 .structured-table th { background: var(--bg-input); font-weight: 600; white-space: nowrap; }
+/* Kolom No cuma berisi 1-2 angka → jangan ikut melebar (trick: width:1% + nowrap bikin
+   kolom nge-strip ke isi konten). Input di dalamnya jg jangan min-width 60px. */
+.structured-table th:first-child, .structured-table td:first-child { width: 1%; white-space: nowrap; }
+.structured-table td:first-child .dokpil-cell-input { min-width: 26px; }
 .structured-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
 
 /* ─── Login Screen — Precision Construct ───────────────── */
