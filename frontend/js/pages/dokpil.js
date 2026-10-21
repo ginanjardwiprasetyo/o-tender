@@ -11,6 +11,8 @@ const DokpilPage = {
   followedTenders: [],
   selectedTenderId: '',
   currentFileName: '',
+  aiModels: [],
+  aiModel: localStorage.getItem('dokpil_ai_model') || '',
 
   async render() {
     return `
@@ -27,6 +29,13 @@ const DokpilPage = {
         <i data-lucide="folder-open" style="width:18px;height:18px;color:#34a853;"></i>
         Google Drive
         <span id="dokpil-drive-badge" style="margin-left:auto;font-size:0.75rem;font-weight:400;color:var(--text-muted);"></span>
+      </div>
+      <!-- AI model picker -->
+      <div id="dokpil-ai-bar" style="display:none;align-items:center;gap:8px;margin-bottom:12px;font-size:0.82rem;">
+        <i data-lucide="sparkles" style="width:14px;height:14px;color:var(--accent);"></i>
+        <span style="color:var(--text-muted);white-space:nowrap;">Model AI</span>
+        <select id="dokpil-ai-model" class="form-input" style="height:32px;max-width:320px;font-size:0.8rem;" onchange="DokpilPage.onModelChange(this.value)"></select>
+        <span id="dokpil-ai-model-note" style="color:var(--text-muted);font-size:0.72rem;"></span>
       </div>
       <!-- Breadcrumb -->
       <div id="dokpil-breadcrumb" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:16px;font-size:0.82rem;color:var(--text-muted);min-height:28px;"></div>
@@ -102,8 +111,32 @@ const DokpilPage = {
 
   async afterRender() {
     lucide.createIcons();
+    this.loadAiModels();
     await this.loadDriveFolder();
     this.loadFollowedTenders();
+  },
+
+  // ── AI model picker ──
+  async loadAiModels() {
+    try {
+      const res = await fetch('/api/dokpil/ai/models');
+      const json = await res.json();
+      this.aiModels = json.data?.models || [];
+      const def = json.data?.default || '';
+      if (!this.aiModel) this.aiModel = def;
+      const sel = document.getElementById('dokpil-ai-model');
+      if (!sel) return;
+      sel.innerHTML = this.aiModels.map(m =>
+        `<option value="${Fmt.escape(m.id)}"${m.id === this.aiModel ? ' selected' : ''}>${Fmt.escape(m.name)}</option>`
+      ).join('');
+      if (this.aiModels.length) document.getElementById('dokpil-ai-bar').style.display = 'flex';
+      const note = document.getElementById('dokpil-ai-model-note');
+      if (note) note.textContent = `${this.aiModels.length} model gratis`;
+    } catch (e) { /* offline / no key — hide bar, AI skip */ }
+  },
+  onModelChange(v) {
+    this.aiModel = v;
+    localStorage.setItem('dokpil_ai_model', v);
   },
 
   // ── Drive folder ──
@@ -237,7 +270,7 @@ const DokpilPage = {
       const res = await fetch('/api/dokpil/drive/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId })
+        body: JSON.stringify({ fileId, aiModel: this.aiModel })
       });
       const json = await res.json();
       document.getElementById('dokpil-loading').classList.add('hidden');
@@ -421,7 +454,7 @@ const DokpilPage = {
     const aiHtml = this.aiSummary ? `
       <div style="margin-top:24px;font-size:0.85rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:16px;">
         <div style="white-space:pre-wrap;line-height:1.7;">${Fmt.escape(this.aiSummary)}</div>
-        <div style="margin-top:8px;font-style:italic;font-size:0.75rem;">Diolah oleh AI Cloudflare</div>
+        <div style="margin-top:8px;font-style:italic;font-size:0.75rem;">Diolah oleh AI (${Fmt.escape(this.aiModel || 'default')})</div>
       </div>` : '';
 
     container.innerHTML = tableHtml + (tablesHtml ? `<h4 style="margin:24px 0 12px;">Tabel Terstruktur (Persyaratan Teknis & RKK)</h4>${tablesHtml}` : '') + aiHtml;

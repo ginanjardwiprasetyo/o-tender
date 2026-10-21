@@ -7,27 +7,29 @@ const os = require('os');
 const pdfParse = require('pdf-parse');
 const { extractLdp } = require('../services/dokpil_extract');
 
+// Parse konten JSON dari LLM dgn defensif: buang fence, ambil blok {..} terluar,
+// coba parse; bila gagal coba perbaiki key tanpa kutip. Return object atau null.
+function parseAiJson(content) {
+  if (!content || typeof content !== 'string') return null;
+  let cleaned = content.replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+  const s = cleaned.indexOf('{');
+  const e = cleaned.lastIndexOf('}');
+  if (s >= 0 && e > s) cleaned = cleaned.substring(s, e + 1);
+  const attempts = [cleaned, cleaned.replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":').replace(/'/g, '"')];
+  for (const a of attempts) {
+    try { const o = JSON.parse(a); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch (_) {}
+  }
+  return null;
+}
+
 // Isi field/tabel yang masih KOSONG dari hasil AI (TIDAK override hasil deterministik).
 // Dipakai path upload & path Drive supaya PDF dgn layout beda tetap terbantu.
 function applyAiFill(fields, tables, aiDataRaw) {
   let aiSummary = '';
   if (!aiDataRaw) return aiSummary;
   try {
-    let aiData = aiDataRaw;
-    if (typeof aiDataRaw === 'string') {
-      // cari { pertama, potong teks sebelum JSON
-      let jsonStart = aiDataRaw.indexOf('{');
-      let cleaned = jsonStart >= 0 ? aiDataRaw.substring(jsonStart) : aiDataRaw;
-      cleaned = cleaned.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '').trim();
-      // cari } terakhir
-      const jsonEnd = cleaned.lastIndexOf('}');
-      if (jsonEnd >= 0) cleaned = cleaned.substring(0, jsonEnd + 1);
-      try { aiData = JSON.parse(cleaned); }
-      catch (_) {
-        cleaned = cleaned.replace(/(\s*|,)([a-zA-Z_]\w*)(\s*):/g, '$1"$2"$3:').replace(/'/g, '"');
-        aiData = JSON.parse(cleaned);
-      }
-    }
+    const aiData = typeof aiDataRaw === 'string' ? parseAiJson(aiDataRaw) : aiDataRaw;
+    if (!aiData) return aiSummary;
     aiSummary = aiData.summary || '';
     if (!fields.pokja && aiData.pokja && aiData.pokja !== 'null') fields.pokja = aiData.pokja;
     if (!fields.alamat_pokja && aiData.alamat_pokja && aiData.alamat_pokja !== 'null') fields.alamat_pokja = aiData.alamat_pokja;
@@ -56,14 +58,15 @@ function applyAiFill(fields, tables, aiDataRaw) {
   return aiSummary;
 }
 
-// === AI Config (Cloudflare Workers AI) ===
-const CLOUDFLARE_ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
-const CLOUDFLARE_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-const AI_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+// === AI Config (OpenRouter) ===
+// Default: MiniMax flash free. reasoning_effort rendah WAJIB — model reasoning
+// habiskan semua token utk reasoning & balik kosong kalo effort default.
+// json_schema TIDAK dipakai (MiniMax abaikan) → prompt-only + parse defensif di applyAiFill.
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+const AI_MODEL = process.env.AI_MODEL || 'minimax/minimax-m3.1-flash:free';
+const AI_REASONING_EFFORT = process.env.AI_REASONING_EFFORT || 'low';
 
-async function aiExtract(text) {
-  if (!CLOUDFLARE_ACCOUNT || !CLOUDFLARE_TOKEN) return null;
-  const systemPrompt = `Anda adalah ekstraktor JSON. Dari teks LEMBAR DATA PEMILIHAN (LDP) di bawah, keluarkan JSON TANPA teks lain, TANPA markdown, TANPA kata pengantar.
+const AI_SYSTEM_PROMPT = `Anda adalah ekstraktor JSON. Dari teks LEMBAR DATA PEMILIHAN (LDP) di bawah, keluarkan JSON TANPA teks lain, TANPA markdown, TANPA kata pengantar.
 
 FORMAT PERSIS (gunakan key names ini, jangan diubah):
 {
@@ -81,7 +84,7 @@ FORMAT PERSIS (gunakan key names ini, jangan diubah):
 }
 
 ATURAN:
-- "pokja" → ambil dari "Pokja Pemilihan:"
+- "pokja" → ambil dari "Pokja Pemilihan:" (JANGAN tambahkan kata "Pokja Pemilihan" di depan)
 - "alamat_pokja" → ambil dari "Alamat Pokja Pemilihan:" (bukan "alamat" saja)
 - "nama_paket" → ambil dari "Nama paket pekerjaan:" (bukan "paket_pekerjaan")
 - "lokasi" → ambil dari "Lokasi pekerjaan:"
@@ -94,31 +97,82 @@ ATURAN:
 - null jika tidak ada. [] jika tabel kosong.
 - summary: ringkasan 2-3 paragraf Bahasa Indonesia tentang dokumen ini
 - HANYA JSON. Baris pertama harus {. Tidak ada teks lain.`;
-  try {
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/ai/run/${AI_MODEL}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${CLOUDFLARE_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text.substring(0, 20000) }
-        ],
-        max_tokens: 4096
-      })
-    });
-    const data = await res.json();
-    if (!data.success) { console.warn('[Dokpil AI] API error:', JSON.stringify(data.errors)); return null; }
-    // OpenAI-compatible: teks LLM di choices[0].message.content.
-    // result.response kadang object (parsed) — kalau string mentah mentah, pakai itu.
-    const r = data.result || {};
-    if (r.choices && r.choices[0] && r.choices[0].message) return r.choices[0].message.content;
-    if (typeof r.response === 'string') return r.response;
-    if (r.response && typeof r.response === 'object') return JSON.stringify(r.response);
-    return null;
-  } catch (e) {
-    console.warn('[Dokpil AI]', e.message);
-    return null;
+
+// Guard: panggil AI HANYA bila parser deterministik masih menyisakan field/tabel kosong.
+// Hemat kuota & waktu (deterministik sudah primary utk field).
+function needsAiFill(fields, tables) {
+  const FIELD_KEYS = ['pokja', 'alamat_pokja', 'nama_paket', 'lokasi', 'jangka_waktu', 'pagu_anggaran'];
+  if (FIELD_KEYS.some(k => !fields[k])) return true;
+  if (!fields.kir) return true;
+  for (const t of ['peralatan', 'personel', 'rkk']) {
+    if (!tables[t] || !tables[t].rows || !tables[t].rows.length) return true;
   }
+  return false;
+}
+
+async function aiExtract(text, model) {
+  if (!OPENROUTER_KEY) return null;
+  const useModel = model || AI_MODEL;
+  // Anchoring ke awal seksi LDP (bukan kepala dokumen) — dokumen besar punya
+  // preamble/daftar isi panjang sebelum data; table asli sering ratusan ribu char masuk.
+  const ldpText = text.substring(findLDP(text));
+  const messages = [
+    { role: 'system', content: AI_SYSTEM_PROMPT },
+    { role: 'user', content: ldpText.substring(0, 20000) }
+  ];
+  // Provider free MiniMax kadang balik 502 "empty response" → coba beberapa kali.
+  // Bila tetap gagal, fallback ke router openrouter/free (lebih stabil).
+  const attempts = [[useModel, 3], [useModel === 'openrouter/free' ? null : 'openrouter/free', 2]];
+  for (const [mdl, tries] of attempts) {
+    if (!mdl) continue;
+    for (let i = 0; i < tries; i++) {
+      const payload = { model: mdl, messages, max_tokens: 4096, temperature: 0 };
+      if (AI_REASONING_EFFORT) payload.reasoning_effort = AI_REASONING_EFFORT;
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && !data.error) {
+          const c = data.choices && data.choices[0] && data.choices[0].message;
+          const content = (c && c.content) || '';
+          const parsed = parseAiJson(content);
+          if (parsed) return parsed; // sukses & JSON valid
+          // JSON rusak → retry (jangan terima konten tak ter-parse)
+          console.warn('[Dokpil AI] JSON rusak, retry', mdl, 'try', i + 1, '| head:', String(content).slice(0, 80));
+        } else {
+          // provider_unavailable / empty → retry
+          console.warn('[Dokpil AI] retry', mdl, 'try', i + 1, data.error && data.error.code, data.error && String(data.error.message || '').slice(0, 50));
+        }
+      } catch (e) {
+        console.warn('[Dokpil AI]', mdl, e.message);
+      }
+    }
+  }
+  return null;
+}
+
+// Daftar model GRATIS dari OpenRouter (prompt=0 & completion=0), di-cache dlm memori.
+let _freeModelsCache = null;
+let _freeModelsAt = 0;
+async function listFreeModels() {
+  if (_freeModelsCache && Date.now() - _freeModelsAt < 10 * 60 * 1000) return _freeModelsCache;
+  const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}` } });
+  const data = await res.json();
+  const all = (data.data || []);
+  const free = all.filter(m => {
+    const p = m.pricing || {};
+    if (String(p.prompt) !== '0' || String(p.completion) !== '0') return false;
+    // buang model non-teks (mis. Lyria = musik) — ekstraksi LDP butuh output text
+    const out = (m.architecture || {}).output_modalities || [];
+    return out.includes('text') && !out.includes('audio');
+  }).map(m => ({ id: m.id, name: m.name || m.id, context_length: m.context_length || null }));
+  // pastikan default selalu ada & di urutan pertama
+  free.sort((a, b) => (a.id === AI_MODEL ? -1 : b.id === AI_MODEL ? 1 : a.name.localeCompare(b.name)));
+  _freeModelsCache = free; _freeModelsAt = Date.now();
+  return free;
 }
 
 const upload = multer({
@@ -522,9 +576,10 @@ router.post('/parse', upload.single('file'), async (req, res) => {
     debug.ldpLength = text.length;
 
     // ===== AI (opsional — hanya isi field/tabel yang masih kosong, TIDAK override) =====
-    if (CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN) {
-      aiSummary = applyAiFill(fields, tables, await aiExtract(text));
+    if (OPENROUTER_KEY && needsAiFill(fields, tables)) {
+      aiSummary = applyAiFill(fields, tables, await aiExtract(text, req.body.aiModel));
       debug.ai = !!aiSummary;
+      debug.aiModel = req.body.aiModel || AI_MODEL;
     }
 
     // Fallback terakhir: parser regex lama bila extractor gagal total
@@ -555,7 +610,7 @@ router.post('/parse', upload.single('file'), async (req, res) => {
         tables,
         debug,
         ai_summary: aiSummary,
-        ai_enabled: !!CLOUDFLARE_ACCOUNT,
+        ai_enabled: !!OPENROUTER_KEY,
         raw_text_preview: previewText.substring(0, 30000),
         raw_markdown: textToMarkdown(previewText).substring(0, 30000)
       }
@@ -602,6 +657,16 @@ async function getDriveFolder() {
   const { rows } = await db.query("SELECT value FROM settings WHERE key='dokpil_drive_folder'");
   return rows[0]?.value || process.env.GDRIVE_TEMPLATE_FOLDER || '';
 }
+
+// GET /api/dokpil/ai/models — daftar model GRATIS dari OpenRouter (untuk menu pemilihan AI)
+router.get('/ai/models', async (req, res) => {
+  try {
+    const models = await listFreeModels();
+    res.json({ success: true, data: { models, default: AI_MODEL } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // GET /api/dokpil/drive/folder — folder aktif (setting)
 router.get('/drive/folder', async (req, res) => {
@@ -682,9 +747,10 @@ router.post('/drive/parse', async (req, res) => {
     // AI fallback (sama dgn path upload) — isi field/tabel yang masih kosong utk layout beda
     let aiSummary = '';
     debug.ai = false;
-    if (CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN) {
-      aiSummary = applyAiFill(fields, tables, await aiExtract(text));
+    if (OPENROUTER_KEY && needsAiFill(fields, tables)) {
+      aiSummary = applyAiFill(fields, tables, await aiExtract(text, req.body.aiModel));
       debug.ai = !!aiSummary;
+      debug.aiModel = req.body.aiModel || AI_MODEL;
     }
 
     const ldpStart = findLDP(text);
@@ -699,7 +765,7 @@ router.post('/drive/parse', async (req, res) => {
         tables,
         debug,
         ai_summary: aiSummary,
-        ai_enabled: !!(CLOUDFLARE_ACCOUNT && CLOUDFLARE_TOKEN),
+        ai_enabled: !!OPENROUTER_KEY,
         file_name: meta.name,
         source: 'drive',
         raw_text_preview: previewText.substring(0, 30000),
