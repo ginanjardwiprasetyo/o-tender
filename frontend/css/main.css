@@ -1049,6 +1049,7 @@ body.light-theme .soft-overlay {
 .dokpil-tender-opt-kode { color: var(--text-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .dokpil-tender-empty, .dokpil-tender-count { padding: 10px 12px; font-size: 0.76rem; color: var(--text-3); }
 .dokpil-tender-count { border-top: 1px solid var(--border); text-align: center; }
+.dokpil-tender-hint { margin-top: 6px; font-size: 0.72rem; color: var(--text-3); }
 .dokpil-tender-selected {
   display: flex; align-items: center; gap: 10px; margin-top: 8px;
   padding: 8px 10px; border: 1px solid var(--accent-border);

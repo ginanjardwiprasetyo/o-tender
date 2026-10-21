@@ -107,10 +107,11 @@ const DokpilPage = {
             <div class="dokpil-tender-picker">
               <div class="search-box" style="max-width:none;">
                 <i data-lucide="search"></i>
-                <input type="text" id="dokpil-tender-search" placeholder="Cari nama proyek atau kode tender..." autocomplete="off"
+                <input type="text" id="dokpil-tender-search" placeholder="Ketik min. 3 karakter untuk mencari proyek..." autocomplete="off"
                        oninput="DokpilPage.filterTenders()" onfocus="DokpilPage.filterTenders()" onkeydown="DokpilPage.tenderSearchKey(event)">
                 <div id="dokpil-tender-list" class="dokpil-tender-list hidden"></div>
               </div>
+              <div id="dokpil-tender-hint" class="dokpil-tender-hint hidden"></div>
               <div id="dokpil-tender-selected" class="dokpil-tender-selected hidden"></div>
             </div>
           </div>
@@ -422,15 +423,33 @@ const DokpilPage = {
     } catch (e) { /* ignore */ }
   },
 
-  // Tampilkan daftar proyek (difilter q). q kosong = semua.
+  // Tampilkan daftar proyek (difilter q). List baru muncul setelah ketik >= 3 karakter.
   renderTenderList(q) {
     const list = document.getElementById('dokpil-tender-list');
+    const hint = document.getElementById('dokpil-tender-hint');
     if (!list) return;
-    const needle = String(q || '').trim().toLowerCase();
+    const needle = String(q || '').trim();
     const all = this.followedTenders || [];
-    const hits = needle
-      ? all.filter(t => ((t.nama_tender || '') + ' ' + (t.kode_tender || '') + ' ' + (t.satuan_kerja || '')).toLowerCase().includes(needle))
-      : all;
+
+    // Gate: min 3 karakter → list tetap tertutup, kasih hint biar user ga bingung
+    if (needle.length < 3) {
+      list.classList.add('hidden');
+      if (hint) {
+        if (needle.length) {
+          hint.textContent = 'Ketik minimal 3 karakter untuk mencari proyek.';
+        } else {
+          hint.textContent = all.length
+            ? `${all.length} proyek tersedia — ketik minimal 3 karakter untuk mencari.`
+            : 'Belum ada tender diikuti.';
+        }
+        hint.classList.remove('hidden');
+      }
+      return;
+    }
+    if (hint) hint.classList.add('hidden');
+
+    const lower = needle.toLowerCase();
+    const hits = all.filter(t => ((t.nama_tender || '') + ' ' + (t.kode_tender || '') + ' ' + (t.satuan_kerja || '')).toLowerCase().includes(lower));
 
     if (!all.length) {
       list.innerHTML = '<div class="dokpil-tender-empty">Belum ada tender diikuti.</div>';
@@ -439,7 +458,7 @@ const DokpilPage = {
       return;
     }
     if (!hits.length) {
-      list.innerHTML = '<div class="dokpil-tender-empty">Tidak ada proyek cocok dengan "' + Fmt.escape(q) + '".</div>';
+      list.innerHTML = '<div class="dokpil-tender-empty">Tidak ada proyek cocok dengan "' + Fmt.escape(needle) + '".</div>';
       list.classList.remove('hidden');
       this.placeTenderList(list);
       return;
@@ -500,6 +519,8 @@ const DokpilPage = {
     if (inp) inp.value = '';
     const list = document.getElementById('dokpil-tender-list');
     if (list) list.classList.add('hidden');
+    const hint = document.getElementById('dokpil-tender-hint');
+    if (hint) hint.classList.add('hidden');
     const box = document.getElementById('dokpil-tender-selected');
     if (box) {
       box.innerHTML = `<i data-lucide="check-circle" style="width:14px;height:14px;"></i>
@@ -519,7 +540,6 @@ const DokpilPage = {
     if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
     this.renderTenderList('');
   },
-
   // ── Save to DB ──
   async saveToTender() {
     const statusEl = document.getElementById('dokpil-save-status');
