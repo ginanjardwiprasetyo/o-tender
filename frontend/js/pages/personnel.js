@@ -86,15 +86,10 @@ const PersonnelPage = {
                 <div class="form-group"><label class="form-label">Jabatan (di Perusahaan)</label><input class="form-input" id="f-jabatan" value="${Fmt.escape(p.jabatan || '')}"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Tingkat Pendidikan</label>
-                    <select class="form-select" id="f-pendidikan">
-                        ${['', 'SMA/SMK', 'D3', 'S1', 'S2', 'S3'].map(v => `<option ${p.tingkat_pendidikan === v ? 'selected' : ''}>${v || '-- Pilih --'}</option>`).join('')}
-                    </select>
-                </div>
                 <div class="form-group"><label class="form-label">Pengalaman (Tahun)</label><input type="number" class="form-input" id="f-pengalaman" value="${p.tahun_pengalaman || ''}"></div>
+                <div class="form-group"><label class="form-label">Tempat Lahir</label><input class="form-input" id="f-tmplahir" value="${Fmt.escape(p.tempat_lahir || '')}"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label class="form-label">Tempat Lahir</label><input class="form-input" id="f-tmplahir" value="${Fmt.escape(p.tempat_lahir || '')}"></div>
                 <div class="form-group"><label class="form-label">Tanggal Lahir</label><input type="date" class="form-input" id="f-tgllahir" value="${String(p.tanggal_lahir || '').slice(0, 10)}"></div>
             </div>
             <div class="form-group"><label class="form-label">Alamat (opsional — untuk dokumen)</label><input class="form-input" id="f-alamat" value="${Fmt.escape(p.alamat || '')}" placeholder="Jl. ..., Kota"></div>
@@ -245,7 +240,8 @@ const PersonnelPage = {
             const data = {
                 nama: document.getElementById('f-nama').value.trim(),
                 jabatan: document.getElementById('f-jabatan').value.trim() || null,
-                tingkat_pendidikan: document.getElementById('f-pendidikan').value || null,
+                // tingkat_pendidikan ga ada di form ini (udah ada form tersendiri di halaman Surat)
+                // → ga dikirim, biar update parsial ga menimpa nilai lama
                 tempat_lahir: document.getElementById('f-tmplahir').value.trim() || null,
                 tanggal_lahir: document.getElementById('f-tgllahir').value || null,
                 tahun_pengalaman: parseInt(document.getElementById('f-pengalaman').value) || null,
@@ -273,7 +269,7 @@ const PersonnelPage = {
 
             const eduRows = (p.education_history || []).map(e => `
                 <tr>
-                    <td>${Fmt.escape(e.lembaga)}<br><small style="color:var(--text-muted);">${Fmt.escape(e.jenjang || '')} - ${Fmt.escape(e.jurusan || '')}</small></td>
+                    <td>${Fmt.escape(e.lembaga || '-')}<br><small style="color:var(--text-muted);">${Fmt.escape(e.jenjang || '')} - ${Fmt.escape(e.jurusan || '')}</small></td>
                     <td>${Fmt.escape(e.tempat || '')}</td>
                     <td>${e.tahun_tamat || '-'}</td>
                     <td style="text-align:center;">${e.ijazah_url ? `<a href="${e.ijazah_url}" target="_blank" class="btn btn-secondary eq-btn" title="Lihat Ijazah"><i data-lucide="eye"></i></a>` : '-'}</td>
@@ -358,7 +354,7 @@ const PersonnelPage = {
         const e = eid ? (this._detail?.education_history || []).find(x => x.id === eid) : {};
         if (eid && !e) { Toast.error('Data tidak ditemukan'); return; }
         const body = `
-        <div class="form-group"><label class="form-label">Lembaga Pendidikan *</label><input class="form-input" id="f-edu-lembaga" value="${Fmt.escape(e?.lembaga || '')}"></div>
+        <div class="form-group"><label class="form-label">Lembaga Pendidikan</label><input class="form-input" id="f-edu-lembaga" value="${Fmt.escape(e?.lembaga || '')}" placeholder="Nama sekolah/universitas (opsional)"></div>
         <div class="form-row">
             <div class="form-group"><label class="form-label">Jenjang (SD/SMP/SMA/S1)</label><input class="form-input" id="f-edu-jenjang" value="${Fmt.escape(e?.jenjang || '')}"></div>
             <div class="form-group"><label class="form-label">Jurusan</label><input class="form-input" id="f-edu-jurusan" value="${Fmt.escape(e?.jurusan || '')}"></div>
@@ -390,7 +386,7 @@ const PersonnelPage = {
             }
 
             const data = {
-                lembaga: document.getElementById('f-edu-lembaga').value.trim(),
+                lembaga: document.getElementById('f-edu-lembaga').value.trim() || null,
                 jenjang: document.getElementById('f-edu-jenjang').value.trim() || null,
                 jurusan: document.getElementById('f-edu-jurusan').value.trim() || null,
                 tempat: document.getElementById('f-edu-tempat').value.trim() || null,
