@@ -67,4 +67,14 @@ assert.deepStrictEqual(g.tables.personel.rows.map(r => r.slice(0, 4)), [
 ], 'personel rows (kolom jumlah)');
 assert.ok(g.tables.personel.rows[1][4].startsWith('SKT Petugas K3'), 'sertifikat terpisah dari jabatan');
 
-console.log('OK: dokpil_extract — 19 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah)');
+// ── Urutan kolom BERBEDA: "Jabatan | Pengalaman | Jumlah (Orang)" (LDP Polly) ──
+// Regresi: pengalaman "1 Tahun" ada di tengah baris → parser ngarahin ke kolom
+// Jabatan ("Pelaksana 1 Tahun") & kolom Pengalaman kosong.
+const o = extractLdp(fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-personel-urutan.txt'), 'utf8'));
+assert.deepStrictEqual(o.tables.personel.header, ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], 'personel header (urutan kolom beda)');
+assert.deepStrictEqual(o.tables.personel.rows.map(r => r.slice(0, 4)), [
+  ['1', 'Pelaksana', '1', '1 Tahun'],
+  ['2', 'Petugas Keselamatan Konstruksi', '1', '0 Tahun'],
+], 'personel rows (urutan kolom beda)');
+
+console.log('OK: dokpil_extract — 22 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom)');

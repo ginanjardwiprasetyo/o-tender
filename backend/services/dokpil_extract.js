@@ -156,11 +156,13 @@ function parsePeralatan(no, text) {
     return [no, jenis.trim(), kap, jumlah];
 }
 
-/** personel: <jabatan> [jumlah] [N tahun|tidak dipersyaratkan] <sertifikat…>
- * Kolom bisa beda layout. Urutan di dokumen: Jabatan | Jumlah (Orang) | Pengalaman | Sertifikat.
- * - Batas kolom sertifikat: kata kunci (SKK/SKT/…) → before = jabatan (+jumlah + pengalaman).
- * - Pengalaman: "N Tahun" (paling eksplisit), lalu "Tidak dipersyaratkan", lalu angka polos.
- * - Sisa angka polos sebelum pengalaman = jumlah orang (hanya bila tabel punya kolom tsb). */
+/** personel: <jabatan> [N tahun|tidak dipersyaratkan] [jumlah] <sertifikat…>
+ * Kolom bisa beda layout DAN beda urutan antar LDP:
+ *   - "Jabatan | Jumlah (Orang) | Pengalaman | Sertifikat"  (mis. SDN 3 Gentan)
+ *   - "Jabatan | Pengalaman | Jumlah (Orang) | Sertifikat"  (mis. LDP Polly)
+ * Jadi pengalaman DICARI di mana aja (bukan wajib di ujung), lalu sisa angka polos
+ * di ujung = jumlah orang (hanya bila tabel punya kolom tsb).
+ * Tanpa kolom Jumlah → angka polos di ujung = pengalaman. */
 function parsePersonel(no, text, hasJumlah) {
     if (!text) return null;
     const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)';
@@ -169,25 +171,23 @@ function parsePersonel(no, text, hasJumlah) {
         let before = text.slice(0, cm.index).trim();
         const sert = text.slice(cm.index).trim();
         let peng = '', jml = '';
-        // 1) "N Tahun" — paling eksplisit, ambil lebih dulu
-        let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b\s*$/i);
-        if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
+        // buang sel pengalaman dr `before` (bisa di tengah, jg bisa di ujung)
+        const cut = (m) => (before.slice(0, m.index) + ' ' + before.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
+        // 1) "N Tahun"
+        let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b/i);
+        if (pm) { peng = `${pm[1]} Tahun`; before = cut(pm); }
         else {
-            // 2) "Tidak dipersyaratkan pengalaman" — pengalaman tanpa angka.
-            //    Regex toleran pemenggalan kata di tengah ("dipersya"+"ratkan", "pengala"+"man")
-            pm = before.match(/\s+(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?\s*$/i);
-            if (pm) { peng = 'Tidak dipersyaratkan'; before = before.slice(0, pm.index).trim(); }
-            // 3) angka polos di ujung = pengalaman (tanpa kolom jumlah) atau jumlah (dengan kolom jumlah)
-            else {
+            // 2) "Tidak dipersyaratkan pengalaman" — regex toleran pemenggalan kata
+            pm = before.match(/\s+(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?/i);
+            if (pm) { peng = 'Tidak dipersyaratkan'; before = cut(pm); }
+            // 3) tabel tanpa kolom Jumlah → angka polos di ujung = pengalaman
+            else if (!hasJumlah) {
                 pm = before.match(/\s+(\d+)\s*$/);
-                if (pm) {
-                    if (hasJumlah) { jml = pm[1]; before = before.slice(0, pm.index).trim(); }
-                    else { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
-                }
+                if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
             }
         }
-        // 4) kolom jumlah ada & pengalaman sudah terambil → sisa angka polos = jumlah orang
-        if (hasJumlah && !jml) {
+        // 4) kolom jumlah ada → sisa angka polos di ujung = jumlah orang
+        if (hasJumlah) {
             const qm = before.match(/\s+(\d+)\s*$/);
             if (qm) { jml = qm[1]; before = before.slice(0, qm.index).trim(); }
         }

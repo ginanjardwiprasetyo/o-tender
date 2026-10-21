@@ -251,6 +251,8 @@ const DokpilPage = {
           <i data-lucide="folder"></i>
         </div>
         <div class="dokpil-drive-card-name">${Fmt.escape(f.name)}</div>
+        <div class="dokpil-drive-card-meta">FOLDER</div>
+        ${f.modifiedTime ? `<div class="dokpil-drive-card-time" title="Terakhir diubah: ${Fmt.dateTime(f.modifiedTime)}">Diperbarui ${Fmt.dateShort(f.modifiedTime)}</div>` : ''}
       </div>`).join('');
 
     const pdfCards = pdfs.map(f => `
@@ -260,6 +262,7 @@ const DokpilPage = {
         </div>
         <div class="dokpil-drive-card-name">${Fmt.escape(f.name.replace(/\.pdf$/i, ''))}</div>
         <div class="dokpil-drive-card-meta">PDF</div>
+        ${f.modifiedTime ? `<div class="dokpil-drive-card-time" title="Terakhir diubah: ${Fmt.dateTime(f.modifiedTime)}">Upload ${Fmt.dateShort(f.modifiedTime)}</div>` : ''}
       </div>`).join('');
 
     listEl.innerHTML = `<div class="dokpil-drive-grid">${folderCards}${pdfCards}</div>`;
