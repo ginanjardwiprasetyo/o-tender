@@ -215,6 +215,15 @@ app.listen(PORT, async () => {
             console.warn('⚠️ Gagal menambahkan kolom notifikasi followed_tenders:', colErr.message);
         }
 
+        // Self-healing: "Lembaga Pendidikan" jadi opsional (riwayat pendidikan bisa
+        // diisi sebagian) → lepaskan NOT NULL di education_history.lembaga
+        try {
+            await db.query('ALTER TABLE education_history ALTER COLUMN lembaga DROP NOT NULL;');
+            console.log('✅ education_history.lembaga nullable OK');
+        } catch (colErr) {
+            console.warn('⚠️ Gagal melepas NOT NULL education_history.lembaga:', colErr.message);
+        }
+
         // Self-healing: Enable RLS deny-all (backend via DATABASE_URL = postgres owner/bypass)
         // Jangan pakai 010_disable_rls lagi — bikin linter Supabase error terus
         try {

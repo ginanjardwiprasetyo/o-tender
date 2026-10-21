@@ -108,7 +108,7 @@ router.put('/education/:id', async (req, res) => {
         const { lembaga, tempat, tahun_tamat, jenjang, jurusan, ijazah_url } = req.body;
         const { rows } = await db.query(
             `UPDATE education_history SET lembaga=$1, tempat=$2, tahun_tamat=$3, jenjang=$4, jurusan=$5, ijazah_url=$6 WHERE id=$7 RETURNING *`,
-            [lembaga, tempat || null, tahun_tamat || null, jenjang || null, jurusan || null, ijazah_url || null, req.params.id]
+            [lembaga || null, tempat || null, tahun_tamat || null, jenjang || null, jurusan || null, ijazah_url || null, req.params.id]
         );
         if (!rows[0]) return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
         res.json({ success: true, data: rows[0] });
@@ -260,11 +260,11 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/education', async (req, res) => {
     try {
         const { lembaga, tempat, tahun_tamat, jenjang, jurusan, ijazah_url } = req.body;
-        if (!lembaga || !lembaga.trim()) return res.status(400).json({ success: false, error: 'Nama lembaga wajib diisi' });
+        // lembaga opsional (cukup jenjang/jurusan/tahun lulus)
 
         const { rows } = await db.query(
             'INSERT INTO education_history (personnel_id, lembaga, tempat, tahun_tamat, jenjang, jurusan, ijazah_url) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-            [req.params.id, lembaga, tempat || null, tahun_tamat || null, jenjang || null, jurusan || null, ijazah_url || null]
+            [req.params.id, lembaga || null, tempat || null, tahun_tamat || null, jenjang || null, jurusan || null, ijazah_url || null]
         );
         res.status(201).json({ success: true, data: rows[0] });
     } catch (err) {
