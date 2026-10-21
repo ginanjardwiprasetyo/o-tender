@@ -755,6 +755,7 @@ const DocumentsPage = {
             for (const j of list) {
                 const res = await API.generateDocument(j.payload);
                 outs.push({ label: j.label, d: res.data });
+                if (res.data?.scan_error) Toast.warning(`${j.label}: efek scan GAGAL (${res.data.scan_error}) — PDF tetap normal`);
             }
             Toast.success(outs.map(o => `✅ ${o.label} (${o.d.pages} hal.) — <a href="${o.d.url}" target="_blank" style="color:var(--accent); font-weight:700;">Unduh</a>`).join('<br>'));
             this.loadRecords();

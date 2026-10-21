@@ -7,6 +7,7 @@
  *
  * Tanpa dependency baru: pdfjs-dist + @napi-rs/canvas + pdf-lib sudah ada.
  */
+require('./node_compat');   // shim Promise.withResolvers utk Node < 22
 const crypto = require('crypto');
 const { createCanvas } = require('@napi-rs/canvas');
 const { PDFDocument } = require('pdf-lib');

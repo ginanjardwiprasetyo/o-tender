@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+require('../services/node_compat');   // shim Promise.withResolvers utk Node < 22
 const db = require('../config/db');
 const { applyScanEffect } = require('../services/scan_effect');
 const supabase = require('../config/supabase');
@@ -252,13 +253,15 @@ router.post('/generate', async (req, res) => {
         const merged = await mergeAttachments(stamped.bytes, req.body.attachments || []);
         // Efek scan (opsional) — berlaku utk SEMUA dokumen di batch ini
         let finalBytes = merged.bytes, finalPages = merged.pages;
-        let scanApplied = false;
+        let scanApplied = false, scanError = null;
         if (req.body.scan_effect) {
             try {
                 const sc = await applyScanEffect(merged.bytes, req.body.scan_opts || {});
                 finalBytes = sc.bytes; finalPages = sc.pages; scanApplied = true;
             } catch (e) {
-                console.warn('[Scan Effect] gagal, PDF tetap normal:', e.message);
+                // jangan senyap — user harus tahu efeknya GAGAL, bukan dikira jalan
+                scanError = e.message;
+                console.error('[Scan Effect] GAGAL, PDF tetap normal:', e.message);
             }
         }
         const up = await uploadResult(finalBytes, req);
@@ -270,7 +273,7 @@ router.post('/generate', async (req, res) => {
              JSON.stringify(ctx.personil), JSON.stringify(ctx.equip),
              built.html, up.url, up.path, finalPages, JSON.stringify({ ...(req.body.variables || req.body.vars || {}), cap_variants: built.capVariants, has_ttd: !!((req.body.show?.direktur || req.body.show?.pelaksana || req.body.show?.k3) && req.body.show?.cap), scan_effect: scanApplied })]
         );
-        res.json({ success: true, data: { id: rows[0].id, url: up.url, pages: finalPages, skipped: merged.skipped, cap_variants: built.capVariants, scan_effect: scanApplied } });
+        res.json({ success: true, data: { id: rows[0].id, url: up.url, pages: finalPages, skipped: merged.skipped, cap_variants: built.capVariants, scan_effect: scanApplied, scan_error: scanError } });
     } catch (err) {
         console.error('[Generate Error]', err.message);
         res.status(500).json({ success: false, error: err.message });
