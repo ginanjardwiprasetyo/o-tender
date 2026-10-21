@@ -164,7 +164,7 @@ const EquipmentPage = {
         <div class="form-row">
             <div class="form-group"><label class="form-label">Jenis Peralatan *</label><input class="form-input" id="f-jenis" value="${Fmt.escape(item.jenis || '')}" required></div>
             <div class="form-group"><label class="form-label">PT / Perusahaan</label>
-                <select class="form-select" id="f-pt">
+                <select class="form-select" id="f-pt" onchange="EquipmentPage.onCompanyChange()">
                     <option value="">-- Tanpa PT --</option>
                     ${(this.companies || []).map(c => `<option value="${c.id}" ${item.company_id === c.id ? 'selected' : ''}>${Fmt.escape(c.singkatan || c.nama_perusahaan)}</option>`).join('')}
                 </select>
@@ -232,6 +232,7 @@ const EquipmentPage = {
         lucide.createIcons();
         // Lampiran utk alat BARU: di-stage dulu (belum ada id alat buat nyimpen)
         this._pendingFiles = [];
+        this._savedFiles = [];      // reset — jangan nyangkut lampiran alat sebelumnya
         this._formId = id || '';
         if (id) this.loadDocFiles(id);
         else this.renderDocFiles();
@@ -346,9 +347,21 @@ const EquipmentPage = {
     // Inline (bukan modal) → form alat tetap utuh.
     async pickSharedFile(id) {
         const wrap = document.getElementById('eq-file-bank');
+        if (!wrap) return;
+        if (!wrap.classList.contains('hidden')) { wrap.classList.add('hidden'); return; }
+        await this.loadFileBank(id);
+    },
+
+    // PT/Perusahaan di form berubah → bank file ikut difilter
+    onCompanyChange() {
+        const wrap = document.getElementById('eq-file-bank');
+        if (wrap && !wrap.classList.contains('hidden')) this.loadFileBank(this._formId);
+    },
+
+    async loadFileBank(id) {
+        const wrap = document.getElementById('eq-file-bank');
         const list = document.getElementById('eq-file-bank-list');
         if (!wrap || !list) return;
-        if (!wrap.classList.contains('hidden')) { wrap.classList.add('hidden'); return; }
         try {
             const res = await API.getAllEquipmentFiles();
             let files = res.data || [];
@@ -358,14 +371,19 @@ const EquipmentPage = {
                 const used = new Set((mine.data || []).map(f => f.id));
                 files = files.filter(f => !used.has(f.id));
             }
+            // Filter sesuai PT/Perusahaan di form → cuma berkas milik PT yg sama
+            const pt = document.getElementById('f-pt')?.value || '';
+            if (pt) files = files.filter(f => String(f.company_id || '') === String(pt));
             if (!files.length) {
-                list.innerHTML = '<small style="color:var(--text-muted);">Belum ada berkas alat lain yang bisa dipakai.</small>';
+                list.innerHTML = pt
+                    ? '<small style="color:var(--text-muted);">Belum ada berkas untuk PT/Perusahaan ini.</small>'
+                    : '<small style="color:var(--text-muted);">Belum ada berkas alat lain yang bisa dipakai.</small>';
             } else {
                 list.innerHTML = files.map(f => `
-                    <button type="button" class="eq-bank-item" data-pick-file="${f.id}" data-pick-label="${Fmt.escape(f.label || f.file_url.split('/').pop())}" data-pick-owner="${Fmt.escape(f.equipment_nama || '')}">
+                    <button type="button" class="eq-bank-item" data-pick-file="${f.id}" data-pick-label="${Fmt.escape(f.label || f.file_url.split('/').pop())}" data-pick-owner="${Fmt.escape(f.company_id ? (f.company_singkatan || f.nama_perusahaan || f.equipment_nama || '') : (f.equipment_nama || 'Tanpa alat'))}">
                         <i data-lucide="file-text" style="width:15px;height:15px;"></i>
                         <span class="eq-bank-name">${Fmt.escape(f.label || f.file_url.split('/').pop())}</span>
-                        <span class="eq-bank-owner">${Fmt.escape(f.equipment_nama || 'Tanpa alat')}</span>
+                        <span class="eq-bank-owner">${Fmt.escape(f.company_id ? (f.company_singkat || f.company_singkatan || f.nama_perusahaan || '') : (f.equipment_nama || 'Tanpa alat'))}${f.used_count > 1 ? ' · dipakai ' + (f.used_count - 1) + 'x' : ''}</span>
                     </button>`).join('');
                 list.querySelectorAll('[data-pick-file]').forEach(b => b.onclick = () => {
                     this.useSharedFile(id, b.dataset.pickFile, b.dataset.pickLabel);

@@ -123,11 +123,25 @@ router.delete('/:id', async (req, res) => {
 });
 
 // GET /api/equipments/files/all — bank file semua alat (untuk berbagi antar alat)
+// File yg dipakai >1 alat tetap ditampilkan SATU kali: baris "induk" = yg paling
+// pertama kali diupload (created_at paling awal) →baris lainnya cuma tautan/shared.
 router.get('/files/all', async (req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT f.*, e.jenis AS equipment_nama FROM equipment_doc_files f
-             JOIN equipments e ON e.id = f.equipment_id ORDER BY f.created_at DESC LIMIT 200`
+            `SELECT f.id, f.label, f.file_url, f.created_at,
+                    e.jenis AS equipment_nama, e.company_id,
+                    c.singkatan AS company_singkatan, c.nama_perusahaan,
+                    (SELECT COUNT(*) FROM equipment_doc_files f2 WHERE f2.file_url = f.file_url) AS used_count,
+                    (SELECT array_agg(DISTINCT e2.jenis) FROM equipment_doc_files f2
+                     JOIN equipments e2 ON e2.id = f2.equipment_id
+                     WHERE f2.file_url = f.file_url) AS used_by
+             FROM equipment_doc_files f
+             JOIN equipments e ON e.id = f.equipment_id
+             LEFT JOIN companies c ON c.id = e.company_id
+             WHERE f.id = (SELECT f3.id FROM equipment_doc_files f3
+                           WHERE f3.file_url = f.file_url
+                           ORDER BY f3.created_at ASC, f3.id ASC LIMIT 1)
+             ORDER BY f.created_at DESC LIMIT 200`
         );
         res.json({ success: true, data: rows });
     } catch (err) {
