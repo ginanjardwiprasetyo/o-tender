@@ -51,6 +51,49 @@ const HEADERS = {
     rkk: ['No', 'Uraian Pekerjaan', 'Identifikasi Bahaya'],
 };
 
+// Kosakata dokumen (kata → frekuensi) utk menyambung kata yg terpotong antar baris.
+function buildVocab(text) {
+    const cnt = new Map();
+    for (const w of String(text || '').match(/[A-Za-z]+/g) || []) {
+        const k = w.toLowerCase();
+        cnt.set(k, (cnt.get(k) || 0) + 1);
+    }
+    return cnt;
+}
+
+// PDF kolom sempit memotong kata di tengah baris ("dipersya"+"ratkan" → "dipersyaratkan").
+// Gabung kalo hasil gabung ada di kosakata dokumen & jauh lebih sering drpd pecahan pertamanya.
+function joinBrokenWords(lines, vocab) {
+    const out = [];
+    for (const raw of lines) {
+        let cur = raw;
+        while (out.length) {
+            const prev = out[out.length - 1];
+            const mp = prev.match(/^(.*?)([A-Za-z]+)(\s*)$/);
+            const mc = cur.match(/^(\s*)([A-Za-z]+)(.*)$/);
+            if (!mp || !mc) break;
+            const a = mp[2], b = mc[2];
+            const joined = (a + b).toLowerCase();
+            const cJoined = vocab.get(joined) || 0;
+            const cA = vocab.get(a.toLowerCase()) || 0;
+            if (cJoined < 2 || cJoined <= cA * 2) break;
+            out[out.length - 1] = mp[1] + a + b + mc[3];
+            cur = null;
+            break;
+        }
+        if (cur !== null) out.push(cur);
+    }
+    return out;
+}
+
+// Tabel personel punya kolom "Jumlah (Orang)" pada sebagian LDP → jumlah orang (mis. "1")
+// harus dipisah dari pengalaman kerja ("1 Tahun") supaya tidak mengotori kolom Jabatan.
+function hasJumlahColumn(lines) {
+    const idx = lines.findIndex(l => /^\s*\d+[.\s]/.test(l));
+    const head = (idx === -1 ? lines : lines.slice(0, idx)).join(' ');
+    return /jumla?h/i.test(head) || /juml/i.test(head);
+}
+
 // Baris penanda akhir seksi (item daftar global berikutnya)
 const END_ITEM_RE = /^\s*(?:\d+\.\s+)?(?:Memiliki|Bagian|Pernyataan|Rencana|Cara|Preferensi|Bentuk|Jaminan|Ketentuan|Atas\s+penggunaan|Pembayaran)/i;
 // Noise header/footer halaman yang tak boleh jadi lanjutan baris tabel
@@ -113,25 +156,49 @@ function parsePeralatan(no, text) {
     return [no, jenis.trim(), kap, jumlah];
 }
 
-/** personel: <jabatan> [N] <sertifikat…> — kolom bisa beda layout.
- * Pilih batas kolom sertifikat: kata kunci (SKK/SKT/…) bila ada → before = jabatan (+N pengalaman di ujung).
- * Tanpa kata kunci → token "N tahun". Menangani: pengalaman "1 tahun", "0" polos, atau kosong (kolom ter-merge). */
-function parsePersonel(no, text) {
+/** personel: <jabatan> [jumlah] [N tahun|tidak dipersyaratkan] <sertifikat…>
+ * Kolom bisa beda layout. Urutan di dokumen: Jabatan | Jumlah (Orang) | Pengalaman | Sertifikat.
+ * - Batas kolom sertifikat: kata kunci (SKK/SKT/…) → before = jabatan (+jumlah + pengalaman).
+ * - Pengalaman: "N Tahun" (paling eksplisit), lalu "Tidak dipersyaratkan", lalu angka polos.
+ * - Sisa angka polos sebelum pengalaman = jumlah orang (hanya bila tabel punya kolom tsb). */
+function parsePersonel(no, text, hasJumlah) {
     if (!text) return null;
     const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)';
     const cm = text.match(new RegExp(CERT, 'i'));
     if (cm && cm.index > 0) {
         let before = text.slice(0, cm.index).trim();
         const sert = text.slice(cm.index).trim();
-        const pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)?\s*$/i); // pengalaman polos di ujung
-        let peng = '';
+        let peng = '', jml = '';
+        // 1) "N Tahun" — paling eksplisit, ambil lebih dulu
+        let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b\s*$/i);
         if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
+        else {
+            // 2) "Tidak dipersyaratkan pengalaman" — pengalaman tanpa angka.
+            //    Regex toleran pemenggalan kata di tengah ("dipersya"+"ratkan", "pengala"+"man")
+            pm = before.match(/\s+(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?\s*$/i);
+            if (pm) { peng = 'Tidak dipersyaratkan'; before = before.slice(0, pm.index).trim(); }
+            // 3) angka polos di ujung = pengalaman (tanpa kolom jumlah) atau jumlah (dengan kolom jumlah)
+            else {
+                pm = before.match(/\s+(\d+)\s*$/);
+                if (pm) {
+                    if (hasJumlah) { jml = pm[1]; before = before.slice(0, pm.index).trim(); }
+                    else { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
+                }
+            }
+        }
+        // 4) kolom jumlah ada & pengalaman sudah terambil → sisa angka polos = jumlah orang
+        if (hasJumlah && !jml) {
+            const qm = before.match(/\s+(\d+)\s*$/);
+            if (qm) { jml = qm[1]; before = before.slice(0, qm.index).trim(); }
+        }
         before = before.replace(/\s*[-–—:.]\s*$/, '').trim();
-        if (before) return [no, before, peng, sert];
+        // "Konstruksi/ Ahli" → "Konstruksi/Ahli" (spasiSlash dr pemenggalan kolom PDF)
+        before = before.replace(/\s*\/\s*/g, '/').trim();
+        if (before) return [no, before, jml, peng, sert];
     }
     const ym = text.match(/^(.*?)\s*(\d+)\s*(?:tahun|thn|th)\b\s*(?:\([^)]*\))?\s+(.*)$/i);
-    if (ym && ym[1] && ym[3]) return [no, ym[1].trim(), `${ym[2]} Tahun`, ym[3].trim()];
-    return [no, text, '', ''];
+    if (ym && ym[1] && ym[3]) return [no, ym[1].trim(), '', `${ym[2]} Tahun`, ym[3].trim()];
+    return [no, text, '', '', ''];
 }
 
 // ponytail: split RKK (uraian | bahaya) — 2+ spasi dulu, lalu leksikon awal kata bahaya;
@@ -150,9 +217,15 @@ function parseRkk(no, text) {
 function buildTable(type, lines) {
     if (!lines.length) return null;
     const parser = { peralatan: parsePeralatan, personel: parsePersonel, rkk: parseRkk }[type];
-    const rows = groupRows(lines).map(r => parser(r.no, r.text)).filter(Boolean);
+    const hasJumlah = type === 'personel' ? hasJumlahColumn(lines) : false;
+    let rows = groupRows(lines).map(r => parser(r.no, r.text, hasJumlah)).filter(Boolean);
     if (!rows.length) return null;
-    return { header: HEADERS[type], rows };
+    // Kolom "Jumlah (Orang)" hanya ada di sebagian LDP → header & rows ikut menyesuaikan
+    if (type === 'personel' && !hasJumlah) rows = rows.map(r => [r[0], r[1], r[3], r[4]]);
+    const header = (type === 'personel' && hasJumlah)
+        ? ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja']
+        : HEADERS[type];
+    return { header, rows };
 }
 
 /**
@@ -209,9 +282,11 @@ function extractLdp(text) {
     // ── Tabel dari seksi "F. Persyaratan Teknis" ──
     // Anchor peralatan: "peralatan utama" bisa terpisah baris atau tanpa "utama"
     const lines = ldp.split(/\r?\n/);
+    // Kolom PDF sempit memotong kata di tengah baris ("dipersya"+"ratkan") → sambung dulu
+    const vocab = buildVocab(clean);
     const t1 = buildTable('peralatan', sectionLines(lines, /peralatan\s*(?:utama)?|menyediakan\s+peralatan/i, END_ITEM_RE));
     if (t1) tables.peralatan = t1;
-    const t2 = buildTable('personel', sectionLines(lines, /personel\s+manajerial|personil\s+manajerial|menyediakan\s+personel/i, END_ITEM_RE));
+    const t2 = buildTable('personel', joinBrokenWords(sectionLines(lines, /personel\s+manajerial|personil\s+manajerial|menyediakan\s+personel/i, END_ITEM_RE), vocab));
     if (t2) tables.personel = t2;
     const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
     if (t3) tables.rkk = t3;

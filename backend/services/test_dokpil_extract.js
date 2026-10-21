@@ -55,4 +55,16 @@ assert.deepStrictEqual(n.tables.personel.rows, [
 assert.strictEqual(n.fields.pokja, 'Pokja 1 Putaran Ke Delapan UKPBJ Sekretariat Daerah Kabupaten Sleman', 'pokja (layout baru)');
 assert.strictEqual(n.fields.jangka_waktu, '60', 'jangka_waktu (layout baru)');
 
-console.log('OK: dokpil_extract — 15 assertion lulus (BRSPA + KIR + layout baru)');
+// ── Layout dgn kolom "Jumlah (Orang)" (SDN 3 Gentan) ──
+// Regresi: kolom jumlah ikut nyangkut ke kolom Jabatan ("Pelaksana 1") &
+// pengalaman "Tidak dipersyaratkan" jadi kata yg terpotong ("dipersya"+"ratkan").
+const g = extractLdp(fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-personel-jumlah.txt'), 'utf8'));
+assert.deepStrictEqual(g.tables.personel.header, ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], 'personel header (kolom jumlah)');
+assert.strictEqual(g.tables.personel.rows.length, 2, '2 baris personel');
+assert.deepStrictEqual(g.tables.personel.rows.map(r => r.slice(0, 4)), [
+  ['1', 'Pelaksana', '1', '2 Tahun'],
+  ['2', 'Petugas Keselamatan Konstruksi atau Ahli K3 Konstruksi/Ahli Keselamatan Konstruksi', '1', 'Tidak dipersyaratkan'],
+], 'personel rows (kolom jumlah)');
+assert.ok(g.tables.personel.rows[1][4].startsWith('SKT Petugas K3'), 'sertifikat terpisah dari jabatan');
+
+console.log('OK: dokpil_extract — 19 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah)');

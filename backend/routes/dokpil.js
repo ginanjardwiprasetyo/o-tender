@@ -47,7 +47,7 @@ function applyAiFill(fields, tables, aiDataRaw) {
       tables.peralatan = { header: ['No', 'Jenis Alat', 'Kapasitas', 'Jumlah'], rows: aiData.peralatan.map(r => [r.no || '', r.jenis_alat || '', r.kapasitas || '', r.jumlah || '']) };
     }
     if (!tables.personel && Array.isArray(aiData.personel) && aiData.personel.length) {
-      tables.personel = { header: ['No', 'Jabatan', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], rows: aiData.personel.map(r => [r.no || '', r.jabatan || '', r.pengalaman || '', r.sertifikat || '']) };
+      tables.personel = { header: ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], rows: aiData.personel.map(r => [r.no || '', r.jabatan || '', r.jumlah || '', r.pengalaman || '', r.sertifikat || '']) };
     }
     if (!tables.rkk && Array.isArray(aiData.rkk) && aiData.rkk.length) {
       tables.rkk = { header: ['No', 'Uraian Pekerjaan', 'Identifikasi Bahaya'], rows: aiData.rkk.map(r => [r.no || '', r.uraian || '', r.bahaya || '']) };
@@ -78,7 +78,7 @@ FORMAT PERSIS (gunakan key names ini, jangan diubah):
   "pagu_anggaran": "2909753000",
   "kir": "tidak",
   "peralatan": [{"no":"1","jenis_alat":"Dump Truck","kapasitas":"4000 - 10000 kg","jumlah":"1 unit"}],
-  "personel": [{"no":"1","jabatan":"Pelaksana","pengalaman":"2 Tahun","sertifikat":"SKT Pelaksana"}],
+  "personel": [{"no":"1","jabatan":"Pelaksana","jumlah":"1","pengalaman":"2 Tahun","sertifikat":"SKT Pelaksana"}],
   "rkk": [{"no":"1","uraian":"Pekerjaan atap","bahaya":"Terjadi insiden"}],
   "summary": "ringkasan 2-3 paragraf"
 }
@@ -92,7 +92,10 @@ ATURAN:
 - "pagu_anggaran" → ANGKA SAJA. Contoh "2909753000" bukan "Rp 2.909.753.000,00"
 - "kir" → "ya" jika dokumen mensyaratkan KIR (Kartu Izin Usaha Jasa Konstruksi / laporan KIR), "tidak" jika tidak disebutkan
 - tabel "peralatan": ekstrak SEMUA baris (No, Jenis Alat, Kapasitas, Jumlah). Cari dari subjudul "peralatan utama"
-- tabel "personel": ekstrak SEMUA baris (No, Jabatan, Pengalaman thn, Sertifikat). Jangan lewatkan baris manapun. Cari dari subjudul "personel manajerial" atau tabel yg ada kolom "Jabatan" dan "Sertifikat Kompetensi"
+- tabel "personel": ekstrak SEMUA baris (No, Jabatan, Jumlah orang, Pengalaman thn, Sertifikat). Jangan lewatkan baris manapun. Cari dari subjudul "personel manajerial" atau tabel yg ada kolom "Jabatan" dan "Sertifikat Kompetensi"
+  - "jumlah" = kolom "Jumlah (Orang)" kalo ada; kalo tidak ada kolom itu, kosongkan
+  - "pengalaman" = "N Tahun" (mis. "2 Tahun"), atau "Tidak dipersyaratkan" kalo dokumen menulis begitu, atau "" kalo kosong
+  - "jabatan" = HANYA nama jabatan. JANGAN gabung jumlah orang / pengalaman / sertifikat ke dalamnya
 - tabel "rkk": ekstrak SEMUA baris dari "Rencana Keselamatan Konstruksi (RKK)"
 - null jika tidak ada. [] jika tabel kosong.
 - summary: ringkasan 2-3 paragraf Bahasa Indonesia tentang dokumen ini
