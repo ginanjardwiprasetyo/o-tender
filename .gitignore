@@ -35,6 +35,11 @@ tmp/
 temp/
 *.bak-*
 
+# upload user (scan KTP/NPWP/ijazah, lampiran perusahaan — data pribadi)
+# jangan pernah di-commit; foldernya tetap ada di server
+backend/uploads/**
+!backend/uploads/**/.gitkeep
+
 # tooling noise
 __pycache__/
 *.pyc
