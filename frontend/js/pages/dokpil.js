@@ -252,7 +252,6 @@ const DokpilPage = {
         </div>
         <div class="dokpil-drive-card-name">${Fmt.escape(f.name)}</div>
         <div class="dokpil-drive-card-meta">FOLDER</div>
-        ${f.modifiedTime ? `<div class="dokpil-drive-card-time" title="Terakhir diubah: ${Fmt.dateTime(f.modifiedTime)}">Diperbarui ${Fmt.dateShort(f.modifiedTime)}</div>` : ''}
       </div>`).join('');
 
     const pdfCards = pdfs.map(f => `
@@ -262,7 +261,6 @@ const DokpilPage = {
         </div>
         <div class="dokpil-drive-card-name">${Fmt.escape(f.name.replace(/\.pdf$/i, ''))}</div>
         <div class="dokpil-drive-card-meta">PDF</div>
-        ${f.modifiedTime ? `<div class="dokpil-drive-card-time" title="Terakhir diubah: ${Fmt.dateTime(f.modifiedTime)}">Upload ${Fmt.dateShort(f.modifiedTime)}</div>` : ''}
       </div>`).join('');
 
     listEl.innerHTML = `<div class="dokpil-drive-grid">${folderCards}${pdfCards}</div>`;
@@ -470,12 +468,14 @@ const DokpilPage = {
     const shown = hits.slice(0, 60);
     list.innerHTML = shown.map(t => {
       const pagu = t.pagu ? Fmt.rupiah(t.pagu) : '';
+      const upd = t.updated_at || t.followed_at;
       return `<div class="dokpil-tender-opt" data-kode="${t.kode_tender}" onclick="DokpilPage.pickTender(this.dataset.kode)">
         <div class="dokpil-tender-opt-name">${Fmt.escape(t.nama_tender || '(tanpa nama)')}</div>
         <div class="dokpil-tender-opt-meta">
           <span class="dokpil-tender-opt-kode">${t.kode_tender}</span>
           ${pagu ? '<span>' + pagu + '</span>' : ''}
           ${t.satuan_kerja ? '<span>' + Fmt.escape(t.satuan_kerja) + '</span>' : ''}
+          ${upd ? `<span title="Data terakhir diunggah: ${Fmt.dateTime(t.updated_at || upd)}${t.followed_at ? ' · Ditambahkan ke Tender Saya: ' + Fmt.date(t.followed_at) : ''}">Update ${Fmt.dateShort(upd)}</span>` : ''}
         </div>
       </div>`;
     }).join('') +
@@ -526,10 +526,11 @@ const DokpilPage = {
     if (hint) hint.classList.add('hidden');
     const box = document.getElementById('dokpil-tender-selected');
     if (box) {
+      const upd = t.updated_at || t.followed_at;
       box.innerHTML = `<i data-lucide="check-circle" style="width:14px;height:14px;"></i>
         <div class="dokpil-tender-selected-txt">
           <div class="dokpil-tender-selected-name">${Fmt.escape(t.nama_tender || '')}</div>
-          <div class="dokpil-tender-selected-meta">Kode ${t.kode_tender}${t.pagu ? ' · ' + Fmt.rupiah(t.pagu) : ''}</div>
+          <div class="dokpil-tender-selected-meta">Kode ${t.kode_tender}${t.pagu ? ' · ' + Fmt.rupiah(t.pagu) : ''}${upd ? ' · Update ' + Fmt.dateShort(upd) : ''}</div>
         </div>
         <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.72rem;" onclick="DokpilPage.clearTender()">Ganti</button>`;
       box.classList.remove('hidden');
