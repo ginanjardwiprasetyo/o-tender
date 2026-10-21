@@ -139,7 +139,20 @@ router.get('/files/all', async (req, res) => {
 // GET /api/equipments/:id/files
 router.get('/:id/files', async (req, res) => {
     try {
-        const { rows } = await db.query('SELECT * FROM equipment_doc_files WHERE equipment_id = $1 ORDER BY created_at', [req.params.id]);
+        // shared_from = alat lain yg pakai berkas yg sama (berbagi tanpa upload ulang)
+        const { rows } = await db.query(
+            `SELECT f.*, (
+                 SELECT e2.jenis FROM equipment_doc_files f2
+                 JOIN equipments e2 ON e2.id = f2.equipment_id
+                 WHERE f2.file_url = f.file_url AND f2.equipment_id <> f.equipment_id
+                 LIMIT 1
+             ) AS shared_from,
+             (SELECT COUNT(*) FROM equipment_doc_files f3
+              WHERE f3.file_url = f.file_url AND f3.equipment_id <> f.equipment_id
+             ) AS shared_count
+             FROM equipment_doc_files f WHERE f.equipment_id = $1 ORDER BY f.created_at`,
+            [req.params.id]
+        );
         res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

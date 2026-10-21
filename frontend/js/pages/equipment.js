@@ -204,12 +204,22 @@ const EquipmentPage = {
                     </button>
                 </div>
                 <div style="margin-top:10px;">
-                    <label class="form-label">Lampiran per Alat ${id ? '(bisa berbagi file milik alat lain)' : '(tersedia setelah Simpan)'}</label>
+                    <label class="form-label">Lampiran per Alat (bisa berbagi file milik alat lain)</label>
                     <div id="eq-files-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:6px;"></div>
-                    ${id ? `<div style="display:flex; gap:6px;">
-                        <input type="file" class="form-input" id="f-eq-new-file" accept="image/*,.pdf" style="flex:1;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="EquipmentPage.addDocFile('${id}')">+ File</button>
-                    </div>` : ''}
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="file" class="form-input" id="f-eq-new-file" accept="image/*,.pdf" style="flex:1;" onchange="EquipmentPage.fillEqLabel(this)">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="EquipmentPage.addDocFile('${id || ''}')"><i data-lucide="upload" style="width:13px;height:13px;"></i> File</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="EquipmentPage.pickSharedFile('${id || ''}')" title="Pakai berkas milik alat lain tanpa upload ulang"><i data-lucide="copy" style="width:13px;height:13px;"></i> Dari Alat Lain</button>
+                    </div>
+                    <input type="text" class="form-input" id="f-eq-label" placeholder="Label lampiran (mis. Perjanjian Sewa) — buat file baru" style="margin-top:6px;font-size:0.8rem;" oninput="this.dataset.touched='1'">
+                    <small style="display:block;margin-top:4px;color:var(--text-muted);font-size:0.7rem;">
+                        ${id ? 'Berkas lampiran disimpan terpisah dari "Upload Berkas Alat" di atas.'
+                             : 'Lampiran bisa ditambahkan sekarang — ikut tersimpan saat alat disimpan.'}
+                    </small>
+                    <div id="eq-file-bank" class="hidden" style="margin-top:8px;">
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Pilih berkas milik alat lain (tanpa upload ulang):</div>
+                        <div id="eq-file-bank-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -220,7 +230,11 @@ const EquipmentPage = {
         `;
         Modal.open(title, body, footer);
         lucide.createIcons();
+        // Lampiran utk alat BARU: di-stage dulu (belum ada id alat buat nyimpen)
+        this._pendingFiles = [];
+        this._formId = id || '';
         if (id) this.loadDocFiles(id);
+        else this.renderDocFiles();
     },
 
     // ponytail: mata melihat SEMUA berkas alat (legacy + lampiran per alat, termasuk berbagi)
@@ -250,35 +264,157 @@ const EquipmentPage = {
         if (!box) return;
         try {
             const res = await API.getEquipmentFiles(id);
-            const files = res.data || [];
-            box.innerHTML = files.length ? files.map(f => `
+            this._savedFiles = res.data || [];
+        } catch (e) {
+            box.innerHTML = `<small style="color:var(--danger);">Gagal muat: ${e.message}</small>`;
+            return;
+        }
+        this.renderDocFiles();
+    },
+
+    // Render daftar lampiran: yg tersimpan di server + yg di-stage (alat baru)
+    renderDocFiles() {
+        const box = document.getElementById('eq-files-list');
+        if (!box) return;
+        const saved = this._savedFiles || [];
+        const pending = this._pendingFiles || [];
+        const rows = [
+            ...saved.map(f => `
                 <div style="display:flex; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color);">
                     <i data-lucide="file-text" style="width:14px; height:14px; color:var(--text-muted);"></i>
                     <a href="${f.file_url}" target="_blank" style="font-size:0.8rem; font-weight:500; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${Fmt.escape(f.label || f.file_url.split('/').pop())}</a>
-                    <button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem;" onclick="EquipmentPage.delDocFile('${id}','${f.id}','${Fmt.escape(f.file_url)}')">Hapus</button>
-                </div>`).join('')
-                : '<small style="color:var(--text-muted);">Belum ada lampiran khusus.</small>';
-            lucide.createIcons({ nodes: [box] });
-        } catch (e) { box.innerHTML = `<small style="color:var(--danger);">Gagal muat: ${e.message}</small>`; }
+                    ${f.shared_from ? '<span class="badge badge-info" style="font-size:0.62rem;">dipakai</span>' : ''}
+                    <button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem;" data-del-file="${f.id}" data-del-url="${Fmt.escape(f.file_url)}">Hapus</button>
+                </div>`),
+            ...pending.map((p, i) => `
+                <div style="display:flex; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px dashed var(--border-strong);">
+                    <i data-lucide="${p.kind === 'share' ? 'copy' : 'file-text'}" style="width:14px; height:14px; color:var(--text-muted);"></i>
+                    <span style="font-size:0.8rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${Fmt.escape(p.label)}</span>
+                    <span class="badge badge-info" style="font-size:0.62rem;">${p.kind === 'share' ? 'dari alat lain' : 'siap diunggah'}</span>
+                    <button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem;" data-del-pending="${i}">Hapus</button>
+                </div>`)
+        ];
+        box.innerHTML = rows.length ? rows.join('')
+            : '<small style="color:var(--text-muted);">Belum ada lampiran khusus.</small>';
+        box.querySelectorAll('[data-del-file]').forEach(b => b.onclick = () => this.delDocFile(
+            this._formId || '', b.dataset.delFile, b.dataset.delUrl));
+        box.querySelectorAll('[data-del-pending]').forEach(b => b.onclick = () => {
+            this._pendingFiles.splice(parseInt(b.dataset.delPending, 10), 1);
+            this.renderDocFiles();
+        });
+        lucide.createIcons({ nodes: [box] });
+    },
+
+    // Lampiran untuk alat YANG SUDAH ADA → langsung simpan
+    // (alat baru → di-stage, disimpan bareng alatnya)
+    // Nama file jadi default label (bisa diubah user)
+    fillEqLabel(input) {
+        const lab = document.getElementById('f-eq-label');
+        const f = input?.files?.[0];
+        if (lab && f && !lab.dataset.touched) lab.value = f.name;
     },
 
     async addDocFile(id) {
         const input = document.getElementById('f-eq-new-file');
         if (!input?.files?.length) { Toast.warning('Pilih file dulu'); return; }
+        const file = input.files[0];
+        const labEl = document.getElementById('f-eq-label');
+        const label = (labEl?.value || '').trim() || file.name;
+        const resetInputs = () => {
+            input.value = '';
+            if (labEl) { labEl.value = ''; delete labEl.dataset.touched; }
+        };
         try {
+            if (!id) {
+                // alat BARU → stage dulu (ikut tersimpan bareng alatnya)
+                this._pendingFiles.push({ kind: 'upload', file, label });
+                resetInputs();
+                this.renderDocFiles();
+                Toast.info('Lampiran ditambahkan — ikut tersimpan saat alat disimpan');
+                return;
+            }
             Toast.info('Mengunggah...');
-            const up = await API.uploadFile(input.files[0], 'equipment');
-            const label = prompt('Label lampiran (mis. Perjanjian Sewa):', input.files[0].name) || input.files[0].name;
+            const up = await API.uploadFile(file, 'equipment');
             await API.addEquipmentFile(id, { label, file_url: up.url });
+            Toast.success('Lampiran ditambahkan');
+            resetInputs();
+            this.loadDocFiles(id);
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    // Mekanisme berbagi: pakai berkas milik alat lain tanpa upload ulang.
+    // Inline (bukan modal) → form alat tetap utuh.
+    async pickSharedFile(id) {
+        const wrap = document.getElementById('eq-file-bank');
+        const list = document.getElementById('eq-file-bank-list');
+        if (!wrap || !list) return;
+        if (!wrap.classList.contains('hidden')) { wrap.classList.add('hidden'); return; }
+        try {
+            const res = await API.getAllEquipmentFiles();
+            let files = res.data || [];
+            if (id) {
+                // sembunyikan berkas yg sudah terlampir di alat ini
+                const mine = await API.getEquipmentFiles(id);
+                const used = new Set((mine.data || []).map(f => f.id));
+                files = files.filter(f => !used.has(f.id));
+            }
+            if (!files.length) {
+                list.innerHTML = '<small style="color:var(--text-muted);">Belum ada berkas alat lain yang bisa dipakai.</small>';
+            } else {
+                list.innerHTML = files.map(f => `
+                    <button type="button" class="eq-bank-item" data-pick-file="${f.id}" data-pick-label="${Fmt.escape(f.label || f.file_url.split('/').pop())}" data-pick-owner="${Fmt.escape(f.equipment_nama || '')}">
+                        <i data-lucide="file-text" style="width:15px;height:15px;"></i>
+                        <span class="eq-bank-name">${Fmt.escape(f.label || f.file_url.split('/').pop())}</span>
+                        <span class="eq-bank-owner">${Fmt.escape(f.equipment_nama || 'Tanpa alat')}</span>
+                    </button>`).join('');
+                list.querySelectorAll('[data-pick-file]').forEach(b => b.onclick = () => {
+                    this.useSharedFile(id, b.dataset.pickFile, b.dataset.pickLabel);
+                    wrap.classList.add('hidden');
+                });
+            }
+            wrap.classList.remove('hidden');
+            lucide.createIcons({ nodes: [wrap] });
+        } catch (e) { Toast.error(e.message); }
+    },
+
+    async useSharedFile(id, fileId, label) {
+        try {
+            if (!id) {
+                this._pendingFiles.push({ kind: 'share', file_id: fileId, label });
+                this.renderDocFiles();
+                Toast.info('Lampiran ditambahkan — ikut tersimpan saat alat disimpan');
+                return;
+            }
+            await API.addEquipmentFile(id, { file_id: fileId, label });
             Toast.success('Lampiran ditambahkan');
             this.loadDocFiles(id);
         } catch (e) { Toast.error(e.message); }
     },
 
+    // Simpan lampiran yg di-stage (dipakai utk alat baru)
+    async savePendingFiles(equipmentId) {
+        const pending = this._pendingFiles || [];
+        for (const p of pending) {
+            if (p.kind === 'share') {
+                await API.addEquipmentFile(equipmentId, { file_id: p.file_id, label: p.label });
+            } else {
+                const up = await API.uploadFile(p.file, 'equipment');
+                await API.addEquipmentFile(equipmentId, { label: p.label, file_url: up.url });
+            }
+        }
+        this._pendingFiles = [];
+    },
+
     delDocFile(equipId, fileId, url) {
-        Modal.confirm('Hapus Lampiran', 'Hapus catatan lampiran ini? (berkas storage ikut dihapus)', async () => {
+        // Kalau berkasnya dipakai alat lain → jangan hapus file aslinya (cuma catatan)
+        const shared = (this._savedFiles || []).find(f => f.id === fileId);
+        const dipakaiLain = shared && (shared.shared_count > 0 || shared.shared_from);
+        const pesan = dipakaiLain
+            ? `Hapus catatan lampiran ini? Berkas aslinya TIDAK dihapus karena masih dipakai alat lain (${shared.shared_from || 'alat lain'}).`
+            : 'Hapus catatan lampiran ini? (berkas storage ikut dihapus)';
+        Modal.confirm('Hapus Lampiran', pesan, async () => {
             try {
-                if (url) await API.deleteFile(url).catch(() => {});
+                if (url && !dipakaiLain) await API.deleteFile(url).catch(() => {});
                 await API.deleteEquipmentFile(fileId);
                 Toast.success('Lampiran dihapus');
                 this.loadDocFiles(equipId);
@@ -362,8 +498,19 @@ const EquipmentPage = {
 
             if (!data.jenis) { throw new Error('Jenis peralatan wajib diisi'); }
 
-            if (id) { await API.updateEquipment(id, data); Toast.success('Data alat diperbarui'); }
-            else { await API.createEquipment(data); Toast.success('Data alat ditambahkan'); }
+            if (id) {
+                await API.updateEquipment(id, data);
+                Toast.success('Data alat diperbarui');
+            } else {
+                const res = await API.createEquipment(data);
+                const newId = res.data?.id;
+                // lampiran yg di-stage (upload / pakai file alat lain) ikut tersimpan
+                if (newId && (this._pendingFiles || []).length) {
+                    try { await this.savePendingFiles(newId); }
+                    catch (e) { Toast.warning('Alat tersimpan, tapi ada lampiran yg gagal: ' + e.message); }
+                }
+                Toast.success('Data alat ditambahkan');
+            }
             Modal.close();
             this.loadData();
         } catch (e) { 

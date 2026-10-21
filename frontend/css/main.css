@@ -1207,6 +1207,22 @@ body.is-authed #app { visibility: visible; }
 .eq-table .eq-dash { color: var(--text-3); font-size: 0.675rem; }
 .eq-table .badge { font-size: 0.675rem; padding: 2px 7px; }
 .eq-actions { display: flex; gap: 6px; justify-content: center; white-space: nowrap; }
+
+/* ─── Bank file alat (berbagi lampiran antar alat) ─────── */
+.eq-bank-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-tertiary); color: var(--text-primary);
+    font-size: 0.85rem; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.eq-bank-item:hover { border-color: var(--accent-border); background: var(--accent-bg); }
+.eq-bank-item svg { flex-shrink: 0; color: var(--text-muted); }
+.eq-bank-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.eq-bank-owner {
+    font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; max-width: 38%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+}
 .eq-btn { padding: 4px 6px !important; border-radius: var(--radius-sm); line-height: 1; }
 .eq-btn svg, .eq-btn i { width: 12px !important; height: 12px !important; }
 #eq-pager .list-pager { margin-top: 10px; }
