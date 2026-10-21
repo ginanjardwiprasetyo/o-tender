@@ -57,7 +57,11 @@ const PersonnelPage = {
                     <div style="min-width:0;">
                         <div style="font-weight:600;font-size:0.95rem;">${Fmt.escape(p.nama)}</div>
                         <div style="font-size:0.78rem;color:var(--text-muted);">
-                            ${Fmt.escape(p.jabatan || '-')} • ${Fmt.escape(p.tingkat_pendidikan || '')} • ${p.tahun_pengalaman || 0} tahun pengalaman
+                            ${[
+                                p.jabatan || '-',
+                                p.tingkat_pendidikan,
+                                (p.tahun_pengalaman || 0) + ' tahun pengalaman'
+                            ].filter(Boolean).map(x => Fmt.escape(x)).join(' • ')}
                         </div>
                     </div>
                 </div>
@@ -73,7 +77,7 @@ const PersonnelPage = {
 
     filter() {
         const q = document.getElementById('ps-search').value.toLowerCase();
-        this.renderList(this.data.filter(p => (p.nama + ' ' + (p.jabatan || '') + ' ' + p.tingkat_pendidikan + ' ' + p.sertifikat_keahlian).toLowerCase().includes(q)));
+        this.renderList(this.data.filter(p => (p.nama + ' ' + (p.jabatan || '') + ' ' + (p.tingkat_pendidikan || '') + ' ' + (p.sertifikat_keahlian || '')).toLowerCase().includes(q)));
     },
 
     openForm(id) {
@@ -310,7 +314,11 @@ const PersonnelPage = {
                 <div style="width:64px;height:64px;border-radius:50%;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.5rem;color:white;flex-shrink:0;">${(p.nama || '?')[0].toUpperCase()}</div>
                 <div>
                     <strong style="font-size:1.2rem;">${Fmt.escape(p.nama)}</strong>
-                    <div style="color:var(--text-muted); font-size:0.9rem; margin-top:4px;">${Fmt.escape(p.jabatan || '-')} • ${p.tingkat_pendidikan || '-'} • ${p.tahun_pengalaman || 0} th pengalaman</div>
+                    <div style="color:var(--text-muted); font-size:0.9rem; margin-top:4px;">${[
+                        p.jabatan || '-',
+                        p.tingkat_pendidikan,
+                        (p.tahun_pengalaman || 0) + ' th pengalaman'
+                    ].filter(Boolean).map(x => Fmt.escape(x)).join(' • ')}</div>
                     <div style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">
                         ${p.ktp_url ? `<a href="${p.ktp_url}" target="_blank" class="btn btn-secondary btn-sm"><i data-lucide="file"></i> KTP</a>` : ''}
                         ${p.npwp_url ? `<a href="${p.npwp_url}" target="_blank" class="btn btn-secondary btn-sm"><i data-lucide="file"></i> NPWP</a>` : ''}

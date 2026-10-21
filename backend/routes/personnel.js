@@ -6,6 +6,20 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+/**
+ * Tingkat pendidikan yg ditampilkan.
+ * Kolom personnel.tingkat_pendidikan bisa kosong (personil baru, atau diisi lewat
+ * riwayat pendidikan) → ambil dari jenjang RIWAYAT PENDIDIKAN TERAKHIR (tahun
+ * lulus paling akhir). Dipakai di list, detail, dan wizard surat.
+ */
+function deriveTingkatPendidikan(p, eduRows) {
+    if (p.tingkat_pendidikan) return p.tingkat_pendidikan;
+    const withJenjang = (eduRows || []).filter(e => e && e.jenjang);
+    if (!withJenjang.length) return null;
+    const last = withJenjang.slice().sort((a, b) => (b.tahun_tamat || 0) - (a.tahun_tamat || 0))[0];
+    return last.jenjang;
+}
+
 async function deleteSupabaseFile(fileUrl) {
     if (!fileUrl) return;
     try {
@@ -142,17 +156,22 @@ router.get('/', async (req, res) => {
 
         const ids = personnel.map(p => p.id);
         const [eduRes, expRes, skaRes] = await Promise.all([
-            db.query('SELECT * FROM education_history WHERE personnel_id = ANY($1)', [ids]),
+            db.query('SELECT * FROM education_history WHERE personnel_id = ANY($1) ORDER BY tahun_tamat DESC', [ids]),
             db.query('SELECT * FROM experience_history WHERE personnel_id = ANY($1)', [ids]),
             db.query('SELECT * FROM personnel_ska WHERE personnel_id = ANY($1)', [ids])
         ]);
 
-        const data = personnel.map(p => ({
-            ...p,
-            education_history: eduRes.rows.filter(e => e.personnel_id === p.id),
-            experience_history: expRes.rows.filter(e => e.personnel_id === p.id),
-            ska: skaRes.rows.filter(s => s.personnel_id === p.id)
-        }));
+        const data = personnel.map(p => {
+            const edu = eduRes.rows.filter(e => e.personnel_id === p.id);
+            return {
+                ...p,
+                // kosong → ambil dari jenjang riwayat pendidikan terakhir
+                tingkat_pendidikan: deriveTingkatPendidikan(p, edu),
+                education_history: edu,
+                experience_history: expRes.rows.filter(e => e.personnel_id === p.id),
+                ska: skaRes.rows.filter(s => s.personnel_id === p.id)
+            };
+        });
         res.json({ success: true, data });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -173,7 +192,14 @@ router.get('/:id', async (req, res) => {
 
         res.json({
             success: true,
-            data: { ...rows[0], education_history: eduRes.rows, experience_history: expRes.rows, ska: skaRes.rows }
+            data: {
+                ...rows[0],
+                // kosong → ambil dari jenjang riwayat pendidikan terakhir
+                tingkat_pendidikan: deriveTingkatPendidikan(rows[0], eduRes.rows),
+                education_history: eduRes.rows,
+                experience_history: expRes.rows,
+                ska: skaRes.rows
+            }
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
