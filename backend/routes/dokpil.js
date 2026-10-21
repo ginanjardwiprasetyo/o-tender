@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const pdfParse = require('pdf-parse');
+const { parsePdf } = require('../services/pdf_geom');
 const { extractLdp } = require('../services/dokpil_extract');
 
 // Parse konten JSON dari LLM dgn defensif: buang fence, ambil blok {..} terluar,
@@ -552,7 +553,7 @@ router.post('/parse', upload.single('file'), async (req, res) => {
 
     filePath = req.file.path;
 
-    let text = '';
+    let text = '', items = null;
     try {
       const buf = fs.readFileSync(filePath);
       // Suppress harmless pdf.js TT warnings
@@ -561,9 +562,10 @@ router.post('/parse', upload.single('file'), async (req, res) => {
         if (chunk && chunk.toString().includes('TT: undefined function')) return true;
         return origWrite(chunk, ...args);
       };
-      const data = await pdfParse(buf);
+      const data = await parsePdf(buf);   // text + item koordinat (untuk rekonstruksi tabel)
       process.stderr.write = origWrite;
       text = data.text;
+      items = data.items;
     } catch (e) {
       console.warn('[Dokpil] pdf-parse failed:', e.message);
     }
@@ -573,7 +575,7 @@ router.post('/parse', upload.single('file'), async (req, res) => {
     }
 
     // ===== Deterministik (primary — ground truth = panel Preview BAB IV) =====
-    const { fields, tables, debug } = extractLdp(text);
+    const { fields, tables, debug } = extractLdp(text, items);
     let aiSummary = '';
     debug.ai = false;
     debug.ldpLength = text.length;
@@ -717,7 +719,7 @@ router.get('/drive/list', async (req, res) => {
 
 // POST /api/dokpil/drive/parse — download PDF dari Drive lalu parse (jalur yang sama dgn /parse)
 router.post('/drive/parse', async (req, res) => {
-  let buf = null;
+  let buf = null, items = null;
   try {
     const { fileId } = req.body;
     if (!fileId) return res.status(400).json({ success: false, error: 'fileId wajib' });
@@ -731,9 +733,10 @@ router.post('/drive/parse', async (req, res) => {
         if (chunk && chunk.toString().includes('TT: undefined function')) return true;
         return origWrite(chunk, ...args);
       };
-      const data = await pdfParse(buf);
+      const data = await parsePdf(buf);   // text + item koordinat (untuk rekonstruksi tabel)
       process.stderr.write = origWrite;
       text = data.text;
+      items = data.items;
     } catch (e) {
       console.warn('[Dokpil] pdf-parse failed:', e.message);
     }
@@ -742,7 +745,7 @@ router.post('/drive/parse', async (req, res) => {
       return res.status(422).json({ success: false, error: 'Tidak dapat membaca isi PDF. Pastikan bukan hasil scan/gambar.' });
     }
 
-    const { fields, tables, debug } = extractLdp(text);
+    const { fields, tables, debug } = extractLdp(text, items);
     debug.ldpLength = text.length;
     debug.source = 'drive';
     debug.fileName = meta.name;

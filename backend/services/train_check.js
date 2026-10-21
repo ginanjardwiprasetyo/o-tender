@@ -1,20 +1,18 @@
 /**
- * Validasi hasil ekstraksi LDP thd teks mentah — alat training/batch-check.
+ * Validasi hasil ekstraksi LDP — alat training/batch-check.
  *
  * Cara pakai:
- *   1) Download PDF & ambil teksnya (mis. pdf-parse), simpan 1 file .txt per PDF:
- *        node -e "require('dotenv').config();const{downloadFile}=require('./config/gdoc');
- *          const pdfParse=require('pdf-parse');require('fs').writeFileSync('/tmp/x.txt',
- *          (await (await downloadFile('FILE_ID')).toString()) ? '' : '')"  // lihat catatan
- *   2) Jalankan: node services/train_check.js /tmp/x.txt /tmp/y.txt ...
+ *   node services/train_check.js file.pdf        # pakai jalur koordinat (rekonstruksi tabel)
+ *   node services/train_check.js file.txt        # jalur text-streamaja
+ *   node services/train_check.js folder/*.pdf    # banyak file
  *
- * Yang dicek (objektif, bukan asumsi substring utk nilai yg disusun dari
- * beberapa potongan non-kontigu karena kolom PDF interleaved):
+ * Yang dicek (objektif, bukan asumsi substring utk nilai yg disusun dari beberapa
+ * potongan non-kontigu karena kolom PDF interleaved):
  *   - field wajib terisi
  *   - tabel personel wajib ada & punya baris
  *   - tidak ada nomor halaman / paraf / placeholder / entri daftar isi yg bocor ke sel
  *   - tidak ada sel yg menyerap item daftar berikutnya
- *   - kolom Jabatan tidak membawa angka pengalaman/jumlah
+ *   - kolom Jabatan tidak boleh membawa angka pengalaman/jumlah
  *   - nomor baris berurutan
  */
 const fs = require('fs');
@@ -28,10 +26,9 @@ const TOC = /\.{4,}.*\d+\s*$/;                                 // entri daftar i
 const NEXTITEM = /\b[a-z]\.\s+[A-Z]|\b\d{1,2}\.\s+[A-Z][a-z]{3,}/;
 const LEAK = /\b(\d+)\s*(tahun|thn|th|orang|personil)\b/i;    // pengalaman/jumlah nyangkut
 
-function check(text) {
-    const r = extractLdp(text);
+function check(r) {
     const issues = [];
-    const push = m => issues.push(m);
+    const push = (m) => issues.push(m);
 
     for (const k of ['pokja', 'nama_paket', 'lokasi', 'jangka_waktu', 'pagu_anggaran']) {
         if (!r.fields[k]) push(`field kosong: ${k}`);
@@ -55,19 +52,32 @@ function check(text) {
             if (tn === 'personel' && LEAK.test(String(row[1] || '')))
                 push(`personel[${row[0]}] Jabatan membawa angka: ${JSON.stringify(String(row[1]).slice(0, 60))}`);
         });
-        const nos = tb.rows.map(x => x[0]);
+        const nos = tb.rows.map((x) => x[0]);
         if (nos.length && nos.some((n, i) => n !== String(i + 1)))
             push(`${tn} nomor baris tak berurutan: ${JSON.stringify(nos)}`);
     }
-    return { issues };
+    return issues;
 }
 
-const files = process.argv.slice(2);
-if (!files.length) { console.log('pakai: node services/train_check.js <file.txt> ...'); process.exit(0); }
-let bad = 0;
-for (const f of files) {
-    const { issues } = check(fs.readFileSync(f, 'utf8'));
-    if (issues.length) { bad++; console.log(`✗ ${path.basename(f)}  (${issues.length} isu)`); issues.slice(0, 6).forEach(i => console.log('     - ' + i)); }
-    else console.log(`✓ ${path.basename(f)}`);
+async function load(file) {
+    if (/\.pdf$/i.test(file)) {
+        const { parsePdf } = require('./pdf_geom');
+        const { text, items } = await parsePdf(fs.readFileSync(file));
+        return extractLdp(text, items);
+    }
+    return extractLdp(fs.readFileSync(file, 'utf8'));
 }
-console.log(`\n=== ${files.length - bad}/${files.length} bersih ===`);
+
+(async () => {
+    const files = process.argv.slice(2);
+    if (!files.length) { console.log('pakai: node services/train_check.js <file.pdf|file.txt> ...'); process.exit(0); }
+    let bad = 0;
+    for (const f of files) {
+        let issues = [];
+        try { issues = check(await load(f)); }
+        catch (e) { issues = ['ERROR ' + e.message]; }
+        if (issues.length) { bad++; console.log(`✗ ${path.basename(f)}  (${issues.length} isu)`); issues.slice(0, 6).forEach((i) => console.log('     - ' + i)); }
+        else console.log(`✓ ${path.basename(f)}`);
+    }
+    console.log(`\n=== ${files.length - bad}/${files.length} bersih ===`);
+})().catch((e) => { console.log('ERR', e.message); process.exit(1); });

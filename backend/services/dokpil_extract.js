@@ -284,7 +284,7 @@ function buildTable(type, lines) {
  * Ekstrak fields + tabel dari teks LDP.
  * @returns {{fields: object, tables: {peralatan?: {header, rows}, personel?: {...}, rkk?: {...}}, debug: object}}
  */
-function extractLdp(text) {
+function extractLdp(text, items) {
     const fields = {}, tables = {}, debug = { ldpStart: -1 };
     const clean = String(text || '').replace(/^[-–—]\s*\d+\s*[-–—]$/gm, '');
     const start = findLDP(clean);
@@ -342,6 +342,24 @@ function extractLdp(text) {
     if (t1) tables.peralatan = t1;
     const t2 = buildTable('personel', joinBrokenWords(sectionLines(lines, /personel\s+manajerial|personil\s+manajerial|menyediakan\s+personel/i, END_ITEM_RE), vocab));
     if (t2) tables.personel = t2;
+    // Tabel personel dari KOORDINAT (pdf.js) — dipakai kalo hasil text-stream rusak
+    // (baris terpotong / sertifikat kosong). Text-stream tak bisa bedain nilai sel "2"
+    // vs nomor baris "2."; koordinat bisa.
+    if (items && items.length) {
+        const broken = !tables.personel || !tables.personel.rows.length
+            || tables.personel.rows.some((r) => !String(r[r.length - 1] || '').trim())
+            // Jabatan yg membawa angka pengalaman/jumlah → baris kepotong
+            || tables.personel.rows.some((r) => /\b\d+\s*(?:tahun|thn|th|orang|personil)\b/i.test(String(r[1] || '')))
+            // Jabatan yg diawali "Tahun" → pengalaman yg kepotong jadi marker baris
+            || tables.personel.rows.some((r) => /^\s*(?:tahun|thn)\b/i.test(String(r[1] || '')));
+        if (broken) {
+            try {
+                const { personelByCoords } = require('./pdf_geom');
+                const g = personelByCoords(items);
+                if (g && g.rows.length) { tables.personel = g; debug.personelSource = 'coords'; }
+            } catch (e) { /* fallback ke text-stream */ }
+        }
+    }
     const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
     if (t3) tables.rkk = t3;
 
