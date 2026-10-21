@@ -77,4 +77,14 @@ assert.deepStrictEqual(o.tables.personel.rows.map(r => r.slice(0, 4)), [
   ['2', 'Petugas Keselamatan Konstruksi', '1', '0 Tahun'],
 ], 'personel rows (urutan kolom beda)');
 
-console.log('OK: dokpil_extract — 22 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom)');
+// ── Pengalaman angka POLOS (tanpa "Tahun") + baris lanjutan diawali angka ──
+// Regresi: baris "2 1 SKK Execute" (nilai pengalaman=2, jumlah=1) salah dibaca sbg
+// nomor baris baru → baris 1 terpotong & pengalaman kosong.
+const a = extractLdp(fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-personel-angka-polos.txt'), 'utf8'));
+assert.deepStrictEqual(a.tables.personel.header, ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], 'personel header (angka polos)');
+assert.deepStrictEqual(a.tables.personel.rows.map(r => r.slice(0, 4)), [
+  ['1', 'Pelaksana Lapangan', '1', '2 Tahun'],
+  ['2', 'Petugas Keselamatan Konstruksi', '1', '0 Tahun'],
+], 'personel rows (angka polos)');
+
+console.log('OK: dokpil_extract — 25 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom + angka polos)');

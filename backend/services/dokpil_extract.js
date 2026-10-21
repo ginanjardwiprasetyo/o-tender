@@ -86,12 +86,19 @@ function joinBrokenWords(lines, vocab) {
     return out;
 }
 
-// Tabel personel punya kolom "Jumlah (Orang)" pada sebagian LDP → jumlah orang (mis. "1")
-// harus dipisah dari pengalaman kerja ("1 Tahun") supaya tidak mengotori kolom Jabatan.
-function hasJumlahColumn(lines) {
-    const idx = lines.findIndex(l => /^\s*\d+[.\s]/.test(l));
+// Struktur kolom tabel personel dari header:
+//   jumlah      = ada kolom "Jumlah (Orang)"?
+//   jumlahFirst = "Jumlah" muncul SEBELUM "Pengalaman" di header? (urutan kolom beda antar LDP)
+// Header di PDF sering terpecah ("Juml"+"ah", "Penga-"+"laman") → spasi dibuang saat dicari.
+function personelCols(lines) {
+    const idx = lines.findIndex(l => /^\d+\.?\s+[^\s\d]/.test(l));
     const head = (idx === -1 ? lines : lines.slice(0, idx)).join(' ');
-    return /jumla?h/i.test(head) || /juml/i.test(head);
+    const flat = head.replace(/\s+/g, '');
+    const jml = flat.search(/jumla?h|orang/i);
+    if (jml === -1) return { jumlah: false, jumlahFirst: false };
+    const peng = flat.search(/pengalaman|penga-laman|tahun/i);
+    if (peng === -1) return { jumlah: true, jumlahFirst: true };
+    return { jumlah: true, jumlahFirst: jml < peng };
 }
 
 // Baris penanda akhir seksi (item daftar global berikutnya)
@@ -115,7 +122,9 @@ function sectionLines(lines, anchorRe, endRe) {
     return out;
 }
 
-/** Kelompokkan baris jadi row bernomor urut (1,2,3…); sisanya = lanjutan row. */
+/** Kelompokkan baris jadi row bernomor urut (1,2,3…); sisanya = lanjutan row.
+ * Nomor baris WAJIB diikuti karakter non-angka: baris "2 1 SKK Execute" itu
+ * continuation baris sebelumnya (nilai pengalaman=2 + jumlah=1), bukan baris baru. */
 function groupRows(lines) {
     const rows = [];
     let cur = null, expected = 1;
@@ -123,7 +132,7 @@ function groupRows(lines) {
         const l = raw.replace(/[ \t]+$/, '').trim();
         if (!l) continue;
         if (HDR_FRAGMENT_RE.test(l) || NOISE_RE.test(l) || PLACEHOLDER_RE.test(l)) continue;
-        const m = l.match(/^(\d+)\.?\s+(.*)$/);
+        const m = l.match(/^(\d+)\.?\s+([^\s\d].*)$/);
         const n = m ? parseInt(m[1], 10) : NaN;
         if (m && n === expected) {
             if (cur) rows.push(cur);
@@ -156,14 +165,14 @@ function parsePeralatan(no, text) {
     return [no, jenis.trim(), kap, jumlah];
 }
 
-/** personel: <jabatan> [N tahun|tidak dipersyaratkan] [jumlah] <sertifikat…>
- * Kolom bisa beda layout DAN beda urutan antar LDP:
- *   - "Jabatan | Jumlah (Orang) | Pengalaman | Sertifikat"  (mis. SDN 3 Gentan)
- *   - "Jabatan | Pengalaman | Jumlah (Orang) | Sertifikat"  (mis. LDP Polly)
- * Jadi pengalaman DICARI di mana aja (bukan wajib di ujung), lalu sisa angka polos
- * di ujung = jumlah orang (hanya bila tabel punya kolom tsb).
- * Tanpa kolom Jumlah → angka polos di ujung = pengalaman. */
-function parsePersonel(no, text, hasJumlah) {
+/** personel: <jabatan> [jumlah|pengalaman] [N tahun|tidak dipersyaratkan] <sertifikat…>
+ * Kolom & URUTAN-nya beda antar LDP:
+ *   - "Jabatan | Jumlah (Orang) | Pengalaman | Sertifikat"   (mis. SDN 3 Gentan)
+ *   - "Jabatan | Pengalaman | Jumlah (Orang) | Sertifikat"   (mis. LDP Polly, SMA N 7)
+ * Pengalaman bisa "N Tahun", "Tidak dipersyaratkan", atau angka polos ("2").
+ * Karena pengalaman polos & jumlah sama-sama angka, urutannya diambil dari header.
+ * Tanpa kolom Jumlah → angka polos di ekor = pengalaman. */
+function parsePersonel(no, text, cols) {
     if (!text) return null;
     const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)';
     const cm = text.match(new RegExp(CERT, 'i'));
@@ -171,25 +180,33 @@ function parsePersonel(no, text, hasJumlah) {
         let before = text.slice(0, cm.index).trim();
         const sert = text.slice(cm.index).trim();
         let peng = '', jml = '';
-        // buang sel pengalaman dr `before` (bisa di tengah, jg bisa di ujung)
+        // buang sel pengalaman eksplisit dr `before` (bisa di tengah, jg bisa di ujung)
         const cut = (m) => (before.slice(0, m.index) + ' ' + before.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
         // 1) "N Tahun"
         let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b/i);
         if (pm) { peng = `${pm[1]} Tahun`; before = cut(pm); }
+        // 2) "Tidak dipersyaratkan pengalaman" — regex toleran pemenggalan kata
         else {
-            // 2) "Tidak dipersyaratkan pengalaman" — regex toleran pemenggalan kata
             pm = before.match(/\s+(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?/i);
             if (pm) { peng = 'Tidak dipersyaratkan'; before = cut(pm); }
-            // 3) tabel tanpa kolom Jumlah → angka polos di ujung = pengalaman
-            else if (!hasJumlah) {
-                pm = before.match(/\s+(\d+)\s*$/);
-                if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
-            }
         }
-        // 4) kolom jumlah ada → sisa angka polos di ujung = jumlah orang
-        if (hasJumlah) {
-            const qm = before.match(/\s+(\d+)\s*$/);
-            if (qm) { jml = qm[1]; before = before.slice(0, qm.index).trim(); }
+        // 3) kumpulkan angka polos di ekor (maks 2): jumlah &/atau pengalaman
+        const nums = [];
+        let m2;
+        while (nums.length < 2 && (m2 = before.match(/\s+(\d+)\s*$/))) {
+            nums.unshift(m2[1]);
+            before = before.slice(0, m2.index).trim();
+        }
+        if (cols.jumlah) {
+            if (nums.length >= 2) {
+                // urutan kolom tentukan mana jumlah & mana pengalaman
+                if (cols.jumlahFirst) { jml = nums[0]; if (!peng) peng = `${nums[1]} Tahun`; }
+                else { jml = nums[1]; if (!peng) peng = `${nums[0]} Tahun`; }
+            } else if (nums.length === 1) {
+                jml = nums[0];
+            }
+        } else if (nums.length && !peng) {
+            peng = `${nums[nums.length - 1]} Tahun`;
         }
         before = before.replace(/\s*[-–—:.]\s*$/, '').trim();
         // "Konstruksi/ Ahli" → "Konstruksi/Ahli" (spasiSlash dr pemenggalan kolom PDF)
@@ -217,12 +234,12 @@ function parseRkk(no, text) {
 function buildTable(type, lines) {
     if (!lines.length) return null;
     const parser = { peralatan: parsePeralatan, personel: parsePersonel, rkk: parseRkk }[type];
-    const hasJumlah = type === 'personel' ? hasJumlahColumn(lines) : false;
-    let rows = groupRows(lines).map(r => parser(r.no, r.text, hasJumlah)).filter(Boolean);
+    const cols = type === 'personel' ? personelCols(lines) : null;
+    let rows = groupRows(lines).map(r => parser(r.no, r.text, cols)).filter(Boolean);
     if (!rows.length) return null;
     // Kolom "Jumlah (Orang)" hanya ada di sebagian LDP → header & rows ikut menyesuaikan
-    if (type === 'personel' && !hasJumlah) rows = rows.map(r => [r[0], r[1], r[3], r[4]]);
-    const header = (type === 'personel' && hasJumlah)
+    if (type === 'personel' && !cols.jumlah) rows = rows.map(r => [r[0], r[1], r[3], r[4]]);
+    const header = (type === 'personel' && cols.jumlah)
         ? ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja']
         : HEADERS[type];
     return { header, rows };
