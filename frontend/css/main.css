@@ -1015,6 +1015,48 @@ body.light-theme .soft-overlay {
 .dokpil-drive-card-name { font-size: 0.78rem; font-weight: 500; color: var(--text-1); line-height: 1.3; word-break: break-word; max-height: 2.6em; overflow: hidden; }
 .dokpil-drive-card-meta { font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 
+/* ─── Dokpil: Preview BAB IV ───────────────────────────── */
+.dokpil-raw-text {
+  max-height: 460px; overflow: auto; margin: 0;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem; line-height: 1.75; white-space: pre-wrap;
+  word-break: break-word; color: var(--text-2);
+  tab-size: 2;
+}
+.dokpil-raw-text::-webkit-scrollbar { width: 10px; height: 10px; }
+.dokpil-raw-text::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+.dokpil-raw-text::-webkit-scrollbar-track { background: transparent; }
+.dokpil-raw-hint { margin: 8px 0 0; font-size: 0.72rem; color: var(--text-3); font-style: italic; }
+#dokpil-raw-clean-btn.active { border-color: var(--accent-border); color: var(--accent); background: var(--accent-bg); }
+
+/* ─── Dokpil: searchable tender picker ─────────────────── */
+.dokpil-tender-picker { position: relative; }
+.dokpil-tender-list {
+  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 320px; overflow-y: auto;
+  background: var(--bg-overlay); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+}
+.dokpil-tender-opt { padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.dokpil-tender-opt:last-child { border-bottom: none; }
+.dokpil-tender-opt:hover { background: var(--accent-bg); }
+.dokpil-tender-opt-name { font-size: 0.82rem; color: var(--text-1); line-height: 1.35; }
+.dokpil-tender-opt-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; font-size: 0.7rem; color: var(--text-3); }
+.dokpil-tender-opt-kode { color: var(--text-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.dokpil-tender-empty, .dokpil-tender-count { padding: 10px 12px; font-size: 0.76rem; color: var(--text-3); }
+.dokpil-tender-count { border-top: 1px solid var(--border); text-align: center; }
+.dokpil-tender-selected {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px;
+  padding: 8px 10px; border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md); background: var(--accent-bg);
+}
+.dokpil-tender-selected svg { color: var(--success); flex-shrink: 0; }
+.dokpil-tender-selected-txt { flex: 1; min-width: 0; }
+.dokpil-tender-selected-name { font-size: 0.8rem; color: var(--text-1); line-height: 1.3; }
+.dokpil-tender-selected-meta { font-size: 0.7rem; color: var(--text-3); margin-top: 2px; }
+
 /* Template Editor — CKEditor 5 */
 .tpl-doc { --ck-content-font-family:'Aptos', Calibri, 'Segoe UI', Helvetica, Arial, sans-serif; --ck-content-font-size:12pt; --ck-content-font-color:#000; --ck-content-line-height:1.5; text-align:left; color:#000; }
 .tpl-doc > *:first-child { margin-top:0; }

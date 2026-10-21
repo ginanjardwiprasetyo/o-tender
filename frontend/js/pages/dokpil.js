@@ -1,3 +1,12 @@
+// ponytail: localStorage bisa diblokir (private mode / cookie diblokir) → jangan sampai
+// seluruh modul gagal init. Semua akses dibungkus try/catch.
+function lsGet(key) {
+  try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+}
+function lsSet(key, val) {
+  try { localStorage.setItem(key, val); } catch (e) { /* abaikan */ }
+}
+
 const DokpilPage = {
   extractedFields: {},
   extractedTables: {},
@@ -12,7 +21,7 @@ const DokpilPage = {
   selectedTenderId: '',
   currentFileName: '',
   aiModels: [],
-  aiModel: localStorage.getItem('dokpil_ai_model') || '',
+  aiModel: lsGet('dokpil_ai_model'),
 
   async render() {
     return `
@@ -52,10 +61,14 @@ const DokpilPage = {
     <!-- Preview BAB IV (default hidden) -->
     <div id="dokpil-raw-section" class="hidden" style="margin-bottom:24px;">
       <div class="card">
-        <div class="card-title" style="display:flex;align-items:center;gap:8px;">
+        <div class="card-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <i data-lucide="eye" style="width:16px;height:16px;"></i>
           Preview BAB IV
+          <span id="dokpil-raw-meta" style="font-weight:400;font-size:0.75rem;color:var(--text-3);"></span>
           <span style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.toggleRawClean()" id="dokpil-raw-clean-btn">
+              <i data-lucide="wand-2" style="width:13px;height:13px;"></i> <span id="dokpil-raw-clean-label">Bersihkan</span>
+            </button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.copyRaw()">Salin</button>
             <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8rem;" onclick="DokpilPage.toggleRaw()">
               <i data-lucide="chevron-down" id="dokpil-raw-chevron" style="width:14px;height:14px;transition:transform 0.2s;"></i>
@@ -63,7 +76,10 @@ const DokpilPage = {
             </button>
           </span>
         </div>
-        <pre id="dokpil-raw-text" class="hidden" style="max-height:340px;overflow:auto;background:var(--bg-input);padding:12px;border-radius:var(--radius-sm);font-size:0.8rem;line-height:1.6;white-space:pre-wrap;margin:0;"></pre>
+        <div id="dokpil-raw-body" class="hidden">
+          <pre id="dokpil-raw-text" class="dokpil-raw-text"></pre>
+          <p class="dokpil-raw-hint">Ground truth untuk verifikasi hasil ekstraksi — hasil parser di atas dibandingkan dengan isi BAB IV ini.</p>
+        </div>
       </div>
     </div>
 
@@ -86,11 +102,17 @@ const DokpilPage = {
         </div>
         <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Pilih proyek dari Tender Saya, lalu simpan data dokpil ini.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-          <div class="form-group" style="flex:1;min-width:220px;margin:0;">
+          <div class="form-group" style="flex:1;min-width:240px;margin:0;">
             <label class="form-label">Pilih Proyek</label>
-            <select id="dokpil-tender-select" class="form-input" style="height:40px;">
-              <option value="">— Memuat daftar tender… —</option>
-            </select>
+            <div class="dokpil-tender-picker">
+              <div class="search-box" style="max-width:none;">
+                <i data-lucide="search"></i>
+                <input type="text" id="dokpil-tender-search" placeholder="Cari nama proyek atau kode tender..." autocomplete="off"
+                       oninput="DokpilPage.filterTenders()" onfocus="DokpilPage.filterTenders()" onkeydown="DokpilPage.tenderSearchKey(event)">
+              </div>
+              <div id="dokpil-tender-selected" class="dokpil-tender-selected hidden"></div>
+              <div id="dokpil-tender-list" class="dokpil-tender-list hidden"></div>
+            </div>
           </div>
           <button class="btn btn-primary" id="dokpil-save-btn" onclick="DokpilPage.saveToTender()" style="height:40px;">
             <i data-lucide="save"></i> Simpan
@@ -114,6 +136,15 @@ const DokpilPage = {
     this.loadAiModels();
     await this.loadDriveFolder();
     this.loadFollowedTenders();
+    // tutup dropdown picker saat klik di luar
+    if (this._docClick) document.removeEventListener('click', this._docClick);
+    this._docClick = (e) => {
+      const picker = document.querySelector('.dokpil-tender-picker');
+      if (picker && !picker.contains(e.target)) {
+        document.getElementById('dokpil-tender-list')?.classList.add('hidden');
+      }
+    };
+    document.addEventListener('click', this._docClick);
   },
 
   // ── AI model picker ──
@@ -136,7 +167,7 @@ const DokpilPage = {
   },
   onModelChange(v) {
     this.aiModel = v;
-    localStorage.setItem('dokpil_ai_model', v);
+    lsSet('dokpil_ai_model', v);
   },
 
   // ── Drive folder ──
@@ -286,13 +317,18 @@ const DokpilPage = {
       const rawSection = document.getElementById('dokpil-raw-section');
       const rawText = document.getElementById('dokpil-raw-text');
       if (rawText && this.rawText) {
+        this.rawClean = false;
+        this._rawCleanCache = undefined;
         rawText.textContent = this.rawText;
-        rawText.classList.add('hidden');
+        document.getElementById('dokpil-raw-body')?.classList.add('hidden');
         rawSection.classList.remove('hidden');
         const chevron = document.getElementById('dokpil-raw-chevron');
         if (chevron) chevron.style.transform = 'rotate(0deg)';
         const label = document.getElementById('dokpil-raw-toggle-label');
         if (label) label.textContent = 'Tampilkan';
+        const cleanLabel = document.getElementById('dokpil-raw-clean-label');
+        if (cleanLabel) cleanLabel.textContent = 'Bersihkan';
+        this.updateRawMeta();
       }
 
       this.renderFields();
@@ -307,13 +343,62 @@ const DokpilPage = {
   },
 
   toggleRaw() {
-    const rawText = document.getElementById('dokpil-raw-text');
+    const body = document.getElementById('dokpil-raw-body');
     const chevron = document.getElementById('dokpil-raw-chevron');
     const label = document.getElementById('dokpil-raw-toggle-label');
-    if (!rawText) return;
-    const hidden = rawText.classList.toggle('hidden');
+    if (!body) return;
+    const hidden = body.classList.toggle('hidden');
     if (chevron) chevron.style.transform = hidden ? 'rotate(0deg)' : 'rotate(180deg)';
     if (label) label.textContent = hidden ? 'Tampilkan' : 'Sembunyikan';
+  },
+
+  // Teks PDF mentah: 38% baris kosong + kata terpotong per baris → rapikan utk dibaca.
+  // "Mentah" (toggle) tetap tersedia utk ground truth persis.
+  toggleRawClean() {
+    this.rawClean = !this.rawClean;
+    const pre = document.getElementById('dokpil-raw-text');
+    if (pre) pre.textContent = this.rawClean ? this.cleanRawText() : this.rawText;
+    const label = document.getElementById('dokpil-raw-clean-label');
+    if (label) label.textContent = this.rawClean ? 'Mentah' : 'Bersihkan';
+    const btn = document.getElementById('dokpil-raw-clean-btn');
+    if (btn) btn.classList.toggle('active', this.rawClean);
+    this.updateRawMeta();
+  },
+
+  // Buang furniture halaman, gabung baris lanjutan yg terpotong, buang baris kosong berlebih.
+  cleanRawText() {
+    if (this._rawCleanCache !== undefined) return this._rawCleanCache;
+    const NEW_ITEM = /^\s*(?:[a-zA-Z]\.\s|\d+[.)]\s)/;      // "a. Foo", "1) Foo", "1. Foo"
+    const PAGE_NO  = /^\s*[-–—]\s*\d+\s*[-–—]\s*$/;       // "- 73 -"
+    const PARA_F   = /^Paraf\b/;                            // "Paraf 1 Paraf 2 Paraf 3"
+    const ABBR     = /\b(Jl|No|Tp|Kab|Kec|Prov|Desa|Blok|hal|dsb|dst|dkk|a\.n)\.$/i; // "Jl." → lanjutan
+    const out = [];
+    for (const raw of String(this.rawText || '').split('\n')) {
+      const line = raw.replace(/\s+$/, '');
+      const t = line.trim();
+      if (!t) continue;                          // buang baris kosong
+      if (PAGE_NO.test(t) || PARA_F.test(t)) continue;  // buang furniture halaman
+      const prev = out[out.length - 1];
+      const endsSentence = prev !== undefined && /\.$/.test(prev) && !ABBR.test(prev);
+      const canMerge = prev !== undefined
+        && !/:$/.test(prev)                       // label ("Pokja Pemilihan :") → jangan digabung
+        && !endsSentence                         // kalimat selesai → jangan digabung
+        && !NEW_ITEM.test(t)                     // baris baru → jangan digabung ke atas
+        && !/^Keterangan/i.test(t);
+      if (canMerge) out[out.length - 1] = prev + ' ' + t;
+      else out.push(t);
+    }
+    this._rawCleanCache = out.join('\n');
+    return this._rawCleanCache;
+  },
+
+  // Counter karakter/baris di header preview
+  updateRawMeta() {
+    const el = document.getElementById('dokpil-raw-meta');
+    if (!el) return;
+    const txt = this.rawClean ? this.cleanRawText() : (this.rawText || '');
+    const lines = txt ? txt.split('\n').length : 0;
+    el.textContent = txt ? `${lines} baris · ${txt.length.toLocaleString('id-ID')} karakter` : '';
   },
 
   copyRaw() {
@@ -324,33 +409,113 @@ const DokpilPage = {
     });
   },
 
-  // ── Followed tenders ──
+  // ── Followed tenders (searchable picker) ──
   async loadFollowedTenders() {
     try {
       const res = await fetch('/api/followed');
       const json = await res.json();
       this.followedTenders = json.data || [];
-      const sel = document.getElementById('dokpil-tender-select');
-      if (!sel) return;
-      if (!this.followedTenders.length) {
-        sel.innerHTML = '<option value="">— Belum ada tender diikuti —</option>';
-        return;
-      }
-      sel.innerHTML = '<option value="">— Pilih proyek —</option>' +
-        this.followedTenders.map(t =>
-          `<option value="${t.kode_tender}">${Fmt.escape(t.nama_tender || t.kode_tender)}${t.kode_tender ? ' (' + t.kode_tender + ')' : ''}</option>`
-        ).join('');
+      this.selectedTenderId = '';
+      const selBox = document.getElementById('dokpil-tender-selected');
+      if (selBox) { selBox.classList.add('hidden'); selBox.innerHTML = ''; }
+      this.renderTenderList('');
     } catch (e) { /* ignore */ }
+  },
+
+  // Tampilkan daftar proyek (difilter q). q kosong = semua.
+  renderTenderList(q) {
+    const list = document.getElementById('dokpil-tender-list');
+    if (!list) return;
+    const needle = String(q || '').trim().toLowerCase();
+    const all = this.followedTenders || [];
+    const hits = needle
+      ? all.filter(t => ((t.nama_tender || '') + ' ' + (t.kode_tender || '') + ' ' + (t.satuan_kerja || '')).toLowerCase().includes(needle))
+      : all;
+
+    if (!all.length) {
+      list.innerHTML = '<div class="dokpil-tender-empty">Belum ada tender diikuti.</div>';
+      list.classList.remove('hidden');
+      return;
+    }
+    if (!hits.length) {
+      list.innerHTML = '<div class="dokpil-tender-empty">Tidak ada proyek cocok dengan "' + Fmt.escape(q) + '".</div>';
+      list.classList.remove('hidden');
+      return;
+    }
+    // Tampilkan max 60 hasil; sisanya via pencarian
+    const shown = hits.slice(0, 60);
+    list.innerHTML = shown.map(t => {
+      const pagu = t.pagu ? Fmt.rupiah(t.pagu) : '';
+      return `<div class="dokpil-tender-opt" data-kode="${t.kode_tender}" onclick="DokpilPage.pickTender(this.dataset.kode)">
+        <div class="dokpil-tender-opt-name">${Fmt.escape(t.nama_tender || '(tanpa nama)')}</div>
+        <div class="dokpil-tender-opt-meta">
+          <span class="dokpil-tender-opt-kode">${t.kode_tender}</span>
+          ${pagu ? '<span>' + pagu + '</span>' : ''}
+          ${t.satuan_kerja ? '<span>' + Fmt.escape(t.satuan_kerja) + '</span>' : ''}
+        </div>
+      </div>`;
+    }).join('') +
+      (hits.length > shown.length
+        ? `<div class="dokpil-tender-empty">… ${hits.length - shown.length} proyek lain. Ketik untuk mempersempit.</div>`
+        : (hits.length > 1 ? `<div class="dokpil-tender-count">${hits.length} proyek</div>` : ''));
+    list.classList.remove('hidden');
+  },
+
+  filterTenders() {
+    const inp = document.getElementById('dokpil-tender-search');
+    this.renderTenderList(inp ? inp.value : '');
+  },
+
+  // Enter = pilih hasil teratas; Escape = tutup
+  tenderSearchKey(e) {
+    if (e.key === 'Escape') {
+      const list = document.getElementById('dokpil-tender-list');
+      if (list) list.classList.add('hidden');
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    const list = document.getElementById('dokpil-tender-list');
+    const first = list && list.querySelector('.dokpil-tender-opt');
+    if (first) this.pickTender(first.dataset.kode);
+  },
+
+  pickTender(kode) {
+    const t = (this.followedTenders || []).find(x => String(x.kode_tender) === String(kode));
+    if (!t) return;
+    this.selectedTenderId = String(t.kode_tender);
+    const inp = document.getElementById('dokpil-tender-search');
+    if (inp) inp.value = '';
+    const list = document.getElementById('dokpil-tender-list');
+    if (list) list.classList.add('hidden');
+    const box = document.getElementById('dokpil-tender-selected');
+    if (box) {
+      box.innerHTML = `<i data-lucide="check-circle" style="width:14px;height:14px;"></i>
+        <div class="dokpil-tender-selected-txt">
+          <div class="dokpil-tender-selected-name">${Fmt.escape(t.nama_tender || '')}</div>
+          <div class="dokpil-tender-selected-meta">Kode ${t.kode_tender}${t.pagu ? ' · ' + Fmt.rupiah(t.pagu) : ''}</div>
+        </div>
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.72rem;" onclick="DokpilPage.clearTender()">Ganti</button>`;
+      box.classList.remove('hidden');
+      lucide.createIcons();
+    }
+  },
+
+  clearTender() {
+    this.selectedTenderId = '';
+    const box = document.getElementById('dokpil-tender-selected');
+    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+    this.renderTenderList('');
   },
 
   // ── Save to DB ──
   async saveToTender() {
-    const sel = document.getElementById('dokpil-tender-select');
     const statusEl = document.getElementById('dokpil-save-status');
     const btn = document.getElementById('dokpil-save-btn');
-    const kodeTender = sel?.value;
+    const kodeTender = this.selectedTenderId;
     if (!kodeTender) {
       Toast.warning('Pilih proyek dulu');
+      const inp = document.getElementById('dokpil-tender-search');
+      if (inp) inp.focus();
       return;
     }
 
