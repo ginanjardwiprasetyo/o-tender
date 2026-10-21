@@ -153,18 +153,27 @@ router.get('/files/all', async (req, res) => {
 // GET /api/equipments/:id/files
 router.get('/:id/files', async (req, res) => {
     try {
-        // shared_from = alat lain yg pakai berkas yg sama (berbagi tanpa upload ulang)
+        // owner_* = alat "induk" yg pertama kali upload berkas tsb (berbagi = 1 berkas, banyak alat)
         const { rows } = await db.query(
-            `SELECT f.*, (
-                 SELECT e2.jenis FROM equipment_doc_files f2
-                 JOIN equipments e2 ON e2.id = f2.equipment_id
-                 WHERE f2.file_url = f.file_url AND f2.equipment_id <> f.equipment_id
-                 LIMIT 1
-             ) AS shared_from,
-             (SELECT COUNT(*) FROM equipment_doc_files f3
-              WHERE f3.file_url = f.file_url AND f3.equipment_id <> f.equipment_id
-             ) AS shared_count
-             FROM equipment_doc_files f WHERE f.equipment_id = $1 ORDER BY f.created_at`,
+            `SELECT f.*,
+                    p.equipment_nama AS owner_nama, p.company_pt AS owner_pt,
+                    (SELECT e2.jenis FROM equipment_doc_files f2
+                     JOIN equipments e2 ON e2.id = f2.equipment_id
+                     WHERE f2.file_url = f.file_url AND f2.equipment_id <> f.equipment_id
+                     LIMIT 1) AS shared_from,
+                    (SELECT COUNT(*) FROM equipment_doc_files f3
+                     WHERE f3.file_url = f.file_url AND f3.equipment_id <> f.equipment_id
+                     ) AS shared_count
+             FROM equipment_doc_files f
+             LEFT JOIN LATERAL (
+                 SELECT e3.jenis AS equipment_nama, c3.singkatan AS company_pt
+                 FROM equipment_doc_files f3
+                 JOIN equipments e3 ON e3.id = f3.equipment_id
+                 LEFT JOIN companies c3 ON c3.id = e3.company_id
+                 WHERE f3.file_url = f.file_url
+                 ORDER BY f3.created_at ASC, f3.id ASC LIMIT 1
+             ) p ON TRUE
+             WHERE f.equipment_id = $1 ORDER BY f.created_at`,
             [req.params.id]
         );
         res.json({ success: true, data: rows });

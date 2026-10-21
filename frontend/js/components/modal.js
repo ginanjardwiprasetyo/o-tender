@@ -17,7 +17,8 @@ const Modal = {
             if (e.target === this.overlay) this.close();
         });
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') this.close();
+            // kalo ada modal bertumpuk (layer di atas) → biarkan layer yg nanganin ESC
+            if (e.key === 'Escape' && !document.querySelector('.modal-overlay--layered')) this.close();
         });
     },
 
@@ -38,6 +39,38 @@ const Modal = {
     close() {
         if (this.overlay) this.overlay.classList.add('hidden');
         document.dispatchEvent(new CustomEvent('modal:close'));
+    },
+
+    /**
+     * Modal BERTUMPUK — layer baru di atas modal yg sedang terbuka.
+     * Dipakai buat picker (mis. pilih berkas) → form di bawahnya tetap utuh.
+     * @returns {{close: Function, el: HTMLElement}}
+     */
+    openLayered(title, bodyHTML, footerHTML = '', opts = {}) {
+        const layer = document.createElement('div');
+        layer.className = 'modal-overlay modal-overlay--layered';
+        layer.innerHTML = `
+            <div class="modal" style="max-width:${opts.maxWidth || 780}px">
+                <div class="modal-header">
+                    <h2>${title}</h2>
+                    <button class="modal-close" data-modal-close aria-label="Tutup"><i data-lucide="x"></i></button>
+                </div>
+                <div class="modal-body">${bodyHTML}</div>
+                <div class="modal-footer">${footerHTML || '<button class="btn btn-secondary" data-modal-close>Tutup</button>'}</div>
+            </div>`;
+        document.body.appendChild(layer);
+        const close = () => {
+            layer.remove();
+            document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); } };
+        document.addEventListener('keydown', onKey);
+        layer.addEventListener('click', (e) => { if (e.target === layer) close(); });
+        layer.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        if (window.lucide) lucide.createIcons({ nodes: [layer] });
+        const first = layer.querySelector('input, select, textarea, button');
+        if (first) setTimeout(() => first.focus(), 80);
+        return { close, el: layer };
     },
 
     /**

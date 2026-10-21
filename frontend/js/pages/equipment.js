@@ -203,26 +203,33 @@ const EquipmentPage = {
                         <i data-lucide="x" style="width:10px; height:10px;"></i> Hapus
                     </button>
                 </div>
-                <div style="margin-top:10px;">
-                    <label class="form-label">Lampiran per Alat (bisa berbagi file milik alat lain)</label>
-                    <div id="eq-files-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:6px;"></div>
-                    <div style="display:flex; gap:6px; align-items:center;">
-                        <input type="file" class="form-input" id="f-eq-new-file" accept="image/*,.pdf" style="flex:1;" onchange="EquipmentPage.fillEqLabel(this)">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="EquipmentPage.addDocFile('${id || ''}')"><i data-lucide="upload" style="width:13px;height:13px;"></i> File</button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="EquipmentPage.pickSharedFile('${id || ''}')" title="Pakai berkas milik alat lain tanpa upload ulang"><i data-lucide="copy" style="width:13px;height:13px;"></i> Dari Alat Lain</button>
-                    </div>
-                    <input type="text" class="form-input" id="f-eq-label" placeholder="Label lampiran (mis. Perjanjian Sewa) — buat file baru" style="margin-top:6px;font-size:0.8rem;" oninput="this.dataset.touched='1'">
-                    <small style="display:block;margin-top:4px;color:var(--text-muted);font-size:0.7rem;">
-                        ${id ? 'Berkas lampiran disimpan terpisah dari "Upload Berkas Alat" di atas.'
-                             : 'Lampiran bisa ditambahkan sekarang — ikut tersimpan saat alat disimpan.'}
-                    </small>
-                    <div id="eq-file-bank" class="hidden" style="margin-top:8px;">
-                        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Pilih berkas milik alat lain (tanpa upload ulang):</div>
-                        <div id="eq-file-bank-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;"></div>
-                    </div>
-                </div>
             </div>
         </div>
+        <div class="eq-files">
+                    <div class="eq-files-head">
+                        <div>
+                            <div class="eq-files-title"><i data-lucide="paperclip" style="width:14px;height:14px;"></i> Lampiran per Alat</div>
+                            <div class="eq-files-hint">Berkas pendukung alat (BPKB, foto, perjanjian sewa) — boleh dipakai bersama alat lain tanpa upload ulang.</div>
+                        </div>
+                        <span id="eq-files-count" class="badge badge-info" style="font-size:0.68rem;flex-shrink:0;">0</span>
+                    </div>
+                    <div id="eq-files-list" class="eq-files-list"></div>
+                    <div class="eq-files-actions">
+                        <label class="btn btn-secondary btn-sm eq-files-btn" for="f-eq-new-file" style="margin:0;">
+                            <i data-lucide="upload" style="width:13px;height:13px;"></i> Unggah File
+                        </label>
+                        <input type="file" id="f-eq-new-file" accept="image/*,.pdf" class="hidden" onchange="EquipmentPage.fillEqLabel(this)">
+                        <button type="button" class="btn btn-secondary btn-sm eq-files-btn" onclick="EquipmentPage.pickSharedFile('${id || ''}')">
+                            <i data-lucide="copy" style="width:13px;height:13px;"></i> Pakai File Alat Lain
+                        </button>
+                    </div>
+                    <input type="text" class="form-input" id="f-eq-label" placeholder="Label lampiran (mis. Perjanjian Sewa) — untuk file baru" style="font-size:0.8rem;" oninput="this.dataset.touched='1'">
+                    <div class="eq-files-note">
+                        <i data-lucide="info" style="width:12px;height:12px;"></i>
+                        ${id ? 'Lampiran disimpan terpisah dari "Upload Berkas Alat" di atas.'
+                             : 'Lampiran bisa ditambahkan sekarang — ikut tersimpan saat alat disimpan.'}
+                    </div>
+                </div>
         `;
         const footer = `
             <button class="btn btn-secondary" onclick="Modal.close()">Batal</button>
@@ -279,24 +286,44 @@ const EquipmentPage = {
         if (!box) return;
         const saved = this._savedFiles || [];
         const pending = this._pendingFiles || [];
+        const badge = document.getElementById('eq-files-count');
+        if (badge) badge.textContent = String(saved.length + pending.length);
+
+        const item = ({ icon, name, meta, badges = '', actions }) => `
+            <div class="eq-files-item">
+                <div class="eq-files-ico"><i data-lucide="${icon}"></i></div>
+                <div class="eq-files-txt">
+                    <div class="eq-files-name" title="${Fmt.escape(name)}">${Fmt.escape(name)}</div>
+                    ${meta ? `<div class="eq-files-meta">${meta}</div>` : ''}
+                    ${badges ? `<div class="eq-files-badges">${badges}</div>` : ''}
+                </div>
+                <div class="eq-files-actions">${actions}</div>
+            </div>`;
+
         const rows = [
-            ...saved.map(f => `
-                <div style="display:flex; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px solid var(--border-color);">
-                    <i data-lucide="file-text" style="width:14px; height:14px; color:var(--text-muted);"></i>
-                    <a href="${f.file_url}" target="_blank" style="font-size:0.8rem; font-weight:500; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${Fmt.escape(f.label || f.file_url.split('/').pop())}</a>
-                    ${f.shared_from ? '<span class="badge badge-info" style="font-size:0.62rem;">dipakai</span>' : ''}
-                    <button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem;" data-del-file="${f.id}" data-del-url="${Fmt.escape(f.file_url)}">Hapus</button>
-                </div>`),
-            ...pending.map((p, i) => `
-                <div style="display:flex; align-items:center; gap:8px; background:var(--bg-tertiary); padding:6px 12px; border-radius:6px; border:1px dashed var(--border-strong);">
-                    <i data-lucide="${p.kind === 'share' ? 'copy' : 'file-text'}" style="width:14px; height:14px; color:var(--text-muted);"></i>
-                    <span style="font-size:0.8rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${Fmt.escape(p.label)}</span>
-                    <span class="badge badge-info" style="font-size:0.62rem;">${p.kind === 'share' ? 'dari alat lain' : 'siap diunggah'}</span>
-                    <button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:0.7rem;" data-del-pending="${i}">Hapus</button>
-                </div>`)
+            ...saved.map(f => item({
+                icon: 'file-text',
+                name: f.label || (f.file_url || '').split('/').pop(),
+                meta: f.owner_nama ? `milik ${f.owner_nama}${f.owner_pt ? ' · ' + f.owner_pt : ''}` : '',
+                badges: (f.shared_count > 0 || f.shared_from)
+                    ? `<span class="eq-tag">dipakai ${f.shared_count || 1}x${f.shared_from ? ' · ' + f.shared_from : ''}</span>` : '',
+                actions: `<a class="btn btn-secondary btn-sm eq-files-btn" href="${f.file_url}" target="_blank" title="Buka"><i data-lucide="external-link" style="width:12px;height:12px;"></i></a>
+                           <button type="button" class="btn btn-danger btn-sm eq-files-btn" data-del-file="${f.id}" data-del-url="${Fmt.escape(f.file_url)}" title="Hapus lampiran"><i data-lucide="trash-2" style="width:12px;height:12px;"></i></button>`
+            })),
+            ...pending.map((p, i) => item({
+                icon: p.kind === 'share' ? 'copy' : 'file-up',
+                name: p.label,
+                meta: p.kind === 'share' ? 'dipakai dari alat lain' : 'siap diunggah',
+                badges: `<span class="eq-tag eq-tag--draft">${p.kind === 'share' ? 'BERAGI' : 'DRAFT'}</span>`,
+                actions: `<button type="button" class="btn btn-danger btn-sm eq-files-btn" data-del-pending="${i}" title="Batalkan"><i data-lucide="x" style="width:12px;height:12px;"></i></button>`
+            }))
         ];
         box.innerHTML = rows.length ? rows.join('')
-            : '<small style="color:var(--text-muted);">Belum ada lampiran khusus.</small>';
+            : `<div class="eq-files-empty">
+                   <i data-lucide="paperclip" style="width:18px;height:18px;"></i>
+                   <span>Belum ada lampiran</span>
+                   <small>Unggah berkas pendukung, atau pakai berkas milik alat lain.</small>
+               </div>`;
         box.querySelectorAll('[data-del-file]').forEach(b => b.onclick = () => this.delDocFile(
             this._formId || '', b.dataset.delFile, b.dataset.delUrl));
         box.querySelectorAll('[data-del-pending]').forEach(b => b.onclick = () => {
@@ -345,54 +372,99 @@ const EquipmentPage = {
 
     // Mekanisme berbagi: pakai berkas milik alat lain tanpa upload ulang.
     // Inline (bukan modal) → form alat tetap utuh.
+    // Picker berkas milik alat lain — modal bertumpuk di atas form (form tetap utuh).
+    // Daftar bisa 50+ berkas → ada pencarian + filter PT + counter.
     async pickSharedFile(id) {
-        const wrap = document.getElementById('eq-file-bank');
-        if (!wrap) return;
-        if (!wrap.classList.contains('hidden')) { wrap.classList.add('hidden'); return; }
-        await this.loadFileBank(id);
-    },
-
-    // PT/Perusahaan di form berubah → bank file ikut difilter
-    onCompanyChange() {
-        const wrap = document.getElementById('eq-file-bank');
-        if (wrap && !wrap.classList.contains('hidden')) this.loadFileBank(this._formId);
-    },
-
-    async loadFileBank(id) {
-        const wrap = document.getElementById('eq-file-bank');
-        const list = document.getElementById('eq-file-bank-list');
-        if (!wrap || !list) return;
+        let files = [];
         try {
             const res = await API.getAllEquipmentFiles();
-            let files = res.data || [];
+            files = res.data || [];
             if (id) {
                 // sembunyikan berkas yg sudah terlampir di alat ini
                 const mine = await API.getEquipmentFiles(id);
                 const used = new Set((mine.data || []).map(f => f.id));
                 files = files.filter(f => !used.has(f.id));
             }
-            // Filter sesuai PT/Perusahaan di form → cuma berkas milik PT yg sama
-            const pt = document.getElementById('f-pt')?.value || '';
-            if (pt) files = files.filter(f => String(f.company_id || '') === String(pt));
-            if (!files.length) {
-                list.innerHTML = pt
-                    ? '<small style="color:var(--text-muted);">Belum ada berkas untuk PT/Perusahaan ini.</small>'
-                    : '<small style="color:var(--text-muted);">Belum ada berkas alat lain yang bisa dipakai.</small>';
-            } else {
-                list.innerHTML = files.map(f => `
-                    <button type="button" class="eq-bank-item" data-pick-file="${f.id}" data-pick-label="${Fmt.escape(f.label || f.file_url.split('/').pop())}" data-pick-owner="${Fmt.escape(f.company_id ? (f.company_singkatan || f.nama_perusahaan || f.equipment_nama || '') : (f.equipment_nama || 'Tanpa alat'))}">
-                        <i data-lucide="file-text" style="width:15px;height:15px;"></i>
-                        <span class="eq-bank-name">${Fmt.escape(f.label || f.file_url.split('/').pop())}</span>
-                        <span class="eq-bank-owner">${Fmt.escape(f.company_id ? (f.company_singkat || f.company_singkatan || f.nama_perusahaan || '') : (f.equipment_nama || 'Tanpa alat'))}${f.used_count > 1 ? ' · dipakai ' + (f.used_count - 1) + 'x' : ''}</span>
-                    </button>`).join('');
-                list.querySelectorAll('[data-pick-file]').forEach(b => b.onclick = () => {
-                    this.useSharedFile(id, b.dataset.pickFile, b.dataset.pickLabel);
-                    wrap.classList.add('hidden');
-                });
+        } catch (e) { Toast.error(e.message); return; }
+
+        if (!files.length) {
+            Toast.info('Belum ada berkas alat lain yang bisa dipakai');
+            return;
+        }
+        // daftar PT utk filter
+        const pts = [...new Map(files.filter(f => f.company_id)
+            .map(f => [f.company_id, f.company_singkat || f.company_singkatan || f.nama_perusahaan || 'PT']))
+            .values()].sort();
+
+        const body = `
+        <div class="eq-bank">
+            <div class="eq-bank-tools">
+                <div class="search-box eq-bank-search">
+                    <i data-lucide="search"></i>
+                    <input type="text" id="eq-bank-q" placeholder="Cari nama berkas, alat, atau PT..." autocomplete="off">
+                </div>
+                <select class="form-select eq-bank-pt" id="eq-bank-pt" style="width:auto;min-width:170px;">
+                    <option value="">Semua PT</option>
+                    ${pts.map(p => `<option value="${Fmt.escape(p)}">${Fmt.escape(p)}</option>`).join('')}
+                </select>
+            </div>
+            <div class="eq-bank-count" id="eq-bank-count"></div>
+            <div class="eq-bank-list" id="eq-bank-list"></div>
+        </div>`;
+
+        const layer = Modal.openLayered('Pakai File Alat Lain', body,
+            '<button class="btn btn-secondary" data-modal-close>Tutup</button>',
+            { maxWidth: 800 });
+
+        // render + filter (client side → responsif utk ratusan berkas)
+        const listEl = layer.el.querySelector('#eq-bank-list');
+        const countEl = layer.el.querySelector('#eq-bank-count');
+        const qEl = layer.el.querySelector('#eq-bank-q');
+        const ptEl = layer.el.querySelector('#eq-bank-pt');
+
+        const draw = () => {
+            const q = (qEl.value || '').trim().toLowerCase();
+            const pt = ptEl.value || '';
+            const hits = files.filter(f => {
+                if (pt && String(f.company_singkat || f.company_singkatan || f.nama_perusahaan || '') !== pt) return false;
+                if (!q) return true;
+                const hay = [f.label, f.file_url, f.equipment_nama, f.company_singkat, f.company_singkatan, f.nama_perusahaan]
+                    .filter(Boolean).join(' ').toLowerCase();
+                return hay.includes(q);
+            });
+            countEl.textContent = hits.length === files.length
+                ? `${files.length} berkas`
+                : `${hits.length} dari ${files.length} berkas`;
+            if (!hits.length) {
+                listEl.innerHTML = '<div class="eq-files-empty"><i data-lucide="search-x" style="width:18px;height:18px;"></i><span>Tidak ada berkas cocok</span></div>';
+                lucide.createIcons({ nodes: [listEl] });
+                return;
             }
-            wrap.classList.remove('hidden');
-            lucide.createIcons({ nodes: [wrap] });
-        } catch (e) { Toast.error(e.message); }
+            listEl.innerHTML = hits.map(f => {
+                const name = f.label || (f.file_url || '').split('/').pop();
+                const pt = f.company_singkat || f.company_singkatan || f.nama_perusahaan || '';
+                return `<div class="eq-bank-item">
+                    <i data-lucide="file-text" style="width:16px;height:16px;"></i>
+                    <div class="eq-bank-txt">
+                        <div class="eq-bank-name" title="${Fmt.escape(name)}">${Fmt.escape(name)}</div>
+                        <div class="eq-bank-meta">
+                            ${pt ? `<span class="eq-tag">${Fmt.escape(pt)}</span>` : ''}
+                            ${f.equipment_nama ? `<span>${Fmt.escape(f.equipment_nama)}</span>` : ''}
+                            ${f.used_count > 1 ? `<span class="eq-tag">dipakai ${f.used_count - 1}x</span>` : ''}
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" data-pick-file="${f.id}" data-pick-label="${Fmt.escape(name)}">Pakai</button>
+                </div>`;
+            }).join('');
+            listEl.querySelectorAll('[data-pick-file]').forEach(b => b.onclick = () => {
+                layer.close();
+                this.useSharedFile(id, b.dataset.pickFile, b.dataset.pickLabel);
+            });
+            lucide.createIcons({ nodes: [listEl] });
+        };
+        qEl.addEventListener('input', draw);
+        ptEl.addEventListener('change', draw);
+        draw();
     },
 
     async useSharedFile(id, fileId, label) {
