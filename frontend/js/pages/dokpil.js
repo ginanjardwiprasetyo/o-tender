@@ -77,8 +77,8 @@ const DokpilPage = {
           </span>
         </div>
         <div id="dokpil-raw-body" class="hidden">
+          <p class="dokpil-raw-hint">Ground truth untuk verifikasi hasil ekstraksi — bandingkan isi BAB IV ini dengan hasil parser di atas.</p>
           <pre id="dokpil-raw-text" class="dokpil-raw-text"></pre>
-          <p class="dokpil-raw-hint">Ground truth untuk verifikasi hasil ekstraksi — hasil parser di atas dibandingkan dengan isi BAB IV ini.</p>
         </div>
       </div>
     </div>
@@ -109,9 +109,9 @@ const DokpilPage = {
                 <i data-lucide="search"></i>
                 <input type="text" id="dokpil-tender-search" placeholder="Cari nama proyek atau kode tender..." autocomplete="off"
                        oninput="DokpilPage.filterTenders()" onfocus="DokpilPage.filterTenders()" onkeydown="DokpilPage.tenderSearchKey(event)">
+                <div id="dokpil-tender-list" class="dokpil-tender-list hidden"></div>
               </div>
               <div id="dokpil-tender-selected" class="dokpil-tender-selected hidden"></div>
-              <div id="dokpil-tender-list" class="dokpil-tender-list hidden"></div>
             </div>
           </div>
           <button class="btn btn-primary" id="dokpil-save-btn" onclick="DokpilPage.saveToTender()" style="height:40px;">
@@ -435,11 +435,13 @@ const DokpilPage = {
     if (!all.length) {
       list.innerHTML = '<div class="dokpil-tender-empty">Belum ada tender diikuti.</div>';
       list.classList.remove('hidden');
+      this.placeTenderList(list);
       return;
     }
     if (!hits.length) {
       list.innerHTML = '<div class="dokpil-tender-empty">Tidak ada proyek cocok dengan "' + Fmt.escape(q) + '".</div>';
       list.classList.remove('hidden');
+      this.placeTenderList(list);
       return;
     }
     // Tampilkan max 60 hasil; sisanya via pencarian
@@ -459,6 +461,17 @@ const DokpilPage = {
         ? `<div class="dokpil-tender-empty">… ${hits.length - shown.length} proyek lain. Ketik untuk mempersempit.</div>`
         : (hits.length > 1 ? `<div class="dokpil-tender-count">${hits.length} proyek</div>` : ''));
     list.classList.remove('hidden');
+    this.placeTenderList(list);
+  },
+
+  // Default list ke ATAS; balik ke bawah kalo ruang di atas kurang (mis. halaman di scroll jauh).
+  placeTenderList(list) {
+    const inp = document.getElementById('dokpil-tender-search');
+    if (!inp || !list) return;
+    const r = inp.getBoundingClientRect();
+    const spaceAbove = r.top;
+    const spaceBelow = window.innerHeight - r.bottom;
+    list.classList.toggle('drop-down', spaceAbove < 220 && spaceBelow > spaceAbove);
   },
 
   filterTenders() {

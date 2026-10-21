@@ -1019,7 +1019,7 @@ body.light-theme .soft-overlay {
 .dokpil-raw-text {
   max-height: 460px; overflow: auto; margin: 0;
   background: var(--bg-input); border: 1px solid var(--border);
-  border-radius: var(--radius-md); padding: 14px 16px;
+  border-radius: var(--radius-md); padding: 12px 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem; line-height: 1.75; white-space: pre-wrap;
   word-break: break-word; color: var(--text-2);
@@ -1028,17 +1028,19 @@ body.light-theme .soft-overlay {
 .dokpil-raw-text::-webkit-scrollbar { width: 10px; height: 10px; }
 .dokpil-raw-text::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
 .dokpil-raw-text::-webkit-scrollbar-track { background: transparent; }
-.dokpil-raw-hint { margin: 8px 0 0; font-size: 0.72rem; color: var(--text-3); font-style: italic; }
+.dokpil-raw-hint { margin: 0 0 8px; font-size: 0.72rem; color: var(--text-3); font-style: italic; }
 #dokpil-raw-clean-btn.active { border-color: var(--accent-border); color: var(--accent); background: var(--accent-bg); }
 
 /* ─── Dokpil: searchable tender picker ─────────────────── */
 .dokpil-tender-picker { position: relative; }
+/* Default: list ke ATAS (card ini di bawah halaman → list ke bawah terpotong viewport) */
 .dokpil-tender-list {
-  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0;
+  position: absolute; z-index: 30; bottom: calc(100% + 4px); left: 0; right: 0;
   max-height: 320px; overflow-y: auto;
   background: var(--bg-overlay); border: 1px solid var(--border-strong);
   border-radius: var(--radius-md); box-shadow: 0 10px 28px rgba(0,0,0,0.45);
 }
+.dokpil-tender-list.drop-down { bottom: auto; top: calc(100% + 4px); }
 .dokpil-tender-opt { padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .dokpil-tender-opt:last-child { border-bottom: none; }
 .dokpil-tender-opt:hover { background: var(--accent-bg); }
