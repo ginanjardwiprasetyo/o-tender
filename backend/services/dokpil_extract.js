@@ -37,6 +37,7 @@ function grab(str, startPat, endPat) {
 
 // Bersihkan nilai field: gabung spasi/newline, buang marker list
 function cleanVal(s) {
+    s = String(s || '').split(/\[diisi/i)[0];  // buang teks instruksi isian ("[diisi …]")
     s = s.replace(/\s+/g, ' ').trim();
     s = s.replace(/^[a-z]\.\s*/i, '');
     s = s.replace(/\s+[a-z]\.\s*$/i, '');
@@ -94,7 +95,7 @@ function personelCols(lines) {
     const idx = lines.findIndex(l => /^\d+\.?\s+[^\s\d]/.test(l));
     const head = (idx === -1 ? lines : lines.slice(0, idx)).join(' ');
     const flat = head.replace(/\s+/g, '');
-    const jml = flat.search(/jumla?h|orang/i);
+    const jml = flat.search(/jumla?h|jml|orang/i);   // "Jumlah" kadang terpotong jadi "Jml"
     if (jml === -1) return { jumlah: false, jumlahFirst: false };
     const peng = flat.search(/pengalaman|penga-laman|tahun/i);
     if (peng === -1) return { jumlah: true, jumlahFirst: true };
@@ -124,22 +125,34 @@ function sectionLines(lines, anchorRe, endRe) {
 
 /** Kelompokkan baris jadi row bernomor urut (1,2,3…); sisanya = lanjutan row.
  * Nomor baris WAJIB diikuti karakter non-angka: baris "2 1 SKK Execute" itu
- * continuation baris sebelumnya (nilai pengalaman=2 + jumlah=1), bukan baris baru. */
+ * continuation baris sebelumnya (nilai pengalaman=2 + jumlah=1), bukan baris baru.
+ * Nomor juga boleh berdiri sendiri ("1." di baris sendiri, isi di baris bawahnya) —
+ * tapi hanya kalau baris berikutnya bukan angka (kalau angka itu nilai sel, bukan baris baru). */
 function groupRows(lines) {
     const rows = [];
     let cur = null, expected = 1;
-    for (const raw of lines) {
-        const l = raw.replace(/[ \t]+$/, '').trim();
-        if (!l) continue;
+    const clean = lines.map(s => s.replace(/[ \t]+$/, '').trim()).filter(Boolean);
+    for (let i = 0; i < clean.length; i++) {
+        const l = clean[i];
         if (HDR_FRAGMENT_RE.test(l) || NOISE_RE.test(l) || PLACEHOLDER_RE.test(l)) continue;
-        const m = l.match(/^(\d+)\.?\s+([^\s\d].*)$/);
-        const n = m ? parseInt(m[1], 10) : NaN;
-        if (m && n === expected) {
+        let m = l.match(/^(\d+)(\.?)\s*(.*)$/);
+        if (m) {
+            const n = parseInt(m[1], 10);
+            const content = m[3].trim();
+            if (n !== expected) m = null;                       // bukan urutan baris → nilai sel
+            else if (content && !/^[^\s\d]/.test(content)) m = null;  // "2 1 SKT …" → continuation
+            // angka sendirian: marker hanya kalo bertitik ("1.") atau baris pertama,
+            // & baris berikutnya bukan angka (kalau angka itu nilai sel, bukan baris baru)
+            else if (!content && (!m[2] && cur)) m = null;
+            else if (!content && /^\d/.test(clean[i + 1] || '')) m = null;
+        }
+        if (m) {
             if (cur) rows.push(cur);
-            cur = { no: String(expected), parts: [m[2].trim()] };
-            expected = n + 1;
+            cur = { no: String(expected), parts: [m[3].trim()] };
+            expected = parseInt(m[1], 10) + 1;
         } else if (cur) {
             if (/^\s*\d+\.\s+[A-Z]/.test(l)) break; // item daftar global baru → row selesai
+            if (/^\s*[a-z]\.\s+[A-Z]/.test(l)) break; // sub-seksi baru ("b. Untuk pekerjaan …") → row selesai
             if (/^\s*Keterangan\s*:/i.test(l)) break; // catatan bawah tabel → row selesai
             cur.parts.push(l);
         }
@@ -147,6 +160,11 @@ function groupRows(lines) {
     }
     if (cur) rows.push(cur);
     return rows.map(r => ({ no: r.no, text: r.parts.join(' ').replace(/\s{2,}/g, ' ').trim() }));
+}
+
+/** Bersihkan satu sel tabel: buang teks instruksi isian ("[diisi …]") & sisa placeholder. */
+function cleanCell(v) {
+    return String(v || '').split(/\[diisi/i)[0].replace(/_{3,}|\.{4,}/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
 /** peralatan: <jenis> <kapasitas?> <jumlah [..]> */
@@ -162,7 +180,7 @@ function parsePeralatan(no, text) {
     let jenis = pre, kap = '';
     if (cap && cap[1].trim()) { jenis = cap[1].trim(); kap = cap[2].trim(); }
     if (!jenis && !kap && !jumlah) return null;
-    return [no, jenis.trim(), kap, jumlah];
+    return [no, cleanCell(jenis), cleanCell(kap), cleanCell(jumlah)];
 }
 
 /** personel: <jabatan> [jumlah|pengalaman] [N tahun|tidak dipersyaratkan] <sertifikat…>
@@ -174,48 +192,65 @@ function parsePeralatan(no, text) {
  * Tanpa kolom Jumlah → angka polos di ekor = pengalaman. */
 function parsePersonel(no, text, cols) {
     if (!text) return null;
-    const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)';
-    const cm = text.match(new RegExp(CERT, 'i'));
-    if (cm && cm.index > 0) {
-        let before = text.slice(0, cm.index).trim();
-        const sert = text.slice(cm.index).trim();
-        let peng = '', jml = '';
-        // buang sel pengalaman eksplisit dr `before` (bisa di tengah, jg bisa di ujung)
-        const cut = (m) => (before.slice(0, m.index) + ' ' + before.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim();
-        // 1) "N Tahun"
-        let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b/i);
-        if (pm) { peng = `${pm[1]} Tahun`; before = cut(pm); }
-        // 2) "Tidak dipersyaratkan pengalaman" — regex toleran pemenggalan kata
-        else {
-            pm = before.match(/\s+(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?/i);
-            if (pm) { peng = 'Tidak dipersyaratkan'; before = cut(pm); }
+    const CERT = '(?:SKK|SKT|SKA|SKP|SKG|SIP|SIO|Sertifikat|BNSP|LSP|LSK|Strata|Sarjana|Diploma|Gelar|Pelatihan|Training|Profesional|Tenaga Ahli)(?![A-Za-z])';
+
+    // ── Tabel TANPA kolom "Jumlah (Orang)": Pablo = Jabatan | Pengalaman | Sertifikat.
+    // Batasnya keyword sertifikat, pengalaman = "N Tahun" atau angka polos di ujung.
+    if (!cols.jumlah) {
+        const cm = text.match(new RegExp(CERT, 'i'));
+        if (cm && cm.index > 0) {
+            let before = text.slice(0, cm.index).trim();
+            const sert = text.slice(cm.index).trim();
+            let peng = '';
+            let pm = before.match(/\s+(\d+)\s*(?:tahun|thn|th)\b/i);
+            if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); }
+            else { pm = before.match(/\s+(\d+)\s*$/); if (pm) { peng = `${pm[1]} Tahun`; before = before.slice(0, pm.index).trim(); } }
+            before = before.replace(/\s*[-–—:.\s]+$/, '').trim().replace(/\s*\/\s*/g, '/');
+            if (before) return [no, cleanCell(before), '', peng, cleanCell(sert)];
         }
-        // 3) kumpulkan angka polos di ekor (maks 2): jumlah &/atau pengalaman
-        const nums = [];
-        let m2;
-        while (nums.length < 2 && (m2 = before.match(/\s+(\d+)\s*$/))) {
-            nums.unshift(m2[1]);
-            before = before.slice(0, m2.index).trim();
-        }
-        if (cols.jumlah) {
-            if (nums.length >= 2) {
-                // urutan kolom tentukan mana jumlah & mana pengalaman
-                if (cols.jumlahFirst) { jml = nums[0]; if (!peng) peng = `${nums[1]} Tahun`; }
-                else { jml = nums[1]; if (!peng) peng = `${nums[0]} Tahun`; }
-            } else if (nums.length === 1) {
-                jml = nums[0];
-            }
-        } else if (nums.length && !peng) {
-            peng = `${nums[nums.length - 1]} Tahun`;
-        }
-        before = before.replace(/\s*[-–—:.]\s*$/, '').trim();
-        // "Konstruksi/ Ahli" → "Konstruksi/Ahli" (spasiSlash dr pemenggalan kolom PDF)
-        before = before.replace(/\s*\/\s*/g, '/').trim();
-        if (before) return [no, before, jml, peng, sert];
+        const ym = text.match(/^(.*?)\s*(\d+)\s*(?:tahun|thn|th)\b\s*(?:\([^)]*\))?\s+(.*)$/i);
+        if (ym && ym[1] && ym[3]) return [no, cleanCell(ym[1]), '', `${ym[2]} Tahun`, cleanCell(ym[3])];
+        return [no, cleanCell(text), '', '', ''];
     }
-    const ym = text.match(/^(.*?)\s*(\d+)\s*(?:tahun|thn|th)\b\s*(?:\([^)]*\))?\s+(.*)$/i);
-    if (ym && ym[1] && ym[3]) return [no, ym[1].trim(), '', `${ym[2]} Tahun`, ym[3].trim()];
-    return [no, text, '', '', ''];
+
+    // ── Tabel DGN kolom "Jumlah (Orang)": kolom2+ = jumlah / pengalaman / sertifikat.
+    // Konsumsi kolom angka dari DEPAN (urutan kolom dari header), sisanya = sertifikat.
+    // Batas Jabatan = angka polos pertama (kolom2+ = jumlah/pengalaman/sertifikat).
+    const mn = text.match(/\s+(\d+)(?![A-Za-z])/);
+    const mtdk = text.match(/\s+(tidak\s+dipersya\s*ratkan)/i);
+    const cuts = [];
+    if (mn) cuts.push(mn.index);
+    if (mtdk) cuts.push(mtdk.index);
+    let jab = '', rest = text;
+    if (cuts.length) {
+        const c = Math.min(...cuts);
+        jab = text.slice(0, c).trim();
+        rest = text.slice(c).trim();
+    } else {
+        const cm0 = text.match(new RegExp(CERT, 'i'));
+        if (cm0 && cm0.index > 0) { jab = text.slice(0, cm0.index).trim(); rest = text.slice(cm0.index).trim(); }
+        else { jab = text.trim(); rest = ''; }
+    }
+    jab = jab.replace(/\s*[-–—:.\s]+$/, '').trim().replace(/\s*\/\s*/g, '/');
+    if (!jab) return null;
+
+    const RE_JML  = /^(\d+)\s*(?:orang|personil)?\b\s*/i;
+    const RE_PENG = /^(?:(\d+)\s*(?:tahun|thn|th)\b|(tidak\s+dipersya\s*ratkan)(?:\s+pengala\s*man)?)\s*/i;
+    let jml = '', peng = '';
+    const takeJml = () => { const m = RE_JML.exec(rest); if (m) { jml = m[1]; rest = rest.slice(m[0].length); return true; } return false; };
+    // pengalaman boleh juga angka polos ("2") → pakai urutan kolom sbg penentu
+    const takePeng = (allowBare) => {
+        const m = RE_PENG.exec(rest);
+        if (m) { peng = m[1] ? `${m[1]} Tahun` : 'Tidak dipersyaratkan'; rest = rest.slice(m[0].length); return true; }
+        if (allowBare) { const b = /^(\d+)\b\s*/.exec(rest); if (b) { peng = `${b[1]} Tahun`; rest = rest.slice(b[0].length); return true; } }
+        return false;
+    };
+    if (cols.jumlahFirst) { takeJml(); takePeng(true); }
+    else { takePeng(true); takeJml(); }
+    // kolom jumlah di ujung baris: ambil angka polos terakhir
+    if (!jml) { const m = rest.match(/\s+(\d+)\s*$/); if (m) { jml = m[1]; rest = rest.slice(0, m.index).trim(); } }
+    if (!peng) { const m = rest.match(/^(\d+)\b\s*/); if (m) { peng = `${m[1]} Tahun`; rest = rest.slice(m[0].length); } }
+    return [no, cleanCell(jab), jml, peng, cleanCell(rest)];
 }
 
 // ponytail: split RKK (uraian | bahaya) — 2+ spasi dulu, lalu leksikon awal kata bahaya;
@@ -225,10 +260,10 @@ const BAHAYA_RE = /\s+(?=(?:Ter(?:jatuh|peleset|timpa|lindas|bakar|sengat|guling
 function parseRkk(no, text) {
     if (!text) return null;
     const sp = text.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
-    if (sp.length >= 3) return [no, sp[0], sp.slice(1).join(' ')];
+    if (sp.length >= 3) return [no, cleanCell(sp[0]), cleanCell(sp.slice(1).join(' '))];
     const hm = text.match(BAHAYA_RE);
-    if (hm && hm.index > 0) return [no, text.slice(0, hm.index).trim(), text.slice(hm.index).trim()];
-    return [no, text, ''];
+    if (hm && hm.index > 0) return [no, cleanCell(text.slice(0, hm.index)), cleanCell(text.slice(hm.index))];
+    return [no, cleanCell(text), ''];
 }
 
 function buildTable(type, lines) {
@@ -258,10 +293,12 @@ function extractLdp(text) {
     const ldp = clean.substring(start);
 
     // ── Field berlabel (format standar SPSE) ──
-    const LIST = '(?:[a-z]\\.\\s*|-\\s*)';
+    // label bisa diawali penanda list: "a. ", "- ", atau bernomor "3.2 "
+    const LIST = '(?:[a-z]\\.\\s*|-\\s*|\\d+(?:\\.\\d+)*\\.?\\s*)';
     let v;
-    // Pokja: label "Pokja Pemilihan" (dengan/tanpa kolon) → stop di Alamat/Website/next item
-    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Pokja\\s+Pemilihan\\s*:?\\s*`, '(?:^|\\n)\\s*(?:Alamat\\s+Pokja|Website\\s+LPSE|[b-z]\\.\\s+\\w)');
+    // Pokja: label "Pokja Pemilihan" (dengan/tanpa kolon) → stop di Alamat/Website/next item.
+    // Varian: "Kelompok Kerja (Pokja) Pemilihan 16" (label dgn sisa "Pemilihan").
+    v = grab(ldp, `(?:^|\\n)\\s*${LIST}?(?:Kelompok\\s+Kerja\\s*)?\\(?\\s*Pokja\\s*\\)?\\s*Pemilihan\\s*:?\\s*`, '(?:^|\\n)\\s*(?:Alamat\\s+Pokja|Website\\s+LPSE|[b-z]\\.\\s+\\w)');
     if (v) fields.pokja = cleanVal(v);
 
     v = grab(ldp, `(?:^|\\n)\\s*${LIST}?Alamat\\s+Pokja(?:\\s+Pemilihan)?\\s*:?\\s*`, '(?:^|\\n)\\s*(?:[a-z]\\.\\s*|-\\s*)?Website\\s+LPSE');

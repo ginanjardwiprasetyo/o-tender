@@ -87,4 +87,13 @@ assert.deepStrictEqual(a.tables.personel.rows.map(r => r.slice(0, 4)), [
   ['2', 'Petugas Keselamatan Konstruksi', '1', '0 Tahun'],
 ], 'personel rows (angka polos)');
 
-console.log('OK: dokpil_extract — 25 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom + angka polos)');
+// ── Header kolom "Jumlah" terpotong ("Jml") + jumlah ditulis "1 orang" ──
+// Regresi: kolom jumlah tak terdeteksi → "1 orang" nyangkut ke kolom Jabatan.
+const b = extractLdp(fs.readFileSync(path.join(__dirname, 'fixtures', 'ldp-personel-jml-orang.txt'), 'utf8'));
+assert.deepStrictEqual(b.tables.personel.header, ['No', 'Jabatan', 'Jumlah (Orang)', 'Pengalaman Kerja (tahun)', 'Sertifikat Kompetensi Kerja'], 'personel header (Jml + "1 orang")');
+assert.deepStrictEqual(b.tables.personel.rows.map(r => r.slice(0, 4)), [
+  ['1', 'Pelaksana', '1', '1 Tahun'],
+], 'personel rows (Jml + "1 orang")');
+assert.ok(!/orang/.test(b.tables.personel.rows[0][1]), 'jumlah "1 orang" tidak nyangkut ke Jabatan');
+
+console.log('OK: dokpil_extract — 29 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom + angka polos + Jml)');
