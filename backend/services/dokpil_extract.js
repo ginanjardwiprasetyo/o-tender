@@ -346,19 +346,32 @@ function extractLdp(text, items) {
     // (baris terpotong / sertifikat kosong). Text-stream tak bisa bedain nilai sel "2"
     // vs nomor baris "2."; koordinat bisa.
     if (items && items.length) {
-        const broken = !tables.personel || !tables.personel.rows.length
-            || tables.personel.rows.some((r) => !String(r[r.length - 1] || '').trim())
-            // Jabatan yg membawa angka pengalaman/jumlah → baris kepotong
-            || tables.personel.rows.some((r) => /\b\d+\s*(?:tahun|thn|th|orang|personil)\b/i.test(String(r[1] || '')))
-            // Jabatan yg diawali "Tahun" → pengalaman yg kepotong jadi marker baris
-            || tables.personel.rows.some((r) => /^\s*(?:tahun|thn)\b/i.test(String(r[1] || '')));
-        if (broken) {
-            try {
-                const { personelByCoords } = require('./pdf_geom');
-                const g = personelByCoords(items);
+        try {
+            const geom = require('./pdf_geom');
+            // Tabel personel: pakai koordinat kalo hasil text-stream rusak
+            const badPersonel = !tables.personel || !tables.personel.rows.length
+                || tables.personel.rows.some((r) => !String(r[r.length - 1] || '').trim())
+                // Jabatan yg membawa angka pengalaman/jumlah → baris kepotong
+                || tables.personel.rows.some((r) => /\b\d+\s*(?:tahun|thn|th|orang|personil)\b/i.test(String(r[1] || '')))
+                // Jabatan yg diawali "Tahun" → pengalaman yg kepotong jadi marker baris
+                || tables.personel.rows.some((r) => /^\s*(?:tahun|thn)\b/i.test(String(r[1] || '')));
+            if (badPersonel) {
+                const g = geom.personelByCoords(items);
                 if (g && g.rows.length) { tables.personel = g; debug.personelSource = 'coords'; }
-            } catch (e) { /* fallback ke text-stream */ }
-        }
+            }
+            // Tabel peralatan & RKK: engine koordinat yg sama (spec berbeda), dipakai
+            // hanya kalo text-stream kosong & hasil koordinat tervalidasi (No urut)
+            for (const t of ['peralatan', 'rkk']) {
+                if (tables[t] && tables[t].rows.length) continue;
+                const g = geom.tableByCoords(items, t);
+                if (!g || !g.rows.length) continue;
+                const noCol = g.header.findIndex((h) => /^no$/i.test(h));
+                const nums = noCol >= 0 ? g.rows.map((r) => String(r[noCol] || '').replace(/[.)]+$/, '')) : [];
+                if (nums.length && nums.every((n, i) => n === String(i + 1))) {
+                    tables[t] = g; debug[t + 'Source'] = 'coords';
+                }
+            }
+        } catch (e) { /* fallback ke text-stream */ }
     }
     const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
     if (t3) tables.rkk = t3;
