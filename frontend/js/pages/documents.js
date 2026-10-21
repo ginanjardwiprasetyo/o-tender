@@ -627,7 +627,21 @@ const DocumentsPage = {
             row('Nomor surat', Fmt.escape(L.nomor || '-')) +
             row('Peralatan', Object.keys(this._wz.equip).length + ' alat dipilih') +
             row('Pelaksana', Fmt.escape(nm(this._wz.pelaksana.id)) + ` (${(this._wz.pelaksana.exp || []).length} riwayat)`) +
-            row('K3', Fmt.escape(nm(this._wz.k3.id)) + ` (${(this._wz.k3.exp || []).length} riwayat)`);
+            row('K3', Fmt.escape(nm(this._wz.k3.id)) + ` (${(this._wz.k3.exp || []).length} riwayat)`) +
+            `<div style="display:flex; align-items:center; gap:10px; margin-top:12px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-tertiary);">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0; flex:1;">
+                    <input type="checkbox" id="wz-scan-effect" ${this._wz.scanEffect ? 'checked' : ''} onchange="DokpilPage.wzScanToggle(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);">
+                    <span>
+                        <span style="display:block;font-size:0.85rem;color:var(--text-primary);">Efek dokumen seperti hasil pindai</span>
+                        <span style="display:block;font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Berlaku untuk semua dokumen di batch ini (surat, alat, personil). Teks PDF jadi tidak bisa dicari/copy.</span>
+                    </span>
+                </label>
+            </div>`;
+    },
+
+    // toggle efek scan (diterapkan ke SEMUA dokumen di batch)
+    wzScanToggle(on) {
+        this._wz.scanEffect = !!on;
     },
 
     async wzGenerate() {
@@ -684,6 +698,7 @@ const DocumentsPage = {
                 personil_ids: [this._wz.pelaksana.id, this._wz.k3.id].filter(Boolean),
                 equipment_ids: Object.keys(this._wz.equip),
                 vars, with_cap_ttd: V.withTtd !== false,
+                scan_effect: !!this._wz.scanEffect,
                 attachments: expUrls,
                 variables: {
                     batch_id: (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),

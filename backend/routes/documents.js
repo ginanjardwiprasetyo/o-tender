@@ -8,6 +8,7 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const db = require('../config/db');
+const { applyScanEffect } = require('../services/scan_effect');
 const supabase = require('../config/supabase');
 const { buildDocHtml } = require('../services/docbuilder');
 
@@ -249,16 +250,27 @@ router.post('/generate', async (req, res) => {
             baseUrl: `${req.protocol}://${req.get('host')}`,
         });
         const merged = await mergeAttachments(stamped.bytes, req.body.attachments || []);
-        const up = await uploadResult(merged.bytes, req);
+        // Efek scan (opsional) — berlaku utk SEMUA dokumen di batch ini
+        let finalBytes = merged.bytes, finalPages = merged.pages;
+        let scanApplied = false;
+        if (req.body.scan_effect) {
+            try {
+                const sc = await applyScanEffect(merged.bytes, req.body.scan_opts || {});
+                finalBytes = sc.bytes; finalPages = sc.pages; scanApplied = true;
+            } catch (e) {
+                console.warn('[Scan Effect] gagal, PDF tetap normal:', e.message);
+            }
+        }
+        const up = await uploadResult(finalBytes, req);
         const { rows } = await db.query(
             `INSERT INTO tender_documents
              (tender_id, template_id, personnel_snapshot, equipment_snapshot, generated_html, file_url, storage_path, page_count, variables)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
             [req.body.tender_id || null, ctx.tpl[0].id,
              JSON.stringify(ctx.personil), JSON.stringify(ctx.equip),
-             built.html, up.url, up.path, merged.pages, JSON.stringify({ ...(req.body.variables || req.body.vars || {}), cap_variants: built.capVariants, has_ttd: !!((req.body.show?.direktur || req.body.show?.pelaksana || req.body.show?.k3) && req.body.show?.cap) })]
+             built.html, up.url, up.path, finalPages, JSON.stringify({ ...(req.body.variables || req.body.vars || {}), cap_variants: built.capVariants, has_ttd: !!((req.body.show?.direktur || req.body.show?.pelaksana || req.body.show?.k3) && req.body.show?.cap), scan_effect: scanApplied })]
         );
-        res.json({ success: true, data: { id: rows[0].id, url: up.url, pages: merged.pages, skipped: merged.skipped, cap_variants: built.capVariants } });
+        res.json({ success: true, data: { id: rows[0].id, url: up.url, pages: finalPages, skipped: merged.skipped, cap_variants: built.capVariants, scan_effect: scanApplied } });
     } catch (err) {
         console.error('[Generate Error]', err.message);
         res.status(500).json({ success: false, error: err.message });
