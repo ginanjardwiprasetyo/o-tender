@@ -135,12 +135,24 @@ function columnRuns(items) {
     return runs.filter((r) => r[1] - r[0] >= 4);   // buang run sempit (noise antar kata)
 }
 
-/** Isi sel pada baris visual: item2 yg masuk rentang kolom. */
+/** Isi sel pada baris visual: item2 yg masuk rentang kolom. Potongan kata bertegangan
+ *  ("Petu"+"g"+"as", celah ≤1pt & tanpa spasi) dirambat tanpa spasi; item yg memang
+ *  ber-spasi ("Minimal " + "3 ton" mulai tepat di x1) tetap dipisah spasi. */
 function cellOf(row, runs, ci) {
     const r = runs[ci];
-    return row.items
+    const its = row.items
         .filter((i) => i.x + (i.w || 0) > r[0] && i.x < r[1])
-        .map((i) => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        .map((i) => ({ s: i.s, x: i.x, x1: i.x + (i.w || 0) }));
+    let out = '';
+    its.forEach((it, k) => {
+        const s = it.s.trim();
+        if (!s) return;
+        if (k === 0) { out = s; return; }
+        const prev = its[k - 1];
+        const tight = it.x - prev.x1 <= 1 && !/\s$/.test(prev.s) && !/^\s/.test(it.s);
+        out += tight ? s : ' ' + s;
+    });
+    return out.replace(/\s+/g, ' ').trim();
 }
 
 /** Kandidat header tabel: item anchor + kata kunci lain di dekatnya. */
@@ -187,11 +199,26 @@ function findHeaderCandidates(items, spec) {
 /** Baris bernomor yg menyebar ≥2 kolom (celah antar-item ≥ 6pt) = baris TABEL
  *  (mis. "1. PEKERJAAN GALIAN TANAH   TERPEROSOK"), bukan judul seksi baru
  *  ("6. Dokumen lain…" menyatu dlm 1 blok). */
+/** Anggap baris data-bernomor: ≥2 cluster dgn item ter-kiri murni angka
+ *  ("2@296 Petugas…" ✓, "Paraf 1 Paraf 2 Paraf 3" ✗). */
 function numRowLike(r) {
     const xs = r.items.slice().sort((a, b) => a.x - b.x);
+    if (!/^\d+\.?$/.test(xs[0].s.trim().replace(/[.)]+$/, ''))) return false;
     let clusters = 1;
     for (let i = 1; i < xs.length; i++) if (xs[i].x - (xs[i - 1].x + xs[i - 1].w) > 6) clusters++;
     return clusters >= 2;
+}
+
+/** Baris bercampur kolom referensi-seksi di margin kiri (x ~190-280): potong item kiri
+ *  dgn batas span0. Baris yg sama2 tak terpotong (seluruh item di dalam tabel —
+ *  baris sel panjang yg membungkus) diteruskan apa adanya; baris campuran dibuang
+ *  bila sisa items tak menyentuh kolom kiri (baris data menyentuh kolom nomor). */
+function cleanLeft(rows, span0) {
+    return rows.map((r) => {
+        const kept = r.items.filter((i) => i.x >= span0);
+        if (kept.length === r.items.length) return r;
+        return kept.length && kept.some((i) => i.x - span0 <= 25) ? { y: r.y, items: kept } : null;
+    }).filter(Boolean);
 }
 
 /** Area data tabel: item di bawah header, berhenti di Keterangan/sub-seksi/seksi baru/celah. */
@@ -202,21 +229,37 @@ function dataRegion(items, hdr) {
     let prevY = null;
     for (const r of rows) {
         const lineText = r.items.map((i) => i.s).join(' ').replace(/\s+/g, ' ').trim();
-        if (/^\s*Keterangan\b/i.test(lineText)) break;
+        if (/^\s*(Keterangan|Catatan)\b/i.test(lineText)) break;
+        if (/^\s*\[/.test(lineText)) break;                        // petunjuk pengisian "[diisi …]"
         if (/^\s*[a-z]\.\s+[A-Z]/.test(lineText)) break;              // sub-seksi baru ("b. Untuk …")
         if (/^\s*\d+\.\s+[A-Z]/.test(lineText) && !numRowLike(r)) break;              // seksi baru ("4. Bagian …")
         if (/Uraian\s+Pekerjaan|Identifikasi\s+Bahaya|Jenis\s+Alat\b|Kapasitas\s+Jumlah/i.test(lineText)) break; // header tabel lain
-        if (prevY !== null && r.y < prevY - 22) break;                 // celah vertikal besar
+        const gap = prevY - r.y;
+        // baris bernomor boleh terpencet ≤34pt (baris data no-2 dgn baris kosong);
+        // selain itu celah besar = akhir tabel
+        if (gap > 22 && !(gap <= 38 && numRowLike(r))) break;
         out.push(r);
         prevY = r.y;
     }
     return out;
 }
 
-/** Kata kunci header → kind per index run (batas tengah terdekat). */
+/** Kata kunci header → kind per index run. Map dgn OVERLAP rentang-x item header
+ *  dgn rentang kolom (item di tepi-kiri sel lebar dgn mid-distance salah kolom:
+ *  "Jabatan dalam"@363-418 di run [362,423], mid 392 → salah ke kolom No). */
 function mapKinds(runs, hdr) {
     const kindOf = new Array(runs.length).fill(null);
     for (const [kind, it] of hdr.kinds) {
+        const s0 = it.x, s1 = it.x + (it.w || 0);
+        if (s1 > s0) {
+            let best = -1, bov = -1;
+            runs.forEach((r, i) => {
+                const ov = Math.min(s1, r[1]) - Math.max(s0, r[0]);
+                if (ov > bov) { bov = ov; best = i; }
+            });
+            if (bov > 0 && best >= 0 && !kindOf[best]) { kindOf[best] = kind; continue; }
+        }
+        // fallback: batas tengah terdekat
         let best = -1, bd = 1e9;
         runs.forEach((r, i) => {
             const mid = (r[0] + r[1]) / 2;
@@ -232,7 +275,8 @@ function mapKinds(runs, hdr) {
 function buildFromHeader(items, hdr, spec) {
     // ── PASAR 1: potongan kasar di bawah y jangkar header, untuk mencari angka No
     // teratas sebagai jangkar pemotong blok header multi-baris.
-    const rough = dataRegion(items, { ...hdr, top: hdr.y });
+    const span0 = Math.min(...[...hdr.kinds.values()].map((i) => i.x)) - 8;
+    const rough = cleanLeft(dataRegion(items, { ...hdr, top: hdr.y }), span0);
     if (!rough.length) return null;
     const tops = [hdr.top ?? hdr.y];
     const runs1 = columnRuns(rough.flatMap((r) => r.items));
@@ -253,7 +297,7 @@ function buildFromHeader(items, hdr, spec) {
             }
         }
     }
-    const rows = dataRegion(items, { ...hdr, top: Math.min(...tops) });
+    const rows = cleanLeft(dataRegion(items, { ...hdr, top: Math.min(...tops) }), span0);
     if (!rows.length) return null;
 
     // ── KOLOM: proyeksi whitespace vertikal atas area tabel (otomatis, tanpa
@@ -303,7 +347,11 @@ function buildFromHeader(items, hdr, spec) {
                 });
                 if (!bandCells.has(bi)) bandCells.set(bi, Array.from({ length: runs.length }, () => []));
                 const cells = bandCells.get(bi);
+                // kolom No: hanya dari baris bernomornya sendiri — baris kelanjutan/
+                // proza lain dlm band ("Ya/Tidak," dari proza seksi D) jangan menempel
+                const noVal = noIdx >= 0 ? cellOf(r, runs, noIdx).replace(/[.)]+\s*$/, '').trim() : '';
                 runs.forEach((_, ci) => {
+                    if (ci === noIdx && !/^\d+$/.test(noVal)) return;
                     const v = cellOf(r, runs, ci);
                     if (v) cells[ci].push(v);
                 });
@@ -330,6 +378,7 @@ function buildFromHeader(items, hdr, spec) {
         if (row.length > 1 && !row[1]) continue;                 // tanpa isi kolom utama → bukan data
         if (row.some((v) => /^[_.]+$/i.test(v))) continue;          // placeholder form
         if (row.some((v) => /_{2,}|\bdst\b|^CONTOH$/i.test(v))) continue;
+        if (row.length > 1 && row.slice(1).every((v) => /^0*$/.test(v.trim()))) continue; // baris template "0 0 0"
         out.push(row);
     }
     if (!out.length) return null;
@@ -357,7 +406,10 @@ function tableByCoords(items, type) {
         const noCol = t.header.findIndex((h) => /^no$/i.test(h));
         const nums = noCol >= 0 ? t.rows.map((r) => String(r[noCol] || '').replace(/[.)]+$/, '')) : [];
         const hasNo = nums.length > 0 && nums.every((n, i) => n === String(i + 1));
-        const score = (hasNo ? 100000 : 0) + filled * 100 + t.rows.length;
+        // tabel rkk asli selalu punya kolom Identifikasi Bahaya — salinan-urlencoded
+        // BOQ/formulir pengesahan tak punya → dorong kandidat sungguhan
+        const withBahaya = t.header.some((h) => /bahaya/i.test(h)) ? 20000 : 0;
+        const score = (hasNo ? 100000 : 0) + withBahaya + filled * 100 + t.rows.length;
         if (score > bestScore) { bestScore = score; best = t; }
     }
     return best;

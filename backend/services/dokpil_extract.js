@@ -278,6 +278,7 @@ function buildTable(type, lines) {
     const parser = { peralatan: parsePeralatan, personel: parsePersonel, rkk: parseRkk }[type];
     const cols = type === 'personel' ? personelCols(lines) : null;
     let rows = groupRows(lines).map(r => parser(r.no, r.text, cols)).filter(Boolean);
+    rows = rows.filter((r) => !r.some((v) => /\[(?:jenis|kapasitas|diisi)/i.test(String(v))));   // [diisi jenis, kapasitas…]
     if (!rows.length) return null;
     // Kolom "Jumlah (Orang)" hanya ada di sebagian LDP → header & rows ikut menyesuaikan
     if (type === 'personel' && !cols.jumlah) rows = rows.map(r => [r[0], r[1], r[3], r[4]]);
@@ -368,10 +369,13 @@ function extractLdp(text, items) {
                 // Jabatan yg membawa angka pengalaman/jumlah → baris kepotong
                 || tables.personel.rows.some((r) => /\b\d+\s*(?:tahun|thn|th|orang|personil)\b/i.test(String(r[1] || '')))
                 // Jabatan yg diawali "Tahun" → pengalaman yg kepotong jadi marker baris
-                || tables.personel.rows.some((r) => /^\s*(?:tahun|thn)\b/i.test(String(r[1] || '')));
+                || tables.personel.rows.some((r) => /^\s*(?:tahun|thn)\b/i.test(String(r[1] || '')))
+                // Dua baris steam jadi satu: sel memuat nomor baris berikut + kata jabatan
+                || tables.personel.rows.some((r) => /\b[2-9]\d?\s+(?:Petugas|Pelaksana|Ahli|Kepala|Owner|Manajer|Teknisi)\b/i
+                    .test(`${r[1] || ''} | ${r[r.length - 1] || ''}`));
             if (badPersonel) {
                 const g = geom.personelByCoords(items);
-                if (g && g.rows.length) { tables.personel = g; debug.personelSource = 'coords'; }
+                if (g && g.rows.length && seqNo(g)) { tables.personel = g; debug.personelSource = 'coords'; }
             }
             // peralatan & rkk: engine koordinat yg sama (spec berbeda). Ganti hasil
             // text-stream kalo koordinat lebih baik: baris lebih banyak (text-stream
@@ -379,8 +383,16 @@ function extractLdp(text, items) {
             for (const t of ['peralatan', 'rkk']) {
                 const g = geom.tableByCoords(items, t);
                 if (!g || !g.rows.length || !seqNo(g)) continue;
+                if (t === 'rkk' && !g.header.some((h) => /bahaya/i.test(h))) continue;   // salinan formulir BOQ bukan RKK
                 const cur = tables[t];
-                const better = !cur || !cur.rows.length
+                // teks remuk/referensi? (baris data berikut menerempel ke sel,
+                // atau sel bahaya memuat proza syarat "Paket Pemilihan diberlakukan…")
+                const curJunk = cur && cur.rows.some((r) => {
+                    const c = `${r[1] || ''} ${r[r.length - 1] || ''}`;
+                    return /(?:[4-6]\s+0\s+0\b)|(\b[2-9]\d?\s+[A-Z][a-zA-Z/]*[\s\S]+?\b\d+\s+(?:unit|orang|set)\b)/.test(c)
+                        || /\b(?:Preferensi\s+Harga|Dokumen\s+Lain|;\s*[G-I]\.\s+\w)/.test(c);
+                });
+                const better = curJunk || !cur || !cur.rows.length
                     || g.rows.length > cur.rows.length
                     || cur.rows.some((r) => !String(r[r.length - 1] || '').trim());
                 if (better) { tables[t] = g; debug[t + 'Source'] = 'coords'; }
