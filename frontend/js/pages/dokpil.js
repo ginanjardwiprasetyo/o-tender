@@ -686,13 +686,18 @@ const DokpilPage = {
           ).join('')}</tr>`
         ).join('');
         return `
-        <div class="dokpil-subtable">
+        <div class="dokpil-subtable" data-table-key="${key}">
           <div class="dokpil-subtable-title">${titles[key]} <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(bisa diedit)</span></div>
           <div style="overflow:auto;">
             <table class="structured-table">
               <thead>${headerCells}</thead>
-              <tbody>${bodyRows}</tbody>
+              <tbody data-table-body="${key}">${bodyRows}</tbody>
             </table>
+          </div>
+          <div style="margin-top:6px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="DokpilPage.addTableRow('${key}')">
+              <i data-lucide="plus"></i> Tambah baris
+            </button>
           </div>
         </div>`;
       }
@@ -700,6 +705,22 @@ const DokpilPage = {
     }).join('');
 
     return html;
+  },
+
+  addTableRow(key) {
+    const tbody = document.querySelector(`[data-table-body="${key}"]`);
+    if (!tbody) return;
+    const table = tbody.closest('table');
+    const colCount = table?.querySelector('thead tr')?.children.length || 0;
+    const tr = document.createElement('tr');
+    const ri = tbody.children.length;
+    let cells = '';
+    for (let ci = 0; ci < colCount; ci++) {
+      cells += `<td><input class="dokpil-cell-input" data-table="${key}" data-row="${ri}" data-col="${ci}" value="" /></td>`;
+    }
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+    lucide.createIcons();
   },
 
   getFields() {

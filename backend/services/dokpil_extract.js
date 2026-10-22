@@ -175,6 +175,13 @@ function parsePeralatan(no, text) {
     if (qty) {
         jumlah = text.substring(qty.index).trim();
         pre = text.substring(0, qty.index).trim();
+    } else {
+        // jumlah tanpa satuan di ekor (mis. "Excavator 0.7 m3 1")
+        const bare = text.match(/\s+(\d+)\s*$/);
+        if (bare && bare.index > 0) {
+            jumlah = bare[1];
+            pre = text.substring(0, bare.index).trim();
+        }
     }
     const cap = pre.match(/^(.*?)\s*(\d[\d.,]*\s*(?:[–\-]\s*\d[\d.,]*\s*)?(?:m3|m2|m³|cc|meter|ton|kg|lt|liter|ps|hp|kva|kw|cv|pk|bar|psi|btu|kaki|m)\b.*)$/i);
     let jenis = pre, kap = '';

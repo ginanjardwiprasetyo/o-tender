@@ -332,6 +332,32 @@ const DocumentsPage = {
         const nm = t.nama_tender || t.nama_paket || '';
         this._wz.vars.nama_paket = nm;
         this._wzTerbilang();
+        // ponytail: tarik data dokpil (RKK) tersimpan utk tender ini → pre-fill tab RKK (B1)
+        this._wzLoadDokpilRkk(t.kode_tender || t.id);
+    },
+
+    async _wzLoadDokpilRkk(kodeTender) {
+        if (!kodeTender) return;
+        try {
+            const res = await fetch(`/api/dokpil/saved/${encodeURIComponent(kodeTender)}`);
+            const json = await res.json();
+            if (!json.success || !json.data) return;
+            const rkk = json.data.rkk;
+            if (!Array.isArray(rkk) || !rkk.length) return;
+            const vars = this._wz.rkk.vars || {};
+            const n = rkk.length;
+            this._wz.rkk.barisB1 = n;
+            this._wz.rkk.barisB2 = this._wz.rkk.barisB2 || 1;
+            this._wz.rkk.barisD2 = this._wz.rkk.barisD2 || 1;
+            rkk.forEach((row, i) => {
+                const idx = i + 1;
+                const uraian = Array.isArray(row) ? (row[1] || '') : (row.uraian || row.uraian_pekerjaan || '');
+                const bahaya = Array.isArray(row) ? (row[2] || '') : (row.bahaya || row.identifikasi_bahaya || '');
+                if (uraian) vars['uraian_b' + idx] = uraian;
+                if (bahaya) vars['identifikasi_b' + idx] = bahaya;
+            });
+            this._wz.rkk.vars = vars;
+        } catch (e) { /* abaikan — RKK tetap default kosong */ }
     },
 
     // ponytail: pagu tampil bertitik (480.000.000), mentah digit disimpan di dataset

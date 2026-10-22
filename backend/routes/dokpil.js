@@ -92,7 +92,11 @@ ATURAN:
 - "jangka_waktu" → ANGKA SAJA. Contoh "150" bukan "150 hari kalender"
 - "pagu_anggaran" → ANGKA SAJA. Contoh "2909753000" bukan "Rp 2.909.753.000,00"
 - "kir" → "ya" jika dokumen mensyaratkan KIR (Kartu Izin Usaha Jasa Konstruksi / laporan KIR), "tidak" jika tidak disebutkan
-- tabel "peralatan": ekstrak SEMUA baris (No, Jenis Alat, Kapasitas, Jumlah). Cari dari subjudul "peralatan utama"
+- tabel "peralatan": ekstrak SEMUA baris dari subjudul "peralatan utama" / "peralatan". Kolom: No, Jenis Alat, Kapasitas, Jumlah.
+  - "jenis_alat" = HANYA nama alat (mis. "Dump Truck", "Excavator"). JANGAN gabung kapasitas/jumlah ke dalamnya.
+  - "kapasitas" = spesifikasi kapasitas (mis. "4000 - 10000 kg", "0.7 m3"). Kosongkan jika tidak ada.
+  - "jumlah" = angka + satuan (mis. "1 unit", "2 set"). WAJIB diisi dari kolom "Jumlah" terpisah; JANGAN kosongkan.
+  - Jumlah baris HARUS sama dengan jumlah baris di tabel asli (jangan lewat/skip).
 - tabel "personel": ekstrak SEMUA baris (No, Jabatan, Jumlah orang, Pengalaman thn, Sertifikat). Jangan lewatkan baris manapun. Cari dari subjudul "personel manajerial" atau tabel yg ada kolom "Jabatan" dan "Sertifikat Kompetensi"
   - "jumlah" = kolom "Jumlah (Orang)" kalo ada; kalo tidak ada kolom itu, kosongkan
   - "pengalaman" = "N Tahun" (mis. "2 Tahun"), atau "Tidak dipersyaratkan" kalo dokumen menulis begitu, atau "" kalo kosong
