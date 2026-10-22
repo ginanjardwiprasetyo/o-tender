@@ -145,6 +145,7 @@ const VARS = {
         { key: 'isi_b2_6', label: 'Program — Bentuk Monitoring', ket: 'diisi manual', perBaris: false },
         { key: 'isi_b2_7', label: 'Program — Indikator Pencapaian', ket: 'diisi manual', perBaris: false },
         { key: 'isi_b2_8', label: 'Program — Penanggung Jawab', ket: 'diisi manual', perBaris: false },
+        { key: 'isi_b2_9', label: 'Kolom Program ke-9 (sesuai format tabel)', ket: 'diisi manual', perBaris: false },
     ],
     d2: [
         { key: 'pengD2', label: 'Pengendalian', ket: 'diisi manual', perBaris: false },
@@ -255,6 +256,36 @@ async function loadSettings(db) {
     };
 }
 
+/** Rakit tabel E1 (jadwal kegiatan, 7 minggu) dari data e1rows. */
+function renderE1(rows, html) {
+    const src = (html || '').trim();
+    if (!src) return '';
+    const rowTpl = firstBodyRow(src);
+    if (!rowTpl) return src;
+    const out = [];
+    (rows || []).forEach((r, i) => {
+        let tr = rowTpl;
+        // nomor urut (sel pertama)
+        tr = tr.replace(/^(<tr\b[^>]*>\s*<td\b[^>]*>)\s*\d+\s*(<\/td>)/i, `$1${i + 1}$2`);
+        // kegiatan
+        tr = tr.replace(/\{\{kegiatan\}\}/g, r.kegiatan || '');
+        // PIC
+        tr = tr.replace(/\{\{posisi_k3\}\}/g, (r.pic || '').trim() || '{{posisi_k3}}');
+        // minggu ke-1..7: ganti isi sel ke-(j+3) (No, Kegiatan, PIC = 3 sel pertama)
+        const cells = tr.match(/<td\b[^>]*>[\s\S]*?<\/td>/gi) || [];
+        (r.minggu || []).forEach((m, j) => {
+            const idx = 3 + j;
+            if (idx < cells.length) {
+                const oldCell = cells[idx];
+                const newCell = oldCell.replace(/>([^<]*)<\/td>$/, `>${(m === 'x' ? 'x' : '')}</td>`);
+                tr = tr.replace(oldCell, newCell);
+            }
+        });
+        out.push(tr);
+    });
+    return src.replace(/<tbody\b[^>]*>[\s\S]*?<\/tbody>/i, (m) => `<tbody>\n    ${out.join('\n    ')}\n  </tbody>`);
+}
+
 /** Rakit semua tabel RKK dari pengaturan + variabel dokumen. */
 function renderTables(cfg = {}, vars = {}) {
     const opt = {
@@ -265,8 +296,12 @@ function renderTables(cfg = {}, vars = {}) {
     return {
         b1: renderB1(cfg.b1 || DEFAULTS.b1, vars, { ...opt, jumlahBaris: cfg.barisB1 || 1 }),
         b2: renderSimple(cfg.b2 || DEFAULTS.b2, vars, { ...opt, jumlahBaris: cfg.barisB2 || 1 }),
+    // E1: formatnya dari user; kalau ada data e1rows, rakit; kalau tidak, pakai format apa adanya
+    e1: (cfg.e1 && cfg.e1.trim())
+        ? (vars && Array.isArray(vars._e1rows) ? renderE1(vars._e1rows, cfg.e1) : cfg.e1)
+        : '',
         d2: renderSimple(cfg.d2 || DEFAULTS.d2, vars, { ...opt, jumlahBaris: 1 }),
     };
 }
 
-module.exports = { DEFAULTS, VARS, AMBANG, tingkatRisiko, renderB1, renderSimple, renderTables, loadSettings, firstBodyRow, renumberRow };
+module.exports = { DEFAULTS, VARS, AMBANG, tingkatRisiko, renderB1, renderSimple, renderE1, renderTables, loadSettings, firstBodyRow, renumberRow };

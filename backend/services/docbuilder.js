@@ -418,14 +418,16 @@ function buildDocHtml(o) {
 
         // ponytail: tabel RKK (B1/B2/D2) — format & ambang dari pengaturan halaman RKK
         // ponytail: nilai isian RKK (halaman RKK) = default; nilai form dokumen tetap menang
-        const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : vars;
+        const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : (vars || {});
+        if (vars && vars.rkk_e1rows) varsAll._e1rows = vars.rkk_e1rows;
         if (rkk) {
             const { renderTables } = require('./rkk');
             const tRkk = renderTables(rkk, varsAll);
             content = content
                 .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
                 .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)
-                .replace(/\{\{rkk_d2\}\}/g, tRkk.d2);
+                .replace(/\{\{rkk_d2\}\}/g, tRkk.d2)
+                .replace(/\{\{rkk_e1\}\}/g, tRkk.e1 || '');
         }
         const paguNum = vars['nilai_pagu'] || vars['pagu'] || vars['pagu_anggaran'];
         // ponytail: angka murni → "Rp. 480.000.000"; terbilang selalu dalam kurung

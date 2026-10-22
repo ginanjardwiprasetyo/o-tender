@@ -163,9 +163,9 @@ const DocumentsPage = {
 
     openForm() {
         if (!this.companies?.length) { Toast.warning('Tunggu data dimuat...'); return; }
-        this._wz = { step: 1, tender: null, vars: {}, letter: { pa: 'PA', sdg: '', perihal: 'Penawaran Administrasi', lampiran: 'Dokumen Penawaran', tgl: new Date().toISOString().split('T')[0], nomor: '', urut: null }, equip: {}, pelaksana: { id: '', exp: [] }, k3: { id: '', exp: [] } };
+        this._wz = { step: 1, tender: null, vars: {}, letter: { pa: 'PA', sdg: '', perihal: 'Penawaran Administrasi', lampiran: 'Dokumen Penawaran', tgl: new Date().toISOString().split('T')[0], nomor: '', urut: null }, equip: {}, pelaksana: { id: '', exp: [] }, k3: { id: '', exp: [] }, rkk: { vars: {} } };
         const compOpts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
-        const stepBar = (n) => [1, 2, 3, 4, 5].map(i => `<div class="doc-wiz-step" data-s="${i}" onclick="DocumentsPage._wizGo(${i})" title="Ke langkah ${i}" style="flex:1; text-align:center; font-size:0.75rem; font-weight:700; padding:8px 4px; border-radius:8px; cursor:pointer; background:${i === n ? 'var(--accent)' : 'var(--bg-tertiary)'}; color:${i === n ? '#fff' : 'var(--text-muted)'};">${i}. ${['Proyek', '04 Surat', '01 Alat', 'Personil', 'Review'][i - 1]}</div>`).join('');
+        const stepBar = (n) => [1, 2, 3, 4, 5, 6].map(i => `<div class="doc-wiz-step" data-s="${i}" onclick="DocumentsPage._wizGo(${i})" title="Ke langkah ${i}" style="flex:1; text-align:center; font-size:0.75rem; font-weight:700; padding:8px 4px; border-radius:8px; cursor:pointer; background:${i === n ? 'var(--accent)' : 'var(--bg-tertiary)'}; color:${i === n ? '#fff' : 'var(--text-muted)'};">${i}. ${['Proyek', '04 Surat', '01 Alat', 'Personil', 'Review', 'RKK'][i - 1]}</div>`).join('');
         const body = `
         <div id="doc-wiz-steps" style="display:flex; gap:8px; margin-bottom:16px;">${stepBar(1)}</div>
         <div id="doc-wiz-hint"></div>
@@ -176,6 +176,10 @@ const DocumentsPage = {
         <div class="doc-wiz-pane" data-pane="5" style="display:none;">
             <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Review & Generate</div>
             <div id="doc-review-box"></div>
+        </div>
+        <div class="doc-wiz-pane" data-pane="6" style="display:none;">
+            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">RKK — Tabel B1/B2/D2/E1</div>
+            <div id="doc-rkk-box"></div>
         </div>`;
         const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><span style="flex:1;"></span><button class="btn btn-secondary" id="doc-wiz-back" onclick="DocumentsPage._wizNav(-1)" style="display:none;">‹ Kembali</button><button class="btn btn-primary" id="doc-wiz-next" onclick="DocumentsPage._wizNav(1)">Lanjut ›</button><button class="btn btn-primary" id="doc-generate-btn" onclick="DocumentsPage.wzGenerate()" style="display:none;"><i data-lucide="file-check"></i> Generate PDF</button>`;
         Modal.open('Buat Dokumen Lelang', body, footer, { maxWidth: 'calc(100vw - 40px)' });
@@ -611,6 +615,141 @@ const DocumentsPage = {
             cap: document.getElementById('wz-show-cap')?.checked ?? true,
         };
         this._wz.capSize = parseInt(document.getElementById('wz-cap-size')?.value) || 0;
+    },
+
+    _wzCollect6() {
+        const g = (id) => document.getElementById(id)?.value.trim() ?? '';
+        this._wz.rkk = this._wz.rkk || {};
+        this._wz.rkk.barisB1 = Number(document.getElementById('wz-rkk-b1-rows')?.value) || 1;
+        this._wz.rkk.barisB2 = Number(document.getElementById('wz-rkk-b2-rows')?.value) || 1;
+        this._wz.rkk.barisD2 = Number(document.getElementById('wz-rkk-d2-rows')?.value) || 1;
+        this._wz.rkk.mungkin = Number(document.getElementById('wz-rkk-mungkin')?.value) || 1;
+        this._wz.rkk.parah = Number(document.getElementById('wz-rkk-parah')?.value) || 1;
+        const vars = {};
+        document.querySelectorAll('[data-rkk-var]').forEach(inp => {
+            const k = inp.dataset.rkkVar; const v = inp.value.trim();
+            if (v !== '') vars[k] = v;
+        });
+        this._wz.rkk.vars = vars;
+        const e1rows = [];
+        document.querySelectorAll('.wz-rkk-e1-row').forEach((tr, i) => {
+            const kegiatan = tr.querySelector('[data-e1="kegiatan"]')?.value.trim() || '';
+            const pic = tr.querySelector('[data-e1="pic"]')?.value.trim() || '';
+            const minggu = Array.from(tr.querySelectorAll('[data-e1="minggu"]')).map(cb => cb.checked ? 'x' : '');
+            e1rows.push({ no: i + 1, kegiatan, pic, minggu });
+        });
+        this._wz.rkk.e1rows = e1rows.filter(r => r.kegiatan);
+    },
+
+    _wzForm6() {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="6"]');
+        if (!pane) return;
+        const r = this._wz.rkk || {};
+        const rowsB1 = r.barisB1 || 1, rowsB2 = r.barisB2 || 1, rowsD2 = r.barisD2 || 1;
+        const vars = r.vars || {};
+        const mkInp = (key, ph = '') =>
+            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="' + key + '" value="' + Fmt.escape(vars[key] || '') + '" placeholder="' + Fmt.escape(ph) + '">';
+        const mkRows = (n, prefix) => Array.from({ length: n }, (_, i) =>
+            '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
+            '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="' + prefix + '_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
+            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
+            '</div></div>').join('');
+        const e1 = r.e1rows && r.e1rows.length ? r.e1rows : [
+            { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', '', '', '', 'x', '', ''] },
+            { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', 'x', 'x', 'x', 'x', 'x', 'x'] },
+            { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: ['', 'x', '', 'x', '', 'x', ''] },
+        ];
+        const e1Html = this._wzRkkE1Html(e1);
+        pane.innerHTML = '<div style="font-weight:700; margin-bottom:12px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— tabel B1/B2/D2/E1 (jumlah baris B1/B2/D2 bisa ditambah)</span></div>' +
+        '<details open style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;"><summary style="cursor:pointer; font-size:0.85rem; font-weight:700;">Tabel B1 — Identifikasi Bahaya & Penilaian Risiko</summary>' +
+        '<div style="margin-top:10px;"><div class="form-row">' +
+        '<div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-b1-rows" value="' + rowsB1 + '" onchange="DocumentsPage._wzRkkAddRows(\'b1\', this.value)"></div>' +
+        '<div class="form-group"><label class="form-label">Persyaratan Pemenuhan Peraturan</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="syaratAturan" value="' + Fmt.escape(vars.syaratAturan || '') + '" placeholder="peraturan terkait"></div>' +
+        '<div class="form-group"><label class="form-label">Pengendalian Awal</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengAwal" value="' + Fmt.escape(vars.pengAwal || '') + '" placeholder="pengendalian awal"></div>' +
+        '<div class="form-group"><label class="form-label">Pengendalian Lanjutan</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengLanjut" value="' + Fmt.escape(vars.pengLanjut || '') + '" placeholder="pengendalian lanjutan"></div>' +
+        '</div><div style="margin-top:8px;"><label class="form-label">Baris (No. | Uraian Pekerjaan | Identifikasi Bahaya | F | A)</label>' +
+        '<div id="wz-rkk-b1-rows-wrap">' + mkRows(rowsB1, 'uraian') + '</div></div></div></details>' +
+        '<details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;"><summary style="cursor:pointer; font-size:0.85rem; font-weight:700;">Tabel B2 — Program Pengendalian Risiko</summary>' +
+        '<div style="margin-top:10px;"><div class="form-row"><div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-b2-rows" value="' + rowsB2 + '" onchange="DocumentsPage._wzRkkAddRows(\'b2\', this.value)"></div></div>' +
+        '<div style="display:grid;gap:6px;">' + [1,2,3,4,5,6,7,8,9].map(n =>
+            '<div class="form-group" style="margin:0;"><label class="form-label" style="font-size:0.75rem;">Kolom ' + n + ' (isi_b2_' + n + ')</label>' +
+            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="isi_b2_' + n + '" value="' + Fmt.escape(vars['isi_b2_' + n] || '') + '" placeholder="isi kolom ' + n + '"></div>').join('') +
+        '</div></div></details>' +
+        '<details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;"><summary style="cursor:pointer; font-size:0.85rem; font-weight:700;">Tabel D2 — Langkah Pekerjaan & Pengendalian</summary>' +
+        '<div style="margin-top:10px;"><div class="form-row">' +
+        '<div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-d2-rows" value="' + rowsD2 + '" onchange="DocumentsPage._wzRkkAddRows(\'d2\', this.value)"></div>' +
+        '<div class="form-group"><label class="form-label">Pengendalian</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengD2" value="' + Fmt.escape(vars.pengD2 || '') + '" placeholder="pengendalian"></div>' +
+        '<div class="form-group"><label class="form-label">Penanggung Jawab</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pjD2" value="' + Fmt.escape(vars.pjD2 || '') + '" placeholder="penanggung jawab"></div>' +
+        '</div><div style="margin-top:8px;"><label class="form-label">Baris (No. | Uraian | Identifikasi)</label>' +
+        '<div id="wz-rkk-d2-rows-wrap">' + mkRows(rowsD2, 'uraian') + '</div></div></div></details>' +
+        '<details style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;"><summary style="cursor:pointer; font-size:0.85rem; font-weight:700;">Tabel E1 — Jadwal Kegiatan Keselamatan (7 minggu)</summary>' +
+        '<div style="margin-top:10px;"><div id="wz-rkk-e1-wrap">' + e1Html + '</div>' +
+        '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="DocumentsPage._wzRkkE1Add()">+ Tambah Kegiatan</button></div></details>' +
+        '<div class="form-row" style="margin-top:8px;"><div class="form-group"><label class="form-label">Kemungkinan default (F)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-mungkin" value="' + (r.mungkin || 1) + '"></div>' +
+        '<div class="form-group"><label class="form-label">Keparahan default (A)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-parah" value="' + (r.parah || 1) + '"></div></div>';
+        lucide.createIcons();
+    },
+
+    _wzRkkE1Html(rows) {
+        return '<table class="mini-table" style="font-size:0.78rem;"><thead><tr>' +
+            '<th style="width:32px;">No</th><th>Kegiatan</th><th style="width:150px;">PIC</th>' +
+            '<th style="width:24px;">1</th><th style="width:24px;">2</th><th style="width:24px;">3</th><th style="width:24px;">4</th><th style="width:24px;">5</th><th style="width:24px;">6</th><th style="width:24px;">7</th><th style="width:44px;"></th></tr></thead><tbody>' +
+            rows.map((r2, i) => '<tr class="wz-rkk-e1-row">' +
+                '<td style="text-align:center;">' + (i + 1) + '</td>' +
+                '<td><input class="form-input" style="font-size:0.78rem;" data-e1="kegiatan" value="' + Fmt.escape(r2.kegiatan || '') + '"></td>' +
+                '<td><input class="form-input" style="font-size:0.78rem;" data-e1="pic" value="' + Fmt.escape(r2.pic || '{{posisi_k3}}') + '"></td>' +
+                (r2.minggu || []).map(m => '<td style="text-align:center;"><input type="checkbox" data-e1="minggu" ' + (m === 'x' ? 'checked' : '') + ' style="accent-color:var(--accent);"></td>').join('') +
+                '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="this.closest(\'tr\').remove(); DocumentsPage._wzRkkE1Renumber();">×</button></td>' +
+                '</tr>').join('') + '</tbody></table>';
+    },
+
+    _wzRkkE1Add() {
+        const wrap = document.getElementById('wz-rkk-e1-wrap');
+        if (!wrap) return;
+        const tbody = wrap.querySelector('tbody');
+        if (!tbody) return;
+        const tr = document.createElement('tr');
+        tr.className = 'wz-rkk-e1-row';
+        tr.innerHTML = '<td style="text-align:center;">' + (tbody.children.length + 1) + '</td>' +
+            '<td><input class="form-input" style="font-size:0.78rem;" data-e1="kegiatan" placeholder="nama kegiatan"></td>' +
+            '<td><input class="form-input" style="font-size:0.78rem;" data-e1="pic" value="{{posisi_k3}}"></td>' +
+            Array(7).fill('').map(() => '<td style="text-align:center;"><input type="checkbox" data-e1="minggu" style="accent-color:var(--accent);"></td>').join('') +
+            '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="DocumentsPage._wzRkkE1Del(this)">×</button></td>';
+        tbody.appendChild(tr);
+    },
+
+    _wzRkkE1Del(btn) { btn.closest('tr').remove(); this._wzRkkE1Renumber(); },
+
+
+    _wzRkkE1Del(btn) { btn.closest('tr').remove(); this._wzRkkE1Renumber(); },
+    _wzRkkE1Renumber() {
+        const rows = document.querySelectorAll('.wz-rkk-e1-row');
+        rows.forEach((tr, i) => { const td = tr.querySelector('td'); if (td) td.textContent = i + 1; });
+    },
+
+    _wzRkkAddRows(kind, n) {
+        const n2 = Math.max(1, parseInt(n, 10) || 1);
+        if (kind === 'b1') {
+            const wrap = document.getElementById('wz-rkk-b1-rows-wrap');
+            if (wrap) wrap.innerHTML = Array.from({ length: n2 }, (_, i) =>
+                '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
+                '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="uraian_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
+                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
+                '</div></div>').join('');
+        } else if (kind === 'd2') {
+            const wrap = document.getElementById('wz-rkk-d2-rows-wrap');
+            if (wrap) wrap.innerHTML = Array.from({ length: n2 }, (_, i) =>
+                '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
+                '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="uraian_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
+                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
+                '</div></div>').join('');
+        }
     },
 
     _wzReview() {
@@ -1096,7 +1235,7 @@ const DocumentsPage = {
 
 
     _wizNav(d) {
-        const n = Math.min(5, Math.max(1, this._wzStep + d));
+        const n = Math.min(6, Math.max(1, this._wzStep + d));
         if (d > 0) {
             if (!this._wzValidate(this._wzStep)) return;
             if (this._wzStep === 2) this._wzCollect2();
@@ -1106,6 +1245,7 @@ const DocumentsPage = {
             if (n === 3) this._wzForm3();
             if (n === 4) this._wzForm4();
             if (n === 5) this._wzReview();
+        if (n === 6) { this._wzForm6(); }
         }
         this._wizShow(n);
     },
@@ -1120,11 +1260,14 @@ const DocumentsPage = {
             if (s === 2) this._wzCollect2();
             if (s === 3) this._wzCollect3();
             if (s === 4) this._wzCollect4();
+            if (s === 5) this._wzCollect5();
+            if (s === 6) this._wzCollect6();
         }
         if (n === 2) this._wzForm2();
         if (n === 3) this._wzForm3();
         if (n === 4) this._wzForm4();
         if (n === 5) this._wzReview();
+        if (n === 6) { this._wzForm6(); }
         this._wizShow(n);
     },
 
