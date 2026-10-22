@@ -15,6 +15,7 @@ const App = {
         'company':        { page: CompanyPage,      title: 'Perusahaan' },
         'company-detail': { page: CompanyDetailPage,title: 'Detail Perusahaan' },
         'documents':      { page: DocumentsPage,    title: 'Surat' },
+        'rkk':            { page: RkkPage,          title: 'RKK' },
         'templates':      { page: TemplatesPage,    title: 'Template' },
         // ONLYOFFICE_DULU_DIMATIKAN — edit template via CKEditor. Aktifkan lagi: uncomment baris ini + script onlyoffice.js & nav di index.html
         // 'onlyoffice':     { page: OnlyOfficePage,   title: 'Word Online' },

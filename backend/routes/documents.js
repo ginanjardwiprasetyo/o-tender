@@ -10,6 +10,7 @@ const fs = require('fs');
 require('../services/node_compat');   // shim Promise.withResolvers utk Node < 22
 const db = require('../config/db');
 const { applyScanEffect } = require('../services/scan_effect');
+const { loadSettings } = require('../services/rkk');
 const supabase = require('../config/supabase');
 const { buildDocHtml } = require('../services/docbuilder');
 
@@ -211,6 +212,7 @@ router.post('/preview', async (req, res) => {
             ttdAdjust: req.body.ttd_adjust || {},
             withCapTtd: req.body.with_cap_ttd !== false,
             attachments: req.body.attachments || [],
+            rkk: await loadSettings(db),
         });
         res.json({ success: true, html });
     } catch (err) {
@@ -243,6 +245,7 @@ router.post('/generate', async (req, res) => {
             withCapTtd: req.body.with_cap_ttd !== false,
             attachments: req.body.attachments || [],
             stampMode: true, // TTD/cap jadi jangkar ukur → di-stamp presisi di bawah
+            rkk: await loadSettings(db),
         });
         const mainPdf = await htmlToPdf(built.html, built.paper);
         const stamped = await stampSignatures(mainPdf, {

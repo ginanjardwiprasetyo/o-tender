@@ -221,6 +221,10 @@ const API = {
     addEquipmentFile(id, data) { return this.request(`/equipments/${id}/files`, { method: 'POST', body: data }); },
     deleteEquipmentFile(fileId) { return this.request(`/equipments/files/${fileId}`, { method: 'DELETE' }); },
 
+    // ─── RKK ────────────────────────────────────────────
+    getRkkConfig() { return this.request('/rkk/config'); },
+    rkkPreview(data) { return this.request('/rkk/preview', { method: 'POST', body: data }); },
+
     // ─── Settings ─────────────────────────────────────
     getSettings() { return this.request('/settings'); },
     updateSettings(data) { return this.request('/settings', { method: 'PUT', body: data }); },

@@ -53,6 +53,7 @@ app.use('/api/auth', require('./routes/auth'));
 
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/equipments', require('./routes/equipments'));
+app.use('/api/rkk',         require('./routes/rkk'));
 app.use('/api/personnel',  require('./routes/personnel'));
 app.use('/api/companies',  require('./routes/companies'));
 app.use('/api/uploads',    require('./routes/uploads'));

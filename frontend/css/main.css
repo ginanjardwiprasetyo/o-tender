@@ -1224,6 +1224,15 @@ body.is-authed #app { visibility: visible; }
     padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
 }
 
+/* ─── Pratinjau tabel RKK (banyak kolom → harus muat di card) ─── */
+.rkk-preview {
+    overflow: auto; max-width: 100%; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px; background: var(--bg-input);
+}
+.rkk-preview table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; font-size: 0.68rem; table-layout: fixed; }
+.rkk-preview th, .rkk-preview td { border: 1px solid var(--border); padding: 3px 4px; word-break: break-word; vertical-align: top; }
+.rkk-preview thead th { background: var(--bg-overlay); font-weight: 600; }
+
 /* ─── Lampiran per alat ──────────────────────────────── */
 .eq-files {
     margin-top: 12px; padding: 12px; border: 1px solid var(--border);

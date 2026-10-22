@@ -159,7 +159,8 @@ function terbilang(n) {
 function buildDocHtml(o) {
     const { templates, company: comp, signer: pers, signer2: pelaksana = null, signer3: k3 = null,
         show = {}, personil = [], equip = [],
-        vars = {}, capOpts = {}, ttdAdjust = {}, withCapTtd = true, attachments = [], stampMode = false } = o;
+        vars = {}, capOpts = {}, ttdAdjust = {}, withCapTtd = true, attachments = [], stampMode = false,
+        rkk = null } = o;
     // withCapTtd lawas = master switch; show.* = saklar per unsur (default nyala)
     const showDirektur = withCapTtd && show.direktur !== false;
     const showPelaksana = withCapTtd && show.pelaksana !== false;
@@ -414,6 +415,18 @@ function buildDocHtml(o) {
             .replace(/\{\{tabel_alat\}\}/g, tabelPeralatan) // alias GDocs: 01 alat
             .replace(/\{\{tabel_personil\}\}/g, tabelPersonil)
             .replace(/\{\{struktur_organisasi\}\}/g, strukturOrganisasi);
+
+        // ponytail: tabel RKK (B1/B2/D2) — format & ambang dari pengaturan halaman RKK
+        // ponytail: nilai isian RKK (halaman RKK) = default; nilai form dokumen tetap menang
+        const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : vars;
+        if (rkk) {
+            const { renderTables } = require('./rkk');
+            const tRkk = renderTables(rkk, varsAll);
+            content = content
+                .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
+                .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)
+                .replace(/\{\{rkk_d2\}\}/g, tRkk.d2);
+        }
         const paguNum = vars['nilai_pagu'] || vars['pagu'] || vars['pagu_anggaran'];
         // ponytail: angka murni → "Rp. 480.000.000"; terbilang selalu dalam kurung
         const rupiahFmt = (v) => /^\d+$/.test(String(v ?? '').trim()) ? 'Rp. ' + Number(String(v).trim()).toLocaleString('id-ID') : null;
@@ -427,7 +440,7 @@ function buildDocHtml(o) {
         if (!vars['perihal_penawaran'] && vars['perihal']) content = content.replace(/\{\{perihal_penawaran\}\}/g, esc(vars['perihal']));
         if (!vars['nilai_pagu_terbilang'] && paguNum) { const tb = terbilang(paguNum); if (tb) content = content.replace(/\{\{nilai_pagu_terbilang\}\}/g, esc('(' + tb + ')')); }
         if (!vars['pagu_terbilang'] && paguNum) { const tb = terbilang(paguNum); if (tb) content = content.replace(/\{\{pagu_terbilang\}\}/g, esc('(' + tb + ')')); }
-        Object.keys(vars).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), esc(vars[k])); });
+        Object.keys(varsAll).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), esc(varsAll[k])); });
         content = content.replace(/\{\{terbilang[^}]*\}\}/g, '.........');
         content = content.replace(/\{\{[^}]+\}\}/g, '.........');
         // ponytail: font Docs dilucuti → mutlak ikut font_surat #company (mekanisme !important terbukti tak mempan)

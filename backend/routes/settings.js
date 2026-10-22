@@ -70,9 +70,15 @@ router.put('/', async (req, res) => {
             'wa_notif_penjelasan', 'wa_notif_upload', 'wa_notif_pemenang',
             'wa_target_group_id', 'wa_target_group_name',
             'sirup_provinsi', 'sirup_akhir_bulan', 'sirup_exclude_words', 'sirup_read',
-            'dokpil_drive_folder'
+            'dokpil_drive_folder',
+            // RKK — format tabel & ambang risiko
+            'rkk_tabel_b1', 'rkk_tabel_b2', 'rkk_tabel_d2', 'rkk_tabel_e1',
+            'rkk_baris_b1', 'rkk_baris_b2',
+            'rkk_ambang_kecil', 'rkk_ambang_sedang', 'rkk_ambang_besar',
+            'rkk_default_mungkin', 'rkk_default_parah'
         ];
-        const entries = Object.entries(req.body).filter(([key]) => allowedKeys.includes(key));
+        // rkk_val_* = nilai isian RKK (dinamis, satu key per variabel)
+        const entries = Object.entries(req.body).filter(([key]) => allowedKeys.includes(key) || key.startsWith('rkk_val_'));
         
         for (const [key, value] of entries) {
             await db.query(
