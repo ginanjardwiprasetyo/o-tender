@@ -97,3 +97,25 @@ assert.deepStrictEqual(b.tables.personel.rows.map(r => r.slice(0, 4)), [
 assert.ok(!/orang/.test(b.tables.personel.rows[0][1]), 'jumlah "1 orang" tidak nyangkut ke Jabatan');
 
 console.log('OK: dokpil_extract — 29 assertion lulus (BRSPA + KIR + layout baru + kolom jumlah + urutan kolom + angka polos + Jml)');
+
+// ── Engine koordinat pdf_geom — butuh PDF kasus; skip kalo file nggak ada ──
+// (/tmp/case.pdf dari Drive fileId 1id5hG7rFO5Ll-6rRzEZOrVCa7iodKi4a, hal 64: LDP)
+const casePdf = '/tmp/case.pdf';
+if (fs.existsSync(casePdf)) {
+    const { parsePdf, tableByCoords } = require('./pdf_geom');
+    parsePdf(fs.readFileSync(casePdf)).then((data) => {
+        assert.deepStrictEqual(tableByCoords(data.items, 'peralatan').rows, [
+            ['1', 'Truk', '-', '1 unit', 'Sewa/milik sendiri'],
+            ['2', 'Angkong', '-', '3 unit', 'Sewa/milik sendiri'],
+        ], 'peralatan coords (5 kolom, nomor vertical-center)');
+        assert.deepStrictEqual(tableByCoords(data.items, 'personel').rows, [
+            ['1', 'Pelaksana Lapangan', '1', '2', 'Sipil Jenjang 4 - 6'],
+            ['2', 'Petugas K2', '1', '0', 'Sertifikat Petugas Keselamatan Konstruksi'],
+        ], 'personel coords (header 2 baris \u00b7 pengalaman/sertifikat wrap)');
+        assert.deepStrictEqual(tableByCoords(data.items, 'rkk').rows, [
+            ['1.', 'PEKERJAAN GALIAN TANAH', 'TERPEROSOK'],
+        ], 'rkk coords (baris uraian mulai "1." = baris tabel, bukan judul seksi)');
+        console.log('OK: pdf_geom — 3 assertion koordinat (case.pdf)');
+    }).catch((e) => { console.error('FAIL: pdf_geom', e.message); process.exit(1); });
+}
+

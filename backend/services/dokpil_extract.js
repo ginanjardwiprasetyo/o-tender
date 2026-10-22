@@ -349,12 +349,19 @@ function extractLdp(text, items) {
     if (t1) tables.peralatan = t1;
     const t2 = buildTable('personel', joinBrokenWords(sectionLines(lines, /personel\s+manajerial|personil\s+manajerial|menyediakan\s+personel/i, END_ITEM_RE), vocab));
     if (t2) tables.personel = t2;
-    // Tabel personel dari KOORDINAT (pdf.js) — dipakai kalo hasil text-stream rusak
-    // (baris terpotong / sertifikat kosong). Text-stream tak bisa bedain nilai sel "2"
+    const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
+    if (t3) tables.rkk = t3;
+    // Tabel dari KOORDINAT (pdf.js) — dipakai kalo hasil text-stream rusak
+    // (baris tertempel / kolom kosong). Text-stream tak bisa bedain nilai sel "2"
     // vs nomor baris "2."; koordinat bisa.
     if (items && items.length) {
         try {
             const geom = require('./pdf_geom');
+            const seqNo = (g) => {
+                const noCol = g.header.findIndex((h) => /^no$/i.test(h));
+                const nums = noCol >= 0 ? g.rows.map((r) => String(r[noCol] || '').replace(/[.)]+$/, '')) : [];
+                return nums.length > 0 && nums.every((n, i) => n === String(i + 1));
+            };
             // Tabel personel: pakai koordinat kalo hasil text-stream rusak
             const badPersonel = !tables.personel || !tables.personel.rows.length
                 || tables.personel.rows.some((r) => !String(r[r.length - 1] || '').trim())
@@ -366,22 +373,20 @@ function extractLdp(text, items) {
                 const g = geom.personelByCoords(items);
                 if (g && g.rows.length) { tables.personel = g; debug.personelSource = 'coords'; }
             }
-            // Tabel peralatan & RKK: engine koordinat yg sama (spec berbeda), dipakai
-            // hanya kalo text-stream kosong & hasil koordinat tervalidasi (No urut)
+            // peralatan & rkk: engine koordinat yg sama (spec berbeda). Ganti hasil
+            // text-stream kalo koordinat lebih baik: baris lebih banyak (text-stream
+            // suka menempelkan 2 baris jadi 1), kolom terakhir kosong, atau kosong.
             for (const t of ['peralatan', 'rkk']) {
-                if (tables[t] && tables[t].rows.length) continue;
                 const g = geom.tableByCoords(items, t);
-                if (!g || !g.rows.length) continue;
-                const noCol = g.header.findIndex((h) => /^no$/i.test(h));
-                const nums = noCol >= 0 ? g.rows.map((r) => String(r[noCol] || '').replace(/[.)]+$/, '')) : [];
-                if (nums.length && nums.every((n, i) => n === String(i + 1))) {
-                    tables[t] = g; debug[t + 'Source'] = 'coords';
-                }
+                if (!g || !g.rows.length || !seqNo(g)) continue;
+                const cur = tables[t];
+                const better = !cur || !cur.rows.length
+                    || g.rows.length > cur.rows.length
+                    || cur.rows.some((r) => !String(r[r.length - 1] || '').trim());
+                if (better) { tables[t] = g; debug[t + 'Source'] = 'coords'; }
             }
         } catch (e) { /* fallback ke text-stream */ }
     }
-    const t3 = buildTable('rkk', sectionLines(lines, /Rencana\s+Keselamatan\s+Konstruksi\s*\(?\s*RKK/i, END_ITEM_RE));
-    if (t3) tables.rkk = t3;
 
     debug.fields = Object.keys(fields);
     debug.tables = Object.keys(tables);

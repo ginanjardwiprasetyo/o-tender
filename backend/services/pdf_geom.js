@@ -70,12 +70,15 @@ const TABLE_SPECS = {
             { kind: 'jenis', re: /^\s*(Jenis|Alat)/i },
             { kind: 'kapasitas', re: /^\s*Kapasitas/i },
             { kind: 'jumlah', re: /^\s*(Jumla?h|Jml|Orang)/i },
+            // kolom ke-5 di beberapa LDP: "Status Kepemilikan" (Sewa/milik sendiri)
+            { kind: 'status', re: /^\s*(Status|Kepemilikan)/i },
         ],
         columns: [
             { out: 'No', kinds: ['no'] },
             { out: 'Jenis Alat', kinds: ['jenis'] },
             { out: 'Kapasitas', kinds: ['kapasitas'] },
             { out: 'Jumlah', kinds: ['jumlah'] },
+            { out: 'Status Kepemilikan', kinds: ['status'] },
         ],
     },
     rkk: {
@@ -161,23 +164,47 @@ function findHeaderCandidates(items, spec) {
             }
             if (!kinds.has(spec.anchor)) continue;
             if (!spec.requireAny.some((k) => kinds.has(k))) continue;
-            out.push({ page: pg, y: h.y, kinds });
+            // batas atas blok header: header bisa 2+ baris ("No|Jenis|Kapasitas|Jumlah"
+            // + "Kepemilikan") → telusuri kata cocok yang KONTIGU ke bawah dari anchor
+            // (gap ≤ 12). Tanpa ini baris header ke-2 bocor jadi baris data; kalau pakai
+            // min semua kata yang cocok, kata data ("Sertifikat …" pada baris data) ikut
+            // memotong baris pertama.
+            let top = h.y;
+            const nearMatched = near
+                .filter((i) => spec.words.some((w) => w.re.test(i.s.trim())))
+                .sort((a, b) => b.y - a.y);
+            const hi = nearMatched.indexOf(h);
+            for (let k = hi + 1; k < nearMatched.length; k++) {
+                if (Math.abs(nearMatched[k].y - nearMatched[k - 1].y) > 12) break;
+                top = nearMatched[k].y;
+            }
+            out.push({ page: pg, y: h.y, top, kinds });
         }
     }
     return out;
 }
 
+/** Baris bernomor yg menyebar ≥2 kolom (celah antar-item ≥ 6pt) = baris TABEL
+ *  (mis. "1. PEKERJAAN GALIAN TANAH   TERPEROSOK"), bukan judul seksi baru
+ *  ("6. Dokumen lain…" menyatu dlm 1 blok). */
+function numRowLike(r) {
+    const xs = r.items.slice().sort((a, b) => a.x - b.x);
+    let clusters = 1;
+    for (let i = 1; i < xs.length; i++) if (xs[i].x - (xs[i - 1].x + xs[i - 1].w) > 6) clusters++;
+    return clusters >= 2;
+}
+
 /** Area data tabel: item di bawah header, berhenti di Keterangan/sub-seksi/seksi baru/celah. */
 function dataRegion(items, hdr) {
     const pi = items.filter((i) => i.page === hdr.page);
-    const rows = visualRows(pi.filter((i) => i.y < hdr.y - 4));
+    const rows = visualRows(pi.filter((i) => i.y < (hdr.top ?? hdr.y) - 4));
     const out = [];
     let prevY = null;
     for (const r of rows) {
         const lineText = r.items.map((i) => i.s).join(' ').replace(/\s+/g, ' ').trim();
         if (/^\s*Keterangan\b/i.test(lineText)) break;
         if (/^\s*[a-z]\.\s+[A-Z]/.test(lineText)) break;              // sub-seksi baru ("b. Untuk …")
-        if (/^\s*\d+\.\s+[A-Z]/.test(lineText)) break;              // seksi baru ("4. Bagian …")
+        if (/^\s*\d+\.\s+[A-Z]/.test(lineText) && !numRowLike(r)) break;              // seksi baru ("4. Bagian …")
         if (/Uraian\s+Pekerjaan|Identifikasi\s+Bahaya|Jenis\s+Alat\b|Kapasitas\s+Jumlah/i.test(lineText)) break; // header tabel lain
         if (prevY !== null && r.y < prevY - 22) break;                 // celah vertikal besar
         out.push(r);
@@ -186,17 +213,8 @@ function dataRegion(items, hdr) {
     return out;
 }
 
-/** Bangun tabel dari kandidat header (engine generik). */
-function buildFromHeader(items, hdr, spec) {
-    const rows = dataRegion(items, hdr);
-    if (!rows.length) return null;
-
-    // ── KOLOM: proyeksi whitespace vertikal atas area tabel (otomatis, tanpa
-    //           asumsi posisi kolom) ──
-    const runs = columnRuns(rows.flatMap((r) => r.items));
-    if (runs.length < 2) return null;
-
-    // semantik: kata kunci header → kolom terdekat (batas tengah)
+/** Kata kunci header → kind per index run (batas tengah terdekat). */
+function mapKinds(runs, hdr) {
     const kindOf = new Array(runs.length).fill(null);
     for (const [kind, it] of hdr.kinds) {
         let best = -1, bd = 1e9;
@@ -207,6 +225,44 @@ function buildFromHeader(items, hdr, spec) {
         });
         if (best >= 0 && !kindOf[best]) kindOf[best] = kind;
     }
+    return kindOf;
+}
+
+/** Bangun tabel dari kandidat header (engine generik). */
+function buildFromHeader(items, hdr, spec) {
+    // ── PASAR 1: potongan kasar di bawah y jangkar header, untuk mencari angka No
+    // teratas sebagai jangkar pemotong blok header multi-baris.
+    const rough = dataRegion(items, { ...hdr, top: hdr.y });
+    if (!rough.length) return null;
+    const tops = [hdr.top ?? hdr.y];
+    const runs1 = columnRuns(rough.flatMap((r) => r.items));
+    if (runs1.length >= 2) {
+        const noI1 = mapKinds(runs1, hdr).indexOf('no');
+        if (noI1 >= 0) {
+            const numRow = rough.find((r) => /^\d+$/.test(cellOf(r, runs1, noI1).replace(/[.)]+\s*$/, '').trim()));
+            if (numRow) {
+                // telusuri baris visual ke atas selama antar-baris rapat (≤ 8pt) —
+                // itu isi band baris pertama; berhenti di celah putih = batas header.
+                const idx = rough.indexOf(numRow);
+                let topUnit = numRow.y;
+                for (let k = idx - 1; k >= 0; k--) {
+                    if (Math.abs(rough[k].y - rough[k + 1].y) > 8) break;
+                    topUnit = rough[k].y;
+                }
+                tops.push(topUnit + 5);
+            }
+        }
+    }
+    const rows = dataRegion(items, { ...hdr, top: Math.min(...tops) });
+    if (!rows.length) return null;
+
+    // ── KOLOM: proyeksi whitespace vertikal atas area tabel (otomatis, tanpa
+    //           asumsi posisi kolom) ──
+    const runs = columnRuns(rows.flatMap((r) => r.items));
+    if (runs.length < 2) return null;
+
+    // semantik: kata kunci header → kolom terdekat (batas tengah)
+    const kindOf = mapKinds(runs, hdr);
     // kolom No = kolom paling kiri yg isinya angka
     if (!kindOf.includes('no')) {
         const numish = runs.map((_, i) => {
@@ -224,21 +280,48 @@ function buildFromHeader(items, hdr, spec) {
     }).filter((c) => c.idx.length);
     if (!colRuns.length) return null;
 
-    // baris logis: baris baru mulai saat kolom No (atau kolom pertama) terisi
+    // ── BARIS LOGIS: PDF yang meng-vertical-center nomor No di dalam band baris
+    // membuat baris visual pertama TIDAK selalu berisi nomor ("Truk"@642.7 di atas
+    // nomor "1"@637.7). Jadi: angka No = jangkar band; tiap baris visual masuk
+    // ke nomor TERDEKAT di y-nya (Voronoi). Tanpa nomor → cara lama.
     const noIdx = kindOf.indexOf('no');
-    const anchorIdx = noIdx >= 0 ? noIdx : colRuns[0].idx[0];
-    // baris2 header (pecahan "N"+"o" dll) bukan data → mulai dr baris pertama
-    // yg kolom-No-nya berisi angka
-    let startRow = 0;
+    let logical = [];
     if (noIdx >= 0) {
-        const first = rows.findIndex((r) => /^\d+$/.test(cellOf(r, runs, noIdx)));
-        if (first > 0) startRow = first;
+        const nums = [];
+        rows.forEach((r) => {
+            const v = cellOf(r, runs, noIdx).replace(/[.)]+\s*$/, '').trim();
+            if (/^\d+$/.test(v)) nums.push({ y: r.y });
+        });
+        nums.sort((a, b) => b.y - a.y);              // dari atas ke bawah
+        if (nums.length) {
+            const bandCells = new Map();
+            for (const r of rows) {
+                let bi = 0, bd = Infinity;
+                nums.forEach((n, k) => {
+                    const d = Math.abs(r.y - n.y);
+                    if (d < bd) { bd = d; bi = k; }
+                });
+                if (!bandCells.has(bi)) bandCells.set(bi, Array.from({ length: runs.length }, () => []));
+                const cells = bandCells.get(bi);
+                runs.forEach((_, ci) => {
+                    const v = cellOf(r, runs, ci);
+                    if (v) cells[ci].push(v);
+                });
+            }
+            logical = [...bandCells.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c);
+        }
     }
-    const logical = [];
-    for (const r of rows.slice(startRow)) {
-        const cells = runs.map((_, i) => cellOf(r, runs, i));
-        if (cells[anchorIdx] !== '' || !logical.length) logical.push(cells.map((c) => (c ? [c] : [])));
-        else cells.forEach((c, ci) => { if (c) logical[logical.length - 1][ci].push(c); });
+
+    if (!logical.length) {
+        // fallback: baris baru mulai saat kolom pertama terisi
+        const anchorIdx = noIdx >= 0 ? noIdx : colRuns[0].idx[0];
+        const first = noIdx >= 0 ? rows.findIndex((r) => /^\d+$/.test(cellOf(r, runs, noIdx))) : 0;
+        const rowsIn = first > 0 ? rows.slice(first) : rows;
+        for (const r of rowsIn) {
+            const cells = runs.map((_, i) => cellOf(r, runs, i));
+            if (cells[anchorIdx] !== '' || !logical.length) logical.push(cells.map((c) => (c ? [c] : [])));
+            else cells.forEach((c, ci) => { if (c) logical[logical.length - 1][ci].push(c); });
+        }
     }
 
     const out = [];
@@ -284,4 +367,4 @@ const personelByCoords = (items) => tableByCoords(items, 'personel');
 const peralatanByCoords = (items) => tableByCoords(items, 'peralatan');
 const rkkByCoords = (items) => tableByCoords(items, 'rkk');
 
-module.exports = { parsePdf, personelByCoords, peralatanByCoords, rkkByCoords, tableByCoords };
+module.exports = { parsePdf, personelByCoords, peralatanByCoords, rkkByCoords, tableByCoords, TABLE_SPECS, visualRows, columnRuns, cellOf, findHeaderCandidates, dataRegion, buildFromHeader };
