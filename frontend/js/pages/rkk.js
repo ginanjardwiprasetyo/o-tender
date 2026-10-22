@@ -174,8 +174,9 @@ const RkkPage = {
                 </p>
             </div>
             <div class="form-row">
-                <div class="form-group" style="width:100%;">
+                <div class="form-group" style="width:100%;min-width:0;">
                     <label class="form-label">Pratinjau (contoh: 1 baris, F=3, A=4)</label>
+                    <small style="display:block;font-size:0.7rem;color:var(--text-muted);margin:2px 0 6px;">Tabel 15 kolom — geser horizontal bila belum seluruhnya terlihat.</small>
                     <div id="rkk-preview" class="rkk-preview"></div>
                 </div>
             </div>`;
@@ -197,9 +198,29 @@ const RkkPage = {
                         parah: Number(this.val('rkk_default_parah', 1)) || 1,
                         ambang: { kecil: Number(this.val('rkk_ambang_kecil', 4)), sedang: Number(this.val('rkk_ambang_sedang', 12)), besar: Number(this.val('rkk_ambang_besar', 25)) } }
             });
-            el.innerHTML = res.data && res.data.html ? res.data.html : '<span style="color:var(--text-muted);font-size:0.8rem;">Pratinjau tidak tersedia.</span>';
+            el.innerHTML = (res.data && res.data.html
+                ? `<div class="rkk-preview-inner">${res.data.html}</div>`
+                : '<span style="color:var(--text-muted);font-size:0.8rem;">Pratinjau tidak tersedia.</span>');
+            this.fitPreview();
         } catch (e) {
             el.innerHTML = `<span style="color:var(--danger);font-size:0.8rem;">${Fmt.escape(e.message)}</span>`;
+        }
+    },
+
+    // Tabel RKK 15 kolom → tetap 100% (biar terbaca) & card punya scroll horizontal
+    fitPreview() {
+        const box = document.getElementById('rkk-preview');
+        const inner = box && box.querySelector('.rkk-preview-inner');
+        const table = inner && inner.querySelector('table');
+        if (!box || !table) return;
+        inner.style.transform = '';
+        inner.style.width = '';
+        box.style.height = '';
+        const nat = table.scrollWidth;
+        if (nat > box.clientWidth - 20) {
+            box.classList.add('rkk-preview--scroll');
+        } else {
+            box.classList.remove('rkk-preview--scroll');
         }
     },
 

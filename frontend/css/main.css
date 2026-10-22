@@ -1225,12 +1225,19 @@ body.is-authed #app { visibility: visible; }
 }
 
 /* ─── Pratinjau tabel RKK (banyak kolom → harus muat di card) ─── */
+/* Tabel RKK lebar (15 kolom) → JANGAN dipipihkan (table-layout:fixed bikin "mampat").
+   Lebar natural + diskalakan (transform scale) supaya muat & tetap terbaca. */
 .rkk-preview {
-    overflow: auto; max-width: 100%; border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px; background: var(--bg-input);
+    overflow-x: auto; overflow-y: hidden; max-width: 100%; width: 100%; min-width: 0;
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--bg-input);
+    position: relative;
 }
-.rkk-preview table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; font-size: 0.68rem; table-layout: fixed; }
-.rkk-preview th, .rkk-preview td { border: 1px solid var(--border); padding: 3px 4px; word-break: break-word; vertical-align: top; }
+/- flex/grid item jangan ikut melebar karena isi tabel lebar */
+.rkk-preview, .rkk-preview > * { min-width: 0; }
+.form-row > .form-group > .rkk-preview { width: 100%; }
+.rkk-preview-inner { transform-origin: top left; }
+.rkk-preview table { width: auto !important; max-width: none !important; border-collapse: collapse; font-size: 0.72rem; }
+.rkk-preview th, .rkk-preview td { border: 1px solid var(--border); padding: 3px 5px; word-break: normal; vertical-align: top; }
 .rkk-preview thead th { background: var(--bg-overlay); font-weight: 600; }
 
 /* ─── Lampiran per alat ──────────────────────────────── */
