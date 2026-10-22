@@ -165,7 +165,7 @@ const DocumentsPage = {
         if (!this.companies?.length) { Toast.warning('Tunggu data dimuat...'); return; }
         this._wz = { step: 1, tender: null, vars: {}, letter: { pa: 'PA', sdg: '', perihal: 'Penawaran Administrasi', lampiran: 'Dokumen Penawaran', tgl: new Date().toISOString().split('T')[0], nomor: '', urut: null }, equip: {}, pelaksana: { id: '', exp: [] }, k3: { id: '', exp: [] }, rkk: { vars: {} } };
         const compOpts = this.companies.map(c => `<option value="${c.id}">${Fmt.escape(c.nama_perusahaan)}</option>`).join('');
-        const stepBar = (n) => [1, 2, 3, 4, 5, 6].map(i => `<div class="doc-wiz-step" data-s="${i}" onclick="DocumentsPage._wizGo(${i})" title="Ke langkah ${i}" style="flex:1; text-align:center; font-size:0.75rem; font-weight:700; padding:8px 4px; border-radius:8px; cursor:pointer; background:${i === n ? 'var(--accent)' : 'var(--bg-tertiary)'}; color:${i === n ? '#fff' : 'var(--text-muted)'};">${i}. ${['Proyek', '04 Surat', '01 Alat', 'Personil', 'Review', 'RKK'][i - 1]}</div>`).join('');
+        const stepBar = (n) => [1, 2, 3, 4, 5, 6].map(i => `<div class="doc-wiz-step" data-s="${i}" onclick="DocumentsPage._wizGo(${i})" title="Ke langkah ${i}" style="flex:1; text-align:center; font-size:0.75rem; font-weight:700; padding:8px 4px; border-radius:8px; cursor:pointer; background:${i === n ? 'var(--accent)' : 'var(--bg-tertiary)'}; color:${i === n ? '#fff' : 'var(--text-muted)'};">${i}. ${['Proyek', '04 Surat', '01 Alat', 'Personil', 'RKK', 'Review'][i - 1]}</div>`).join('');
         const body = `
         <div id="doc-wiz-steps" style="display:flex; gap:8px; margin-bottom:16px;">${stepBar(1)}</div>
         <div id="doc-wiz-hint"></div>
@@ -174,12 +174,12 @@ const DocumentsPage = {
         <div class="doc-wiz-pane" data-pane="3" style="display:none;"></div>
         <div class="doc-wiz-pane" data-pane="4" style="display:none;"></div>
         <div class="doc-wiz-pane" data-pane="5" style="display:none;">
-            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Review & Generate</div>
-            <div id="doc-review-box"></div>
-        </div>
-        <div class="doc-wiz-pane" data-pane="6" style="display:none;">
             <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">RKK — Tabel B1/B2/D2/E1</div>
             <div id="doc-rkk-box"></div>
+        </div>
+        <div class="doc-wiz-pane" data-pane="6" style="display:none;">
+            <div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Review & Generate</div>
+            <div id="doc-review-box"></div>
         </div>`;
         const footer = `<button class="btn btn-secondary" onclick="Modal.close()">Batal</button><span style="flex:1;"></span><button class="btn btn-secondary" id="doc-wiz-back" onclick="DocumentsPage._wizNav(-1)" style="display:none;">‹ Kembali</button><button class="btn btn-primary" id="doc-wiz-next" onclick="DocumentsPage._wizNav(1)">Lanjut ›</button><button class="btn btn-primary" id="doc-generate-btn" onclick="DocumentsPage.wzGenerate()" style="display:none;"><i data-lucide="file-check"></i> Generate PDF</button>`;
         Modal.open('Buat Dokumen Lelang', body, footer, { maxWidth: 'calc(100vw - 40px)' });
@@ -617,7 +617,7 @@ const DocumentsPage = {
         this._wz.capSize = parseInt(document.getElementById('wz-cap-size')?.value) || 0;
     },
 
-    _wzCollect6() {
+    _wzCollect5() {
         const g = (id) => document.getElementById(id)?.value.trim() ?? '';
         this._wz.rkk = this._wz.rkk || {};
         this._wz.rkk.barisB1 = Number(document.getElementById('wz-rkk-b1-rows')?.value) || 1;
@@ -641,8 +641,8 @@ const DocumentsPage = {
         this._wz.rkk.e1rows = e1rows.filter(r => r.kegiatan);
     },
 
-    _wzForm6() {
-        const pane = document.querySelector('.doc-wiz-pane[data-pane="6"]');
+    _wzForm5() {
+        const pane = document.querySelector('.doc-wiz-pane[data-pane="5"]');
         if (!pane) return;
         const r = this._wz.rkk || {};
         const rowsB1 = r.barisB1 || 1, rowsB2 = r.barisB2 || 1, rowsD2 = r.barisD2 || 1;
@@ -1245,7 +1245,7 @@ const DocumentsPage = {
             if (n === 3) this._wzForm3();
             if (n === 4) this._wzForm4();
             if (n === 5) this._wzReview();
-        if (n === 6) { this._wzForm6(); }
+        if (n === 5) { this._wzForm5(); }
         }
         this._wizShow(n);
     },
@@ -1261,13 +1261,13 @@ const DocumentsPage = {
             if (s === 3) this._wzCollect3();
             if (s === 4) this._wzCollect4();
             if (s === 5) this._wzCollect5();
-            if (s === 6) this._wzCollect6();
+            if (s === 5) this._wzCollect5();
         }
         if (n === 2) this._wzForm2();
         if (n === 3) this._wzForm3();
         if (n === 4) this._wzForm4();
         if (n === 5) this._wzReview();
-        if (n === 6) { this._wzForm6(); }
+        if (n === 5) { this._wzForm5(); }
         this._wizShow(n);
     },
 
