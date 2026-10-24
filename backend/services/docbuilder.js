@@ -481,11 +481,6 @@ function buildDocHtml(o) {
         // 2 pass — nilai bersarang ({{posisi_k3}} di dalam {{pjD2}}) baru terganti di pass ke-2
         for (let pass = 0; pass < 2; pass++)
             Object.keys(varsAll).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), esc(varsAll[k])); });
-        // ponytail: TOC GDocs membawa nomor halaman STATIS (ekspor) → tak cocok dgn paginasi Chrome.
-        //           Buang dot-leader(&nbsp;)+angka di anchor TOC; penomoran resmi ada di footer
-        //           (@page margin box). Cukup 2+ nbsp / 3+ spasi agar link biasa berakhiran angka tak ikut terpotong.
-        if (isRkk03) content = content.replace(/(<a\b[^>]*\bhref="#[^"]*"[^>]*>)([\s\S]*?)(<\/a>)/gi,
-            (m, open, txt, close) => open + txt.replace(/(?:(?:&(?:nbsp|#160);){2,}|[ \t]{3,})\d+\s*$/, '') + close);
         content = content.replace(/\{\{terbilang[^}]*\}\}/g, '.........');
         content = content.replace(/\{\{[^}]+\}\}/g, '.........');
         // ponytail: font Docs dilucuti → mutlak ikut font_surat #company (mekanisme !important terbukti tak mempan)
