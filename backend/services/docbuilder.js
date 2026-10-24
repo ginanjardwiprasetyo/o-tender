@@ -555,7 +555,10 @@ function buildDocHtml(o) {
             return (i > 0 ? BRK : '') + (i > 0 && hasText ? kopUse : '') + sg;
         }).join('');
         const pp = paperOf(t);
-        const tmt = t.margin_top ?? 25, tmb = t.margin_bottom ?? 25, tml = t.margin_left ?? 30, tmr = t.margin_right ?? 25;
+        // ponytail: padding inline per-doc-page pakai simetris 25.4mm (sesuai @page margin simetris baru)
+        // template margin_* diabaikan agar preview=PDF pixel; inline hanya untuk fallback warisan
+        const symPad = '25.4'; // simetris semua sisi → preview padding = @page margin = PDF margin
+        const tmt = symPad, tmb = symPad, tml = symPad, tmr = symPad;
         // ponytail: min-height dihapus agar halaman tidak mengembang jadi kosong di SKP/lembar pendek
         // ponytail: page-break antar template INLINE di doc-page — div kosong terpisah di natural page
         // boundary menghasilkan 1 halaman kosong; break di top-of-page di-collapse Chromium tanpa blank
