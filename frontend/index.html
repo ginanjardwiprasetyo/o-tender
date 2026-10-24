@@ -43,8 +43,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 
-    <!-- Lucide Icons CDN -->
-    <script src="https://unpkg.com/lucide@0.454.0"></script>
+    <!-- Lucide Icons (vendor lokal — ikon dekoratif, sync agar render aman; cache 1 thn via ?v=) -->
+    <script src="/vendor/lucide.0.454.0.js?v=04540"></script>
 
     <!-- Stylesheets -->
     <link rel="stylesheet" href="/css/main.css?v=45">
@@ -279,10 +279,9 @@
     <!-- ONLYOFFICE_DULU_DIMATIKAN — aktifkan lagi bersama route di app.js -->
     <!-- <script src="/js/pages/onlyoffice.js"></script> -->
     <script src="/js/pages/dokpil.js?v=2"></script>
-    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
-    <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.min.js"></script>
+    <!-- jsPDF dimuat ON-DEMAND dari sirup-browse.js (ekspor PDF saja) — hemat ~400KB tiap laman -->
     <script src="/js/pages/tender-browse.js"></script>
-    <script src="/js/pages/sirup-browse.js?v=14"></script>
+    <script src="/js/pages/sirup-browse.js?v=15"></script>
     <script src="/js/pages/tender-manage.js"></script>
     <script src="/js/pages/tender-recap.js"></script>
     <script src="/js/pages/tender-detail.js"></script>

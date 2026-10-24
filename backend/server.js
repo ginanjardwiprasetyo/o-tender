@@ -4,6 +4,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const fs = require('fs');
 const db = require('./config/db');
@@ -15,17 +16,24 @@ const PORT = process.env.PORT || 3000;
 
 // ─── Middleware ────────────────────────────────────────────────
 app.use(cors());
+app.use(compression());   // gzip — asset JS/CSS ~1MB → ~200KB
 app.use(express.json({ limit: '100gb' }));
 app.use(express.urlencoded({ limit: '100gb', extended: true }));
 
 // ── Static Files ─────────────────────────────────────────────
-// js/css tanpa versi → no-cache agar browser selalu ambil yang terbaru (hindari "perubahan tidak muncul" karena cache)
+// URL ber "?v=N" (versi manual di index.html) → cache 1 tahun immutable: tak ada
+// re-download tiap kunjungan; versi lama tetap aman karena URL-nya berubah.
+// URL tanpa ?v= → no-cache (perubahan selalu tampil, tanpa cache-bust manual).
 // path frontend: monorepo = sibling ../frontend; Docker (context ./backend) = /app/frontend (di dalam __dirname)
 const FRONTEND_DIR = fs.existsSync(path.join(__dirname, 'frontend'))
     ? path.join(__dirname, 'frontend')
     : path.join(__dirname, '..', 'frontend');
 app.use(express.static(FRONTEND_DIR, {
-    setHeaders: (res, filePath) => { if (/\.(js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache'); }
+    setHeaders: (res, filePath) => {
+        if (!/\.(js|css)$/.test(filePath)) return;
+        if (/[?&]v=/.test(res.req.originalUrl || res.req.url)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        else res.setHeader('Cache-Control', 'no-cache');
+    }
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/migrations', express.static(path.join(__dirname, 'migrations')));

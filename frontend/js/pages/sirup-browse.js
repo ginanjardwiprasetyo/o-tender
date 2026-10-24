@@ -1,6 +1,24 @@
 /**
  * SIRUP Browse Page — Crawl & browse RUP (Rencana Umum Pengadaan)
  */
+/** jsPDF + AutoTable on-demand (vendor lokal): hanya ekspor PDF yang butuh ~400KB ini. */
+function loadJspdf() {
+    if (!loadJspdf.p) loadJspdf.p = new Promise((res, rej) => {
+        const a = document.createElement('script');
+        a.src = '/vendor/jspdf.2.5.2.umd.min.js?v=252';
+        a.onload = () => {
+            const b = document.createElement('script');
+            b.src = '/vendor/autotable.3.8.4.min.js?v=384';
+            b.onload = res;
+            b.onerror = () => rej(new Error('AutoTable gagal dimuat'));
+            document.head.appendChild(b);
+        };
+        a.onerror = () => rej(new Error('jsPDF gagal dimuat'));
+        document.head.appendChild(a);
+    });
+    return loadJspdf.p;
+}
+
 const SirupBrowsePage = {
     provinces: [],
     selectedProvinces: new Set(),
@@ -1055,7 +1073,8 @@ const SirupBrowsePage = {
 
             if (!allData.length) { Toast.warning('Tidak ada data untuk di-export'); return { doc: null, filename: null }; }
 
-            if (!window.jspdf) { Toast.error('jsPDF belum ter-load, coba refresh halaman'); return { doc: null, filename: null }; }
+            if (!window.jspdf) await loadJspdf();
+            if (!window.jspdf) { Toast.error('jsPDF gagal dimuat'); return { doc: null, filename: null }; }
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
