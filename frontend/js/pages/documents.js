@@ -693,7 +693,7 @@ const DocumentsPage = {
             '<div class="wz-rkk-box" style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
         // th & td wrap (overflow-wrap:anywhere) supaya tabel tidak melebihi lebar area kertas
-        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%; table-layout:fixed;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle; position:relative;} .wz-rkk-box th{text-align:justify;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);} .wz-rsz-col{position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;} .wz-rsz-col:hover{background:var(--accent);} .wz-rsz-row{position:absolute;left:0;right:0;bottom:-3px;height:6px;cursor:row-resize;z-index:10;background:transparent;} .wz-rsz-row:hover{background:var(--accent);}</style>' +
+        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%; table-layout:fixed;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle; text-align:center; position:relative;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);} .wz-rsz-col{position:absolute;right:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10;} .wz-rsz-col:hover{background:var(--accent);} .wz-rsz-row{position:absolute;left:0;bottom:-4px;width:2000px;height:8px;cursor:row-resize;z-index:10;} .wz-rsz-row:hover{background:var(--accent);}</style>' +
         box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
         box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
         box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
@@ -827,6 +827,18 @@ const DocumentsPage = {
         });
         // inisialisasi: Jenis Bahaya ikut TR (kriteria = fungsi risiko)
         rows.forEach(tr => hitung(tr));
+
+        // delegasi input di container (fallback bila target bukan sel) + per-sel
+        if (el._wzRkkHitung) el.removeEventListener('input', el._wzRkkHitung);
+        el._wzRkkHitung = () => {
+            const sel = (typeof document !== 'undefined' && document.getSelection) ? document.getSelection() : null;
+            let node = sel && sel.anchorNode;
+            let td = null;
+            while (node && node !== el) { if (node.nodeName === 'TD' || node.nodeName === 'TH') { td = node; break; } node = node.parentNode; }
+            const tr = td ? td.parentElement : null;
+            if (tr && tr.tagName === 'TR') hitung(tr);
+        };
+        el.addEventListener('input', el._wzRkkHitung);
     },
 
     // bangun vars lengkap utk preview RKK — mirror dr path generate (wzGenerate)
