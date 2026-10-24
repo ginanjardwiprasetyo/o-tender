@@ -420,6 +420,17 @@ function buildDocHtml(o) {
         // ponytail: nilai isian RKK (halaman RKK) = default; nilai form dokumen tetap menang
         const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : (vars || {});
         if (vars && vars.rkk_e1rows) varsAll._e1rows = vars.rkk_e1rows;
+        // auto-fill variabel RKK dari data personil (pelaksana/K3) kalau belum diisi manual
+        if (varsAll['pendidikan_pelaksana_terakhir'] == null) varsAll['pendidikan_pelaksana_terakhir'] = pelaksana?.tingkat_pendidikan || '-';
+        if (varsAll['pengalaman_pelaksana'] == null) varsAll['pengalaman_pelaksana'] = (pelaksana?.tahun_pengalaman != null ? pelaksana.tahun_pengalaman + ' tahun' : '-');
+        if (varsAll['keahlian_pelaksana'] == null) varsAll['keahlian_pelaksana'] = pelaksana?.sertifikat_keahlian || '-';
+        if (varsAll['pendidikan_k3_terakhir'] == null) varsAll['pendidikan_k3_terakhir'] = k3?.tingkat_pendidikan || '-';
+        if (varsAll['pengalaman_k3'] == null) varsAll['pengalaman_k3'] = (k3?.tahun_pengalaman != null ? k3.tahun_pengalaman + ' tahun' : '-');
+        if (varsAll['keahlian_k3'] == null) varsAll['keahlian_k3'] = k3?.sertifikat_keahlian || '-';
+        // alias umum template 03 RKK
+        if (varsAll['nama_pekerjaan'] == null) varsAll['nama_pekerjaan'] = vars['nama_paket'] || vars['perihal'] || '';
+        if (varsAll['tanggal_surat_tanpaTempat'] == null) varsAll['tanggal_surat_tanpaTempat'] = tglFormat;
+        // ...
         if (rkk) {
             const { renderTables } = require('./rkk');
             const tRkk = renderTables(rkk, varsAll);
