@@ -692,8 +692,21 @@ const DocumentsPage = {
         const box = (key, title, desc) => lbl(title, desc) +
             '<div class="wz-rkk-box" style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
-        // th & td wrap (overflow-wrap:anywhere) supaya tabel tidak melebihi lebar area kertas
-        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%; table-layout:fixed;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle; text-align:center; position:relative;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);} .wz-rsz-col{position:absolute;right:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10;} .wz-rsz-col:hover{background:var(--accent);} .wz-rsz-row{position:absolute;left:0;bottom:-4px;width:2000px;height:8px;cursor:row-resize;z-index:10;} .wz-rsz-row:hover{background:var(--accent);}</style>' +
+        // th & td wrap (overflow-wrap:breakword) — hindari potong kata di tengah suku; thead center & tak uppercase
+        '<style>.wz-rkk-box{position:relative;}' +
+        '.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%; table-layout:fixed; border-collapse:collapse;}' +
+        '.wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:break-word; word-break:normal; vertical-align:middle; text-align:center; position:relative;}' +
+        // thead: buang aturan global (uppercase/sticky/left) yg bikin jelek & overlap
+        '.wz-rkk-box thead th{text-align:center; text-transform:none; letter-spacing:normal; position:static; font-size:0.72rem; color:var(--text-1); background:var(--bg-elevated); white-space:normal; overflow-wrap:break-word;}' +
+        // kolom No saja yg sempit (jgn pakai :first-child — kena th baris header ke-2 juga)
+        '.wz-rkk-box thead tr:first-child th:first-child,.wz-rkk-box tbody td:first-child{white-space:nowrap; min-width:26px;}' +
+        '.wz-rkk-box tbody tr{cursor:default;}' +
+        '.wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);}' +
+        '.wz-rsz-col{position:absolute; right:-4px; top:0; bottom:0; width:8px; cursor:col-resize; z-index:12; background:transparent;}' +
+        '.wz-rsz-col:hover,.wz-rsz-col.wz-rsz-on{background:var(--accent);}' +
+        '.wz-rsz-row{position:absolute; left:0; height:6px; cursor:row-resize; z-index:12; background:transparent;}' +
+        '.wz-rsz-row:hover,.wz-rsz-row.wz-rsz-on{background:var(--accent);}' +
+        '</style>' +
         box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
         box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
         box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
@@ -715,78 +728,123 @@ const DocumentsPage = {
         this._wz.rkk.vars['rkk_tabel_' + key] = html;
     },
 
-    // Geser (resize) kolom & baris tabel preview; ukuran terkunci setelah dilepas (fixed layout).
+    // Bantuan drag: onMove(dx, dy, state); state diambil saat mousedown (getStart).
+    _wzRkkDrag(handle, getStart, onMove) {
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const sx = e.clientX, sy = e.clientY, st = getStart ? getStart() : null;
+            handle.classList.add('wz-rsz-on');
+            const mv = (ev) => onMove(ev.clientX - sx, ev.clientY - sy, st);
+            const up = () => {
+                handle.classList.remove('wz-rsz-on');
+                document.removeEventListener('mousemove', mv);
+                document.removeEventListener('mouseup', up);
+            };
+            document.addEventListener('mousemove', mv);
+            document.addEventListener('mouseup', up);
+        });
+    },
+
+    // Geser (resize) kolom & baris tabel preview.
+    // Lebar kolom diatur lewat <colgroup>: cara satu2nya yg andal saat thead pakai rowspan/colspan
+    // (table-layout:fixed hanya membaca baris pertama tabel & <col>, bukan th baris header ke-2).
     _wzRkkMakeResizable(el) {
         if (!el) return;
+        el.style.position = 'relative';
         [...el.querySelectorAll('table')].forEach(table => {
+            const thead = table.tHead;
+            const rows = [...table.tBodies].flatMap(tb => [...tb.rows]);
+            if (!thead || !thead.rows.length || !rows.length) return;
+            // grid okupansi thead -> th penutup tiap kolom fisik (baris header terakhir menutup semua kolom)
+            const grid = this._wzRkkGrid(thead);
+            const last = grid.length - 1;
+            const ncols = grid[last]?.length || 0;
+            if (!ncols) return;
             table.style.tableLayout = 'fixed';
-            // kolom: handle di tiap th baris header terakhir
-            const headerRow = table.tHead ? table.tHead.rows[table.tHead.rows.length - 1] : null;
-            if (headerRow) {
-                [...headerRow.cells].forEach((th, idx) => {
-                    const h = document.createElement('div');
-                    h.className = 'wz-rsz-col';
-                    h.setAttribute('data-rsz', '1');
-                    th.appendChild(h);
-                    let startX = 0, startW = 0;
-                    h.addEventListener('mousedown', (e) => {
-                        e.preventDefault(); e.stopPropagation();
-                        startX = e.clientX; startW = th.offsetWidth;
-                        const onMove = (ev) => {
-                            const newW = Math.max(24, startW + (ev.clientX - startX));
-                            [...table.rows].forEach(r => { if (r.cells[idx]) r.cells[idx].style.width = newW + 'px'; });
-                        };
-                        const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-                        document.addEventListener('mousemove', onMove);
-                        document.addEventListener('mouseup', onUp);
-                    });
-                });
+            // colgroup: satu <col> per kolom fisik -> semua kolom punya lebar sendiri & terkunci
+            let cg = table.querySelector('colgroup[data-wz-cg]');
+            if (!cg) {
+                cg = document.createElement('colgroup');
+                cg.setAttribute('data-wz-cg', '1');
+                for (let c = 0; c < ncols; c++) {
+                    // lebar awal proporsional pada panjang judul; kolom nomor tetap muat
+                    const len = (grid[last][c]?.textContent || '').trim().length || 4;
+                    const col = document.createElement('col');
+                    col.style.width = Math.max(26, Math.min(200, len * 6 + 24)) + 'px';
+                    cg.appendChild(col);
+                }
+                table.insertBefore(cg, table.firstChild);
+                table.style.width = 'auto';   // ikuti jumlah <col>: sisa ruang jadi scroll, bukan diregangkan
+                table.style.maxWidth = 'none';
+                // skala agar awalnya muat dulu di kotak (user boleh geser lebar lalu scroll)
+                const colsTmp = [...cg.children];
+                const total = colsTmp.reduce((s, c) => s + parseFloat(c.style.width), 0);
+                const avail = Math.max(320, el.clientWidth - 16);
+                const k = total > avail ? avail / total : 1;
+                colsTmp.forEach(c => { c.style.width = Math.max(22, Math.round(parseFloat(c.style.width) * k)) + 'px'; });
             }
-            // baris: handle di sel pertama tiap tr body
-            [...table.tBodies].forEach(tb => [...tb.rows].forEach(tr => {
-                if (!tr.cells.length) return;
-                const cell = tr.cells[0];
+            const cols = [...cg.children];
+            // handle kolom: tepi kanan tiap kolom fisik -> SEMUA kolom bisa digeser
+            for (let c = 0; c < ncols; c++) {
+                const th = grid[last][c];
+                if (!th || th.querySelector('.wz-rsz-col')) continue;
+                const h = document.createElement('div');
+                h.className = 'wz-rsz-col';
+                h.setAttribute('data-rsz', '1');
+                h.title = 'Geser: lebar kolom';
+                th.appendChild(h);
+                this._wzRkkDrag(h, () => parseFloat(cols[c].style.width) || 40,
+                    (dx, dy, w0) => { cols[c].style.width = Math.max(22, w0 + dx) + 'px'; });
+            }
+            // handle baris: garis bawah tiap baris, selebar tabel (di kontainer, bukan di dalam sel)
+            const place = (tr, h) => {
+                const er = el.getBoundingClientRect(), rr = tr.getBoundingClientRect(), tb = table.getBoundingClientRect();
+                h.style.top = (rr.bottom - er.top + el.scrollTop - 3) + 'px';
+                h.style.left = (tb.left - er.left + el.scrollLeft) + 'px';
+                h.style.width = tb.width + 'px';
+            };
+            rows.forEach(tr => {
                 const h = document.createElement('div');
                 h.className = 'wz-rsz-row';
                 h.setAttribute('data-rsz', '1');
-                cell.appendChild(h);
-                let startY = 0, startH = 0;
-                h.addEventListener('mousedown', (e) => {
-                    e.preventDefault(); e.stopPropagation();
-                    startY = e.clientY; startH = tr.offsetHeight;
-                    const onMove = (ev) => {
-                        const newH = Math.max(16, startH + (ev.clientY - startY));
-                        tr.style.height = newH + 'px';
-                        [...tr.cells].forEach(c => c.style.height = newH + 'px');
-                    };
-                    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-                    document.addEventListener('mousemove', onMove);
-                    document.addEventListener('mouseup', onUp);
+                h.title = 'Geser: tinggi baris';
+                el.appendChild(h);
+                tr._wzRszH = h;
+                place(tr, h);
+                this._wzRkkDrag(h, () => tr.offsetHeight, (dx, dy, h0) => {
+                    tr.style.height = Math.max(18, h0 + dy) + 'px';
+                    [...tr.cells].forEach(td => { td.style.height = tr.style.height; });
+                    rows.forEach(r2 => r2._wzRszH && place(r2, r2._wzRszH));
                 });
-            }));
+            });
         });
     },
-    // dihitung ulang otomatis saat F/A di baris yang sama diedit.
-    _wzRkkDecorateB1(el, ambang) {
-        if (!el) return;
-        const table = el.querySelector('table');
-        if (!table || !table.tHead) return;
-        // grid okupansi thead (rowspan/colspan) → label per kolom (gabung semua baris header)
+    // grid okupansi thead (rowspan/colspan) → node th per (baris, kolom fisik); baris terakhir menutup semua kolom
+    _wzRkkGrid(thead) {
         const grid = [];
-        [...table.tHead.rows].forEach((tr, r) => {
+        [...thead.rows].forEach((tr, r) => {
             let col = 0;
             [...tr.cells].forEach(th => {
                 while (grid[r]?.[col]) col++;
                 const span = th.colSpan || 1, rspan = th.rowSpan || 1;
                 for (let rr = r; rr < r + rspan; rr++) {
                     grid[rr] = grid[rr] || [];
-                    for (let c = col; c < col + span; c++) grid[rr][c] = (th.textContent || '').trim();
+                    for (let c = col; c < col + span; c++) grid[rr][c] = th;
                 }
                 col += span;
             });
         });
+        return grid;
+    },
+    // dihitung ulang otomatis saat F/A di baris yang sama diedit.
+    _wzRkkDecorateB1(el, ambang) {
+        if (!el) return;
+        const table = el.querySelector('table');
+        if (!table || !table.tHead) return;
+        // label per kolom = gabungan teks th dari semua baris header
         const head = [];
-        grid.forEach(row => (row || []).forEach((label, c) => {
+        this._wzRkkGrid(table.tHead).forEach(row => (row || []).forEach((th, c) => {
+            const label = (th.textContent || '').trim();
             if (label) head[c] = head[c] ? head[c] + ' ' + label : label;
         }));
         const C = { f: [], a: [], n: [], t: [] };
@@ -804,11 +862,6 @@ const DocumentsPage = {
             if (tr.cells[i]) { tr.cells[i].setAttribute('contenteditable', 'false'); tr.cells[i].setAttribute('data-wz-calc', '1'); }
         }));
         const jenisCol = head.findIndex(h => /Jenis Bahaya/i.test(h || ''));
-        // hitung ulang saat F/A diedit (pasangan ke-i: F,A → FxA,TR)
-        rows.forEach(tr => {
-            C.f.forEach(fc => { const td = tr.cells[fc]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
-            C.a.forEach(ac => { const td = tr.cells[ac]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
-        });
         const hitung = (tr) => C.f.forEach((fc, k) => {
             const nc = C.n[k], tc = C.t[k];
             const F = parseInt(tr.cells[fc]?.textContent, 10), A = parseInt(tr.cells[C.a[k]]?.textContent, 10);
@@ -818,21 +871,25 @@ const DocumentsPage = {
             tr.cells[nc].textContent = String(nilai);
             tr.cells[tc].textContent = trVal;
             // Jenis Bahaya = fungsi kriteria -> ikut TR (hanya pasangan pertama/tingkat risiko)
+            // catatan: template memakai &nbsp; sebelum nilai → samakan dulu (regex spasi biasa tak cocok)
             if (k === 0 && jenisCol >= 0 && tr.cells[jenisCol]) {
                 const cell = tr.cells[jenisCol];
-                if (/Terjadi kecelakan pada pekerja akibat risiko/i.test(cell.textContent)) {
-                    cell.textContent = 'Terjadi kecelakan pada pekerja akibat risiko ' + trVal + '.';
+                const txt = (cell.textContent || '').replace(/\u00A0/g, ' ');
+                if (/Terjadi kecelakan pada pekerja akibat risiko/i.test(txt)) {
+                    cell.textContent = 'Terjadi kecelakan pada pekerja akibat ' + trVal + '.';
                 }
             }
         });
         // inisialisasi: Jenis Bahaya ikut TR (kriteria = fungsi risiko)
         rows.forEach(tr => hitung(tr));
 
-        // delegasi input di container (fallback bila target bukan sel) + per-sel
+        // Delegasi input di container. PENTING: saat mengedit contenteditable, browser mengirim event
+        // 'input' ke editing host (div kontainer), BUKAN ke <td> — listener per-sel tak pernah terpicu.
+        // Sel yg diedit dicari dari seleksi (fallback: e.target bila berupa TD, utk test/JS dispatch).
         if (el._wzRkkHitung) el.removeEventListener('input', el._wzRkkHitung);
-        el._wzRkkHitung = () => {
+        el._wzRkkHitung = (e) => {
             const sel = (typeof document !== 'undefined' && document.getSelection) ? document.getSelection() : null;
-            let node = sel && sel.anchorNode;
+            let node = (e && e.target && e.target.nodeName === 'TD') ? e.target : (sel && sel.anchorNode);
             let td = null;
             while (node && node !== el) { if (node.nodeName === 'TD' || node.nodeName === 'TH') { td = node; break; } node = node.parentNode; }
             const tr = td ? td.parentElement : null;

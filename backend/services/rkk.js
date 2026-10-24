@@ -45,7 +45,7 @@ const DEFAULTS = {
       <td>1</td>
       <td>{{uraian_b1}}</td>
       <td>{{identifikasi_b1}}</td>
-      <td>Terjadi kecelakan pada pekerja akibat risiko {{kategori_b1}}.</td>
+      <td>Terjadi kecelakan pada pekerja akibat&nbsp;{{kategori_b1}}.</td>
       <td>{{syaratAturan}}</td>
       <td>{{pengAwal}}</td>
       <td>{{1mungkin}}</td>
