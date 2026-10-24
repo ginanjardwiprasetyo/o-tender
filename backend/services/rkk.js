@@ -195,7 +195,9 @@ function fillRow(rowHtml, n, vars, opt) {
         .replace(/\{\{\s*(\d+)tingkat\s*\}\}/gi, esc(tingkat))
         .replace(/\{\{\s*([A-Za-z_]\w*?)_b(\d+)\s*\}\}/g, (m, name) => {
             const v = vars[`${name}_b${n}`] ?? vars[name] ?? '';
-            return esc(v === '' ? '.........' : v);
+            // kategori_b (Jenis Bahaya) = fungsi kriteria → default = Tingkat Risiko (TR) yang dihitung
+            const val = (name === 'kategori' && v === '') ? tingkat : v;
+            return esc(val === '' ? '.........' : val);
         });
 }
 

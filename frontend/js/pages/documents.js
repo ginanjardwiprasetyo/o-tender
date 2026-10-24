@@ -803,19 +803,30 @@ const DocumentsPage = {
         rows.forEach(tr => [...C.n, ...C.t].forEach(i => {
             if (tr.cells[i]) { tr.cells[i].setAttribute('contenteditable', 'false'); tr.cells[i].setAttribute('data-wz-calc', '1'); }
         }));
+        const jenisCol = head.findIndex(h => /Jenis Bahaya/i.test(h || ''));
+        // hitung ulang saat F/A diedit (pasangan ke-i: F,A → FxA,TR)
+        rows.forEach(tr => {
+            C.f.forEach(fc => { const td = tr.cells[fc]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
+            C.a.forEach(ac => { const td = tr.cells[ac]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
+        });
         const hitung = (tr) => C.f.forEach((fc, k) => {
             const nc = C.n[k], tc = C.t[k];
             const F = parseInt(tr.cells[fc]?.textContent, 10), A = parseInt(tr.cells[C.a[k]]?.textContent, 10);
             if (!Number.isFinite(F) || !Number.isFinite(A) || !tr.cells[nc] || !tr.cells[tc]) return;
             const nilai = F * A;
+            const trVal = nilai <= (ambang?.kecil || 4) ? 'Risiko Kecil' : nilai <= (ambang?.sedang || 12) ? 'Risiko Sedang' : 'Risiko Besar';
             tr.cells[nc].textContent = String(nilai);
-            tr.cells[tc].textContent = nilai <= (ambang?.kecil || 4) ? 'Risiko Kecil' : nilai <= (ambang?.sedang || 12) ? 'Risiko Sedang' : 'Risiko Besar';
+            tr.cells[tc].textContent = trVal;
+            // Jenis Bahaya = fungsi kriteria -> ikut TR (hanya pasangan pertama/tingkat risiko)
+            if (k === 0 && jenisCol >= 0 && tr.cells[jenisCol]) {
+                const cell = tr.cells[jenisCol];
+                if (/Terjadi kecelakan pada pekerja akibat risiko/i.test(cell.textContent)) {
+                    cell.textContent = 'Terjadi kecelakan pada pekerja akibat risiko ' + trVal + '.';
+                }
+            }
         });
-        // pasang listener langsung di tiap sel F/A (event 'input' pada contenteditable tidak selalu bubble dgn target yang tepat)
-        rows.forEach(tr => {
-            C.f.forEach(fc => { const td = tr.cells[fc]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
-            C.a.forEach(ac => { const td = tr.cells[ac]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
-        });
+        // inisialisasi: Jenis Bahaya ikut TR (kriteria = fungsi risiko)
+        rows.forEach(tr => hitung(tr));
     },
 
     // bangun vars lengkap utk preview RKK — mirror dr path generate (wzGenerate)
