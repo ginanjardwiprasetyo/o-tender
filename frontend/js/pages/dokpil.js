@@ -299,21 +299,36 @@ const DokpilPage = {
     const badge = document.getElementById('dokpil-drive-badge');
     if (badge) badge.textContent = '📄 ' + fileName;
 
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 90000);
+    let res, json;
     try {
-      const res = await fetch('/api/dokpil/drive/parse', {
+      res = await fetch('/api/dokpil/drive/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId, aiModel: this.aiModel })
+        body: JSON.stringify({ fileId, aiModel: this.aiModel }),
+        signal: ac.signal,
       });
-      const json = await res.json();
+      json = await res.json();
+    } catch (e) {
+      clearTimeout(timer);
       document.getElementById('dokpil-loading').classList.add('hidden');
-      if (!json.success) throw new Error(json.error || 'Gagal memproses PDF dari Drive');
+      const msg = e.name === 'AbortError' ? 'Waktu habis (timeout). Coba lagi atau nonaktifkan AI.' : 'Gagal terhubung ke server (Failed to fetch). Coba lagi.';
+      document.getElementById('dokpil-error-msg').textContent = msg;
+      document.getElementById('dokpil-error').classList.remove('hidden');
+      Toast.error(msg);
+      return;
+    }
+    clearTimeout(timer);
+    try {
+    document.getElementById('dokpil-loading').classList.add('hidden');
+    if (!json.success) throw new Error(json.error || 'Gagal memproses PDF dari Drive');
 
-      this.extractedFields = json.data.fields;
-      this.extractedTables = json.data.tables || {};
-      this.aiSummary = json.data.ai_summary || '';
-      this.aiEnabled = json.data.ai_enabled || false;
-      this.rawText = json.data.raw_text_preview || '';
+    this.extractedFields = json.data.fields;
+    this.extractedTables = json.data.tables || {};
+    this.aiSummary = json.data.ai_summary || '';
+    this.aiEnabled = json.data.ai_enabled || false;
+    this.rawText = json.data.raw_text_preview || '';
 
       // Preview BAB IV — toggle available, default hidden
       const rawSection = document.getElementById('dokpil-raw-section');

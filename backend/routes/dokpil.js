@@ -130,17 +130,21 @@ async function aiExtract(text, model) {
   ];
   // Provider free MiniMax kadang balik 502 "empty response" → coba beberapa kali.
   // Bila tetap gagal, fallback ke router openrouter/free (lebih stabil).
-  const attempts = [[useModel, 3], [useModel === 'openrouter/free' ? null : 'openrouter/free', 2]];
+  // Cap waktu per attempt (12s) supaya request tidak ngegantung → frontend "Failed to fetch".
+  const attempts = [[useModel, 1], [useModel === 'openrouter/free' ? null : 'openrouter/free', 1]];
   for (const [mdl, tries] of attempts) {
     if (!mdl) continue;
     for (let i = 0; i < tries; i++) {
       const payload = { model: mdl, messages, max_tokens: 4096, temperature: 0 };
       if (AI_REASONING_EFFORT) payload.reasoning_effort = AI_REASONING_EFFORT;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 12000);
       try {
         const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: ac.signal,
         });
         const data = await res.json();
         if (res.ok && !data.error) {
@@ -156,6 +160,8 @@ async function aiExtract(text, model) {
         }
       } catch (e) {
         console.warn('[Dokpil AI]', mdl, e.message);
+      } finally {
+        clearTimeout(timer);
       }
     }
   }
@@ -586,7 +592,9 @@ router.post('/parse', upload.single('file'), async (req, res) => {
 
     // ===== AI (opsional — hanya isi field/tabel yang masih kosong, TIDAK override) =====
     if (OPENROUTER_KEY && needsAiFill(fields, tables)) {
-      aiSummary = applyAiFill(fields, tables, await aiExtract(text, req.body.aiModel));
+      const aiPromise = aiExtract(text, req.body.aiModel);
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 25000));
+      aiSummary = applyAiFill(fields, tables, await Promise.race([aiPromise, timeout]));
       debug.ai = !!aiSummary;
       debug.aiModel = req.body.aiModel || AI_MODEL;
     }
@@ -758,7 +766,9 @@ router.post('/drive/parse', async (req, res) => {
     let aiSummary = '';
     debug.ai = false;
     if (OPENROUTER_KEY && needsAiFill(fields, tables)) {
-      aiSummary = applyAiFill(fields, tables, await aiExtract(text, req.body.aiModel));
+      const aiPromise = aiExtract(text, req.body.aiModel);
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 25000));
+      aiSummary = applyAiFill(fields, tables, await Promise.race([aiPromise, timeout]));
       debug.ai = !!aiSummary;
       debug.aiModel = req.body.aiModel || AI_MODEL;
     }
