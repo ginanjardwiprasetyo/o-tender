@@ -309,13 +309,13 @@ const DocumentsPage = {
         this._wzDropT = setTimeout(() => box.classList.add('hidden'), 8000);
     },
 
-    _wzTenderChoose(id) {
+    async _wzTenderChoose(id) {
         const t = (this.tenders || []).find(x => String(x.id) === String(id));
         document.getElementById('wz-tender-drop')?.classList.add('hidden');
         if (!t) return;
         document.getElementById('wz-tender').value = t.id;
         document.getElementById('wz-tender-search').value = `${t.nama_tender || t.nama_paket || ''} — ${t.kode_tender || ''}`;
-        this._wzTenderPick(t.id);
+        await this._wzTenderPick(t.id);
     },
 
     async _wzTenderPick(id) {
@@ -650,27 +650,12 @@ const DocumentsPage = {
     },
 
     _wzCollect5() {
-        const g = (id) => document.getElementById(id)?.value.trim() ?? '';
         this._wz.rkk = this._wz.rkk || {};
-        this._wz.rkk.barisB1 = Number(document.getElementById('wz-rkk-b1-rows')?.value) || 1;
-        this._wz.rkk.barisB2 = Number(document.getElementById('wz-rkk-b2-rows')?.value) || 1;
-        this._wz.rkk.barisD2 = Number(document.getElementById('wz-rkk-d2-rows')?.value) || 1;
-        this._wz.rkk.mungkin = Number(document.getElementById('wz-rkk-mungkin')?.value) || 1;
-        this._wz.rkk.parah = Number(document.getElementById('wz-rkk-parah')?.value) || 1;
-        const vars = {};
-        document.querySelectorAll('[data-rkk-var]').forEach(inp => {
-            const k = inp.dataset.rkkVar; const v = inp.value.trim();
-            if (v !== '') vars[k] = v;
-        });
-        this._wz.rkk.vars = vars;
-        const e1rows = [];
-        document.querySelectorAll('.wz-rkk-e1-row').forEach((tr, i) => {
-            const kegiatan = tr.querySelector('[data-e1="kegiatan"]')?.value.trim() || '';
-            const pic = tr.querySelector('[data-e1="pic"]')?.value.trim() || '';
-            const minggu = Array.from(tr.querySelectorAll('[data-e1="minggu"]')).map(cb => cb.checked ? 'x' : '');
-            e1rows.push({ no: i + 1, kegiatan, pic, minggu });
-        });
-        this._wz.rkk.e1rows = e1rows.filter(r => r.kegiatan);
+        if (!this._wz.rkk.vars) this._wz.rkk.vars = {};
+        // baris counts dari data tersimpan (fallback 1)
+        if (!this._wz.rkk.barisB1) this._wz.rkk.barisB1 = 1;
+        if (!this._wz.rkk.barisB2) this._wz.rkk.barisB2 = 1;
+        if (!this._wz.rkk.barisD2) this._wz.rkk.barisD2 = 1;
     },
 
     _wzForm5() {
@@ -695,44 +680,11 @@ const DocumentsPage = {
             { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['', 'x', '', 'x', '', 'x', ''][i] || '')) },
         ];
         const e1Html = this._wzRkkE1Html(e1);
-        pane.innerHTML = '<div style="font-weight:700; margin-bottom:12px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— tabel B1/B2/D2/E1 (jumlah baris B1/B2/D2 bisa ditambah)</span></div>' +
-        '<div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
-        '<div style="font-size:0.85rem; font-weight:700; margin-bottom:8px;">Tabel B1 — Identifikasi Bahaya & Penilaian Risiko</div>' +
-        '<div style="margin-top:10px;"><div class="form-row">' +
-        '<div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-b1-rows" value="' + rowsB1 + '" onchange="DocumentsPage._wzRkkAddRows(\'b1\', this.value)"></div>' +
-        '<div class="form-group"><label class="form-label">Persyaratan Pemenuhan Peraturan</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="syaratAturan" value="' + Fmt.escape(vars.syaratAturan || '') + '" placeholder="peraturan terkait"></div>' +
-        '<div class="form-group"><label class="form-label">Pengendalian Awal</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengAwal" value="' + Fmt.escape(vars.pengAwal || '') + '" placeholder="pengendalian awal"></div>' +
-        '<div class="form-group"><label class="form-label">Pengendalian Lanjutan</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengLanjut" value="' + Fmt.escape(vars.pengLanjut || '') + '" placeholder="pengendalian lanjutan"></div>' +
-        '</div><div style="margin-top:8px;"><label class="form-label">Baris (No. | Uraian Pekerjaan | Identifikasi Bahaya | F | A)</label>' +
-        '<div id="wz-rkk-b1-rows-wrap">' + mkRows(rowsB1, 'uraian') + '</div></div></div></div>' +
-        '<div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
-        '<div style="font-size:0.85rem; font-weight:700; margin-bottom:8px;">Tabel B2 — Program Pengendalian Risiko</div>' +
-        '<div style="margin-top:10px;"><div class="form-row"><div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-b2-rows" value="' + rowsB2 + '" onchange="DocumentsPage._wzRkkAddRows(\'b2\', this.value)"></div></div>' +
-        '<div style="display:grid;gap:6px;">' + [1,2,3,4,5,6,7,8,9].map(n =>
-            '<div class="form-group" style="margin:0;"><label class="form-label" style="font-size:0.75rem;">Kolom ' + n + ' (isi_b2_' + n + ')</label>' +
-            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="isi_b2_' + n + '" value="' + Fmt.escape(vars['isi_b2_' + n] || '') + '" placeholder="isi kolom ' + n + '"></div>').join('') +
-        '</div></div></div>' +
-        '<div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
-        '<div style="font-size:0.85rem; font-weight:700; margin-bottom:8px;">Tabel D2 — Langkah Pekerjaan & Pengendalian</div>' +
-        '<div style="margin-top:10px;"><div class="form-row">' +
-        '<div class="form-group" style="max-width:120px;"><label class="form-label">Jumlah baris</label><input type="number" min="1" max="50" class="form-input" id="wz-rkk-d2-rows" value="' + rowsD2 + '" onchange="DocumentsPage._wzRkkAddRows(\'d2\', this.value)"></div>' +
-        '<div class="form-group"><label class="form-label">Pengendalian</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pengD2" value="' + Fmt.escape(vars.pengD2 || '') + '" placeholder="pengendalian"></div>' +
-        '<div class="form-group"><label class="form-label">Penanggung Jawab</label><input class="form-input" style="font-size:0.82rem;" data-rkk-var="pjD2" value="' + Fmt.escape(vars.pjD2 || '') + '" placeholder="penanggung jawab"></div>' +
-        '</div><div style="margin-top:8px;"><label class="form-label">Baris (No. | Uraian | Identifikasi)</label>' +
-        '<div id="wz-rkk-d2-rows-wrap">' + mkRows(rowsD2, 'uraian') + '</div></div></div></div>' +
-        '<div style="border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; margin-bottom:10px;">' +
-        '<div style="font-size:0.85rem; font-weight:700; margin-bottom:8px;">Tabel E1 — Jadwal Kegiatan Keselamatan</div>' +
-        '<div style="margin-top:10px;"><div id="wz-rkk-e1-wrap">' + e1Html + '</div>' +
-        '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="DocumentsPage._wzRkkE1Add()">+ Tambah Kegiatan</button></div></div>' +
-        '<div class="form-row" style="margin-top:8px;"><div class="form-group"><label class="form-label">Kemungkinan default (F)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-mungkin" value="' + (r.mungkin || 1) + '"></div>' +
-        '<div class="form-group"><label class="form-label">Keparahan default (A)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-parah" value="' + (r.parah || 1) + '"></div></div>' +
-        '<div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px;">' +
-        '<div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Preview Tabel RKK (dari data tender + #rkk)</div>' +
-        '<div id="wz-rkk-preview-b1" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'b1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
-        '<div id="wz-rkk-preview-b2" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'b2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
-        '<div id="wz-rkk-preview-d2" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'d2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
-        '<div id="wz-rkk-preview-e1" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'e1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>' +
-        '</div>';
+        pane.innerHTML = '<div style="font-weight:700; margin-bottom:12px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel B1/B2/D2/E1 (edit langsung di tabel)</span></div>' +
+        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-b1" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'b1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
+        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-b2" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'b2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
+        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-d2" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'d2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
+        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-e1" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'e1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>';
         lucide.createIcons();
         this._wzRkkLoadPreview();
     },
@@ -764,7 +716,9 @@ const DocumentsPage = {
             const settings = await API.getSettings();
             const s = settings.data || {};
             const r = this._wz.rkk || {};
-            const vars = r.vars || {};
+            const vars = { ...(r.vars || {}) };
+            // merge rkk_val_* dari settings (#rkk) agar preview terisi
+            Object.keys(s).forEach(k => { if (k.startsWith('rkk_val_')) vars[k.slice(8)] = s[k]; });
             const b1 = Number(r.barisB1) || Number(s.rkk_baris_b1) || 1;
             const b2 = Number(r.barisB2) || Number(s.rkk_baris_b2) || 1;
             const d2 = Number(r.barisD2) || 1;
