@@ -567,12 +567,14 @@ function buildDocHtml(o) {
         // orientasi/margin persis Docs (@page bernama per segmen); tanpa data → satu doc-page seperti biasa
         // ponytail: segmen tunggal (1 section) sengaja TIDAK dipakai — surat/alat/personil pakai hardcode yang sudah terverifikasi
         // ponytail: RKK 03 punya 7 section → split nyasar, TOC terpencar 6 doc-page kecil. Bypass segmentasi RKK 03, gunakan doc-page tunggal.
-        const secs = !isRkk03 && Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
+        const secs = Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
         if (secs) {
             const { text, map } = indexedText(content);
             const bounds = [];
             let from = 0;
             for (let k = 1; k < secs.length; k++) {
+                // ponytail: RKK 03 sec1="daftar isi" → skip split agar TOC+cover tetap 1 halaman, bukan potong 6 halaman
+                if (isRkk03 && k === 1) continue;
                 const a = secs[k].anchor || '';
                 const p = a ? text.indexOf(a, from) : -1;
                 if (p < 0) { console.warn('[docbuilder] anchor section tak ditemukan:', t.nama_template, JSON.stringify(a).slice(0, 60)); continue; }
