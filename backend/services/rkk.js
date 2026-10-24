@@ -193,7 +193,10 @@ function fillRow(rowHtml, n, vars, opt) {
         .replace(/\{\{\s*(\d+)parah\s*\}\}/gi, String(A))
         .replace(/\{\{\s*(\d+)resiko\s*\}\}/gi, String(risiko))
         .replace(/\{\{\s*(\d+)tingkat\s*\}\}/gi, esc(tingkat))
-        .replace(/\{\{\s*([A-Za-z_]\w*?)_b(\d+)\s*\}\}/g, (m, name) => esc(vars[`${name}_b${n}`] ?? vars[name] ?? ''));
+        .replace(/\{\{\s*([A-Za-z_]\w*?)_b(\d+)\s*\}\}/g, (m, name) => {
+            const v = vars[`${name}_b${n}`] ?? vars[name] ?? '';
+            return esc(v === '' ? '.........' : v);
+        });
 }
 
 /**

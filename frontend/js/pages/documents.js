@@ -693,7 +693,7 @@ const DocumentsPage = {
             '<div class="wz-rkk-box" style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
         // th & td wrap (overflow-wrap:anywhere) supaya tabel tidak melebihi lebar area kertas
-        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);}</style>' +
+        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle;} .wz-rkk-box th{text-align:justify;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);}</style>' +
         box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
         box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
         box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
