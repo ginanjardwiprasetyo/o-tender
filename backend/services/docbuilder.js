@@ -563,7 +563,8 @@ function buildDocHtml(o) {
         // ponytail: layout_sections (struktur section GDocs) → konten dipecah jadi segmen per section —
         // orientasi/margin persis Docs (@page bernama per segmen); tanpa data → satu doc-page seperti biasa
         // ponytail: segmen tunggal (1 section) sengaja TIDAK dipakai — surat/alat/personil pakai hardcode yang sudah terverifikasi
-        const secs = Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
+        // ponytail: RKK 03 punya 7 section → split nyasar, TOC terpencar 6 doc-page kecil. Bypass segmentasi RKK 03, gunakan doc-page tunggal.
+        const secs = !isRkk03 && Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
         if (secs) {
             const { text, map } = indexedText(content);
             const bounds = [];
