@@ -1055,10 +1055,27 @@ const DocumentsPage = {
             }
             const tpl02 = this.templates.find(x => /02 personil/i.test(x.nama_template));
             if (tpl02?.id && payload.personil_ids.length) {
+                // ponytail: lampiran per-personil — KTP, NPWP, Ijazah, SKK, referensi (kelompok per personil)
+                const pers02Atts = [];
+                for (const pid of payload.personil_ids) {
+                    const p = this.personnel.find(x => x.id === pid);
+                    if (!p) continue;
+                    const nam = p.nama || 'Personil';
+                    if (p.ktp_url) pers02Atts.push({ name: `${nam} — KTP`, url: p.ktp_url });
+                    if (p.npwp_url) pers02Atts.push({ name: `${nam} — NPWP`, url: p.npwp_url });
+                    if (p.ijasah_ref) pers02Atts.push({ name: `${nam} — Ijazah`, url: p.ijasah_ref });
+                    if (p.skk_url) pers02Atts.push({ name: `${nam} — SKK`, url: p.skk_url });
+                    // referensi dari experience_history
+                    if (Array.isArray(p.experience_history)) {
+                        p.experience_history.forEach(exp => {
+                            if (exp.surat_referensi_url) pers02Atts.push({ name: `${nam} — Referensi (${exp.nama_kegiatan || 'Kegiatan'})`, url: exp.surat_referensi_url });
+                        });
+                    }
+                }
                 jobs.push({ label: '02 personil', payload: {
                     ...payload, template_ids: [tpl02.id],
                     signer2_id: null, signer3_id: null, signer2_data: undefined, signer3_data: undefined,
-                    equipment_ids: [], attachments: [],
+                    equipment_ids: [], attachments: pers02Atts,
                 } });
             }
             // 03 RKK — selalu ikut batch; isian dari tab RKK (B1/B2/D2/E1) + baris dinamis
