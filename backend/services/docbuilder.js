@@ -435,13 +435,12 @@ function buildDocHtml(o) {
         // ...
         if (rkk) {
             const { renderTables } = require('./rkk');
-            // edited table HTML dari wizard (contenteditable preview) menang atas settings
-            const cfg = { ...rkk };
-            if (varsAll.rkk_tabel_b1) cfg.b1 = varsAll.rkk_tabel_b1;
-            if (varsAll.rkk_tabel_b2) cfg.b2 = varsAll.rkk_tabel_b2;
-            if (varsAll.rkk_tabel_d2) cfg.d2 = varsAll.rkk_tabel_d2;
-            if (varsAll.rkk_tabel_e1) cfg.e1 = varsAll.rkk_tabel_e1;
-            const tRkk = renderTables(cfg, varsAll);
+            // edited table HTML dari wizard (contenteditable preview) → dipakai VERBATIM (tanpa re-render)
+            const tRkk = renderTables(rkk, varsAll);
+            if (varsAll.rkk_tabel_b1) tRkk.b1 = varsAll.rkk_tabel_b1;
+            if (varsAll.rkk_tabel_b2) tRkk.b2 = varsAll.rkk_tabel_b2;
+            if (varsAll.rkk_tabel_d2) tRkk.d2 = varsAll.rkk_tabel_d2;
+            if (varsAll.rkk_tabel_e1) tRkk.e1 = varsAll.rkk_tabel_e1;
             content = content
                 .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
                 .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)
@@ -466,7 +465,9 @@ function buildDocHtml(o) {
         if (!vars['perihal_penawaran'] && vars['perihal']) content = content.replace(/\{\{perihal_penawaran\}\}/g, esc(vars['perihal']));
         if (!vars['nilai_pagu_terbilang'] && paguNum) { const tb = terbilang(paguNum); if (tb) content = content.replace(/\{\{nilai_pagu_terbilang\}\}/g, esc('(' + tb + ')')); }
         if (!vars['pagu_terbilang'] && paguNum) { const tb = terbilang(paguNum); if (tb) content = content.replace(/\{\{pagu_terbilang\}\}/g, esc('(' + tb + ')')); }
-        Object.keys(varsAll).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), esc(varsAll[k])); });
+        // 2 pass — nilai bersarang ({{posisi_k3}} di dalam {{pjD2}}) baru terganti di pass ke-2
+        for (let pass = 0; pass < 2; pass++)
+            Object.keys(varsAll).forEach(k => { content = content.replace(new RegExp(`\\{\\{ ?${k} ?\\}\\}`, 'g'), esc(varsAll[k])); });
         content = content.replace(/\{\{terbilang[^}]*\}\}/g, '.........');
         content = content.replace(/\{\{[^}]+\}\}/g, '.........');
         // ponytail: font Docs dilucuti → mutlak ikut font_surat #company (mekanisme !important terbukti tak mempan)

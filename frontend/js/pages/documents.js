@@ -661,45 +661,18 @@ const DocumentsPage = {
     _wzForm5() {
         const pane = document.querySelector('.doc-wiz-pane[data-pane="5"]');
         if (!pane) return;
-        const r = this._wz.rkk || {};
-        const rowsB1 = r.barisB1 || 1, rowsB2 = r.barisB2 || 1, rowsD2 = r.barisD2 || 1;
-        const vars = r.vars || {};
-        const mkInp = (key, ph = '') =>
-            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="' + key + '" value="' + Fmt.escape(vars[key] || '') + '" placeholder="' + Fmt.escape(ph) + '">';
-        const mkRows = (n, prefix) => Array.from({ length: n }, (_, i) =>
-            '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
-            '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
-            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="' + prefix + '_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
-            '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
-            '</div></div>').join('');
-        const w = r.weeks || 7;
-        const e1 = r.e1rows && r.e1rows.length ? r.e1rows : [
-            { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', '', '', '', 'x', '', ''][i] || '')) },
-            { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', 'x', 'x', 'x', 'x', 'x', 'x'][i] || '')) },
-            { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['', 'x', '', 'x', '', 'x', ''][i] || '')) },
-        ];
-        const e1Html = this._wzRkkE1Html(e1);
-        pane.innerHTML = '<div style="font-weight:700; margin-bottom:12px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel B1/B2/D2/E1 (edit langsung di tabel)</span></div>' +
-        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-b1" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'b1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
-        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-b2" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'b2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
-        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-d2" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'d2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
-        '<div style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-e1" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'e1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>';
+        const lbl = (t, d) => '<div style="font-size:0.82rem; font-weight:700; margin:12px 0 4px;">' + t +
+            ' <span style="font-weight:400; color:var(--text-muted); font-size:0.72rem;">— ' + d + '</span></div>';
+        const box = (key, title, desc) => lbl(title, desc) +
+            '<div style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
+        pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
+        '<style>#wz-rkk-preview-b1 table,#wz-rkk-preview-b2 table,#wz-rkk-preview-d2 table,#wz-rkk-preview-e1 table{font-size:0.72rem; width:100%;} #wz-rkk-preview-b1 th,#wz-rkk-preview-b1 td,#wz-rkk-preview-b2 th,#wz-rkk-preview-b2 td,#wz-rkk-preview-d2 th,#wz-rkk-preview-d2 td,#wz-rkk-preview-e1 th,#wz-rkk-preview-e1 td{border:1px solid var(--border-color); padding:3px 5px;}</style>' +
+        box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
+        box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
+        box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
+        box('e1', 'Tabel E1 — Jadwal Kegiatan Keselamatan', 'template dari #rkk');
         lucide.createIcons();
         this._wzRkkLoadPreview();
-    },
-
-    _wzRkkE1Html(rows) {
-        return '<table class="mini-table" style="font-size:0.78rem;"><thead><tr>' +
-            '<th style="width:32px;">No</th><th>Kegiatan</th><th style="width:150px;">PIC</th>' +
-            '<th style="width:24px;">1</th><th style="width:24px;">2</th><th style="width:24px;">3</th><th style="width:24px;">4</th><th style="width:24px;">5</th><th style="width:24px;">6</th><th style="width:24px;">7</th><th style="width:44px;"></th></tr></thead><tbody>' +
-            rows.map((r2, i) => '<tr class="wz-rkk-e1-row">' +
-                '<td style="text-align:center;">' + (i + 1) + '</td>' +
-                '<td><input class="form-input" style="font-size:0.78rem;" data-e1="kegiatan" value="' + Fmt.escape(r2.kegiatan || '') + '"></td>' +
-                '<td><input class="form-input" style="font-size:0.78rem;" data-e1="pic" value="' + Fmt.escape(r2.pic || '{{posisi_k3}}') + '"></td>' +
-                (r2.minggu || []).map(m => '<td style="text-align:center;"><input type="checkbox" data-e1="minggu" ' + (m === 'x' ? 'checked' : '') + ' style="accent-color:var(--accent);"></td>').join('') +
-                '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="this.closest(\'tr\').remove(); DocumentsPage._wzRkkE1Renumber();">×</button></td>' +
-                '</tr>').join('') + '</tbody></table>';
     },
 
     _wzRkkSavePreview(key, el) {
@@ -711,31 +684,42 @@ const DocumentsPage = {
         this._wz.rkk.vars['rkk_tabel_' + key] = html;
     },
 
+    // bangun vars lengkap utk preview RKK — mirror dr path generate (wzGenerate)
+    _wzRkkVars() {
+        const comp = this.companies.find(c => c.id === this._wz.companyId) || {};
+        const L = this._wz.letter || {};
+        const pelObj = this.personnel.find(p => p.id === this._wz.pelaksana?.id) || {};
+        const k3Obj = this.personnel.find(p => p.id === this._wz.k3?.id) || {};
+        return {
+            ...(this._wz.vars || {}),
+            perihal: L.perihal, tanggal: L.tgl, lampiran: L.lampiran,
+            direktur: comp.direktur || '', nama_perusahaan: comp.nama_perusahaan || '',
+            nama_pelaksana: pelObj.nama || '', posisi_pelaksana: this._wz.pelaksana?.posisi || '',
+            nama_k3: k3Obj.nama || '', posisi_k3: this._wz.k3?.posisi || '',
+            nama_paket: this._wz.vars?.nama_paket || L.perihal || '',
+        };
+    },
+
     async _wzRkkLoadPreview() {
         try {
             const settings = await API.getSettings();
             const s = settings.data || {};
             const r = this._wz.rkk || {};
-            const vars = { ...(r.vars || {}) };
-            // merge rkk_val_* dari settings (#rkk) agar preview terisi
-            Object.keys(s).forEach(k => { if (k.startsWith('rkk_val_')) vars[k.slice(8)] = s[k]; });
+            // vars lengkap (signer + letter + tender) → merge rkk_val_* (#rkk) → merge data dokpil (uraian/identifikasi)
+            const vars = this._wzRkkVars();
+            Object.keys(s).forEach(k => { if (k.startsWith('rkk_val_') && s[k] !== '' && s[k] != null) vars[k.slice(8)] = s[k]; });
+            Object.assign(vars, r.vars || {});   // dokpil uraian_b*/identifikasi_b* menang
             const b1 = Number(r.barisB1) || Number(s.rkk_baris_b1) || 1;
             const b2 = Number(r.barisB2) || Number(s.rkk_baris_b2) || 1;
             const d2 = Number(r.barisD2) || 1;
             const mungkin = Number(s.rkk_default_mungkin) || 1;
             const parah = Number(s.rkk_default_parah) || 1;
             const ambang = { kecil: Number(s.rkk_ambang_kecil) || 4, sedang: Number(s.rkk_ambang_sedang) || 12, besar: Number(s.rkk_ambang_besar) || 25 };
-            const w = r.weeks || 7;
-            const e1rows = (r.e1rows && r.e1rows.length) ? r.e1rows : [
-                { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', '', '', '', 'x', '', ''][i] || '')) },
-                { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', 'x', 'x', 'x', 'x', 'x', 'x'][i] || '')) },
-                { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['', 'x', '', 'x', '', 'x', ''][i] || '')) },
-            ];
             const [h1, h2, h3, h4] = await Promise.all([
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'b1', html: s.rkk_tabel_b1 || '', baris: b1, mungkin, parah, ambang, vars } }),
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'b2', html: s.rkk_tabel_b2 || '', baris: b2, mungkin, parah, ambang, vars } }),
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'd2', html: s.rkk_tabel_d2 || '', baris: d2, mungkin, parah, ambang, vars } }),
-                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'e1', html: s.rkk_tabel_e1 || '', baris: 1, mungkin, parah, ambang, vars: { ...vars, _e1rows: e1rows } } }),
+                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'e1', html: s.rkk_tabel_e1 || '', baris: 1, mungkin, parah, ambang, vars } }),
             ]);
             const el1 = document.getElementById('wz-rkk-preview-b1'); if (el1) el1.innerHTML = (h1.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
             const el2 = document.getElementById('wz-rkk-preview-b2'); if (el2) el2.innerHTML = (h2.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
@@ -743,53 +727,6 @@ const DocumentsPage = {
             const el4 = document.getElementById('wz-rkk-preview-e1'); if (el4) el4.innerHTML = (h4.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
         } catch (e) {
             console.warn('[RKK preview] gagal:', e.message);
-        }
-    },
-
-    _wzRkkE1Add() {
-        const wrap = document.getElementById('wz-rkk-e1-wrap');
-        if (!wrap) return;
-        const tbody = wrap.querySelector('tbody');
-        if (!tbody) return;
-        const tr = document.createElement('tr');
-        tr.className = 'wz-rkk-e1-row';
-        tr.innerHTML = '<td style="text-align:center;">' + (tbody.children.length + 1) + '</td>' +
-            '<td><input class="form-input" style="font-size:0.78rem;" data-e1="kegiatan" placeholder="nama kegiatan"></td>' +
-            '<td><input class="form-input" style="font-size:0.78rem;" data-e1="pic" value="{{posisi_k3}}"></td>' +
-            Array(7).fill('').map(() => '<td style="text-align:center;"><input type="checkbox" data-e1="minggu" style="accent-color:var(--accent);"></td>').join('') +
-            '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="DocumentsPage._wzRkkE1Del(this)">×</button></td>';
-        tbody.appendChild(tr);
-    },
-
-    _wzRkkE1Del(btn) { btn.closest('tr').remove(); this._wzRkkE1Renumber(); },
-
-
-    _wzRkkE1Del(btn) { btn.closest('tr').remove(); this._wzRkkE1Renumber(); },
-    _wzRkkE1Renumber() {
-        const rows = document.querySelectorAll('.wz-rkk-e1-row');
-        rows.forEach((tr, i) => { const td = tr.querySelector('td'); if (td) td.textContent = i + 1; });
-    },
-
-    _wzRkkAddRows(kind, n) {
-        const n2 = Math.max(1, parseInt(n, 10) || 1);
-        if (kind === 'b1') {
-            const wrap = document.getElementById('wz-rkk-b1-rows-wrap');
-            if (wrap) wrap.innerHTML = Array.from({ length: n2 }, (_, i) =>
-                '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
-                '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
-                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="uraian_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
-                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
-                '</div></div>').join('');
-        } else if (kind === 'd2') {
-            const wrap = document.getElementById('wz-rkk-d2-rows-wrap');
-            if (wrap) wrap.innerHTML = Array.from({ length: n2 }, (_, i) =>
-                '<div style="display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center;margin-bottom:4px;">' +
-                '<span style="font-size:0.75rem;color:var(--text-muted);text-align:center;font-weight:600;">' + (i + 1) + '</span>' +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
-                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="uraian_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
-                '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
-                '</div></div>').join('');
         }
     },
 
