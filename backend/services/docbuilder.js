@@ -339,7 +339,9 @@ function buildDocHtml(o) {
     const gdocsCss = templates.map(t => String(t.html_content || '').match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).flat().join('\n');
     // ponytail: @page per-section (orientasi/margin GDocs) diisi dari dynCss — head ditutup SETELAH loop
     const isRkk03 = templates.some(t => /03 ?rkk/i.test(t.nama_template || ''));
-    const rkkExtraCss = isRkk03 ? ' table { max-width: 100% !important; table-layout: auto !important; } td, th { word-break: break-word !important; overflow-wrap: anywhere !important; } .rkk-pgfooter { position: fixed; bottom: 6mm; left: 0; right: 0; text-align: center; font-size: 9pt; color: #555; } .rkk-pgfooter::after { content: "Halaman " counter(page) " dari " counter(pages); }' : '';
+    // fit kertas: tabel RKK max 100% lebar area konten, th wrap, font 8pt (B1 15 kolom tdk muat di 12pt)
+    // scope .rkk-tbl → cuma tabel RKK ({{tabel_b1}}..{{tabel_e1}}), jgn ganggu tabel layout template
+    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: anywhere !important; white-space: normal !important; } .rkk-pgfooter { position: fixed; bottom: 6mm; left: 0; right: 0; text-align: center; font-size: 9pt; color: #555; } .rkk-pgfooter::after { content: "Halaman " counter(page) " dari " counter(pages); }' : '';
     const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4P { size: 210mm 297mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4L { size: 297mm 210mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4P { size: 215mm 330mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4L { size: 330mm 215mm; margin: 15mm 25mm 25mm 30mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }${rkkExtraCss}`;
     const dynCss = [];
     let bodyHtml = '';
@@ -441,16 +443,18 @@ function buildDocHtml(o) {
             if (varsAll.rkk_tabel_b2) tRkk.b2 = varsAll.rkk_tabel_b2;
             if (varsAll.rkk_tabel_d2) tRkk.d2 = varsAll.rkk_tabel_d2;
             if (varsAll.rkk_tabel_e1) tRkk.e1 = varsAll.rkk_tabel_e1;
+            // wrapper .rkk-tbl → penanda utk CSS fit-kertas (font 8pt + wrap th) di docbuilder
+            const w = (h) => `<div class="rkk-tbl">${h}</div>`;
             content = content
-                .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
-                .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)
-                .replace(/\{\{rkk_d2\}\}/g, tRkk.d2)
-                .replace(/\{\{rkk_e1\}\}/g, tRkk.e1 || '')
+                .replace(/\{\{rkk_b1\}\}/g, w(tRkk.b1))
+                .replace(/\{\{rkk_b2\}\}/g, w(tRkk.b2))
+                .replace(/\{\{rkk_d2\}\}/g, w(tRkk.d2))
+                .replace(/\{\{rkk_e1\}\}/g, w(tRkk.e1 || ''))
                 // alias template 03 RKK: nama placeholder tabel_* pakai makna sama
-                .replace(/\{\{tabel_b1\}\}/g, tRkk.b1)
-                .replace(/\{\{tabel_b2\}\}/g, tRkk.b2)
-                .replace(/\{\{tabel_d2\}\}/g, tRkk.d2)
-                .replace(/\{\{tabel_e1\}\}/g, tRkk.e1 || '');
+                .replace(/\{\{tabel_b1\}\}/g, w(tRkk.b1))
+                .replace(/\{\{tabel_b2\}\}/g, w(tRkk.b2))
+                .replace(/\{\{tabel_d2\}\}/g, w(tRkk.d2))
+                .replace(/\{\{tabel_e1\}\}/g, w(tRkk.e1 || ''));
         }
         const paguNum = vars['nilai_pagu'] || vars['pagu'] || vars['pagu_anggaran'];
         // ponytail: angka murni → "Rp. 480.000.000"; terbilang selalu dalam kurung

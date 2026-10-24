@@ -664,9 +664,10 @@ const DocumentsPage = {
         const lbl = (t, d) => '<div style="font-size:0.82rem; font-weight:700; margin:12px 0 4px;">' + t +
             ' <span style="font-weight:400; color:var(--text-muted); font-size:0.72rem;">— ' + d + '</span></div>';
         const box = (key, title, desc) => lbl(title, desc) +
-            '<div style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
+            '<div class="wz-rkk-box" style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
-        '<style>#wz-rkk-preview-b1 table,#wz-rkk-preview-b2 table,#wz-rkk-preview-d2 table,#wz-rkk-preview-e1 table{font-size:0.72rem; width:100%;} #wz-rkk-preview-b1 th,#wz-rkk-preview-b1 td,#wz-rkk-preview-b2 th,#wz-rkk-preview-b2 td,#wz-rkk-preview-d2 th,#wz-rkk-preview-d2 td,#wz-rkk-preview-e1 th,#wz-rkk-preview-e1 td{border:1px solid var(--border-color); padding:3px 5px;}</style>' +
+        // th & td wrap (overflow-wrap:anywhere) supaya tabel tidak melebihi lebar area kertas
+        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);}</style>' +
         box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
         box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
         box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
@@ -677,11 +678,63 @@ const DocumentsPage = {
 
     _wzRkkSavePreview(key, el) {
         if (!el) return;
-        const html = el.innerHTML;
+        // atribut dekorasi preview (kunci sel hitungan) jangan ikut tersimpan ke dokumen
+        const html = el.innerHTML.replace(/\scontenteditable="false"/g, '').replace(/\sdata-wz-calc="1"/g, '');
         this._wz.rkk = this._wz.rkk || {};
         this._wz.rkk['rkk_tabel_' + key] = html;
         if (!this._wz.rkk.vars) this._wz.rkk.vars = {};
         this._wz.rkk.vars['rkk_tabel_' + key] = html;
+    },
+
+    // B1: "Nilai Risiko (FxA)" & "Tingkat Risiko (TR)" = fungsi (F×A + ambang) → non-editabel,
+    // dihitung ulang otomatis saat F/A di baris yang sama diedit.
+    _wzRkkDecorateB1(el, ambang) {
+        if (!el) return;
+        const table = el.querySelector('table');
+        if (!table || !table.tHead) return;
+        // grid okupansi thead (rowspan/colspan) → label per kolom (gabung semua baris header)
+        const grid = [];
+        [...table.tHead.rows].forEach((tr, r) => {
+            let col = 0;
+            [...tr.cells].forEach(th => {
+                while (grid[r]?.[col]) col++;
+                const span = th.colSpan || 1, rspan = th.rowSpan || 1;
+                for (let rr = r; rr < r + rspan; rr++) {
+                    grid[rr] = grid[rr] || [];
+                    for (let c = col; c < col + span; c++) grid[rr][c] = (th.textContent || '').trim();
+                }
+                col += span;
+            });
+        });
+        const head = [];
+        grid.forEach(row => (row || []).forEach((label, c) => {
+            if (label) head[c] = head[c] ? head[c] + ' ' + label : label;
+        }));
+        const C = { f: [], a: [], n: [], t: [] };
+        head.forEach((h, i) => {
+            if (!h) return;
+            if (/Kemungkinan \(F\)/.test(h)) C.f.push(i);
+            else if (/Keparahan \(A\)/.test(h)) C.a.push(i);
+            else if (/Nilai Risiko \(FxA\)/.test(h)) C.n.push(i);
+            else if (/Tingkat Risiko \(TR\)/.test(h)) C.t.push(i);
+        });
+        if (!C.n.length || !C.t.length) return;
+        const rows = [...(table.tBodies[0]?.rows || [])];
+        // kunci sel hitungan (pasangan ke-i: F,A → FxA,TR; urutan kolom sama dgn header)
+        rows.forEach(tr => [...C.n, ...C.t].forEach(i => {
+            if (tr.cells[i]) { tr.cells[i].setAttribute('contenteditable', 'false'); tr.cells[i].setAttribute('data-wz-calc', '1'); }
+        }));
+        const hitung = (tr) => C.f.forEach((fc, k) => {
+            const nc = C.n[k], tc = C.t[k];
+            const F = parseInt(tr.cells[fc]?.textContent, 10), A = parseInt(tr.cells[C.a[k]]?.textContent, 10);
+            if (!Number.isFinite(F) || !Number.isFinite(A) || !tr.cells[nc] || !tr.cells[tc]) return;
+            const nilai = F * A;
+            tr.cells[nc].textContent = String(nilai);
+            tr.cells[tc].textContent = nilai <= (ambang?.kecil || 4) ? 'Risiko Kecil' : nilai <= (ambang?.sedang || 12) ? 'Risiko Sedang' : 'Risiko Besar';
+        });
+        if (el._wzRkkHitung) el.removeEventListener('input', el._wzRkkHitung);
+        el._wzRkkHitung = (e) => { const tr = e.target.closest?.('tbody tr'); if (tr) hitung(tr); };
+        el.addEventListener('input', el._wzRkkHitung);
     },
 
     // bangun vars lengkap utk preview RKK — mirror dr path generate (wzGenerate)
@@ -722,6 +775,7 @@ const DocumentsPage = {
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'e1', html: s.rkk_tabel_e1 || '', baris: 1, mungkin, parah, ambang, vars } }),
             ]);
             const el1 = document.getElementById('wz-rkk-preview-b1'); if (el1) el1.innerHTML = (h1.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+            if (el1) this._wzRkkDecorateB1(el1, ambang);   // FxA & TR jadi fungsi (non-editabel)
             const el2 = document.getElementById('wz-rkk-preview-b2'); if (el2) el2.innerHTML = (h2.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
             const el3 = document.getElementById('wz-rkk-preview-d2'); if (el3) el3.innerHTML = (h3.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
             const el4 = document.getElementById('wz-rkk-preview-e1'); if (el4) el4.innerHTML = (h4.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');

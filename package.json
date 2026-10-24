@@ -4,7 +4,7 @@
   "scripts": {
     "build:editor": "esbuild frontend/editor-src/main.js --bundle --minify --format=iife --outfile=frontend/vendor/ckeditor5/ckeditor.js --loader:.woff2=file --loader:.woff=file --loader:.png=file --loader:.svg=file",
     "test:editor": "node frontend/editor-src/fidelity.test.js",
-    "test:rkk": "node frontend/js/pages/rkk_builder.test.js"
+    "test:rkk": "node frontend/js/pages/rkk_builder.test.js && node frontend/js/pages/wz_rkk_calc.test.js"
   },
   "dependencies": {
     "@opendataloader/pdf": "^2.4.7",
