@@ -262,7 +262,7 @@ const DocumentsPage = {
                     <input type="hidden" id="wz-tender" value="">
                     <div id="wz-tender-drop" class="hidden" style="position:absolute; top:100%; left:0; right:0; z-index:30; max-height:240px; overflow:auto; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; box-shadow:0 8px 16px rgba(0,0,0,.15);"></div>
                 </div>
-                <small style="color:var(--text-muted);">Ketik untuk menyaring daftar panjang</small>
+                <small style="color:var(--text-muted);">Kosong: 2 tender terakhir. Ketik ≥3 huruf (nama/kode/KLPD) untuk cari proyek tahun ini.</small>
             </div>
             <div style="display:grid; grid-template-columns:110px 1fr; gap:10px;">
                 <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Tahun</label><input class="form-input" id="wz-tahun" placeholder="2026"></div>
@@ -293,16 +293,33 @@ const DocumentsPage = {
     _wzTenderSearch(q) {
         const box = document.getElementById('wz-tender-drop');
         if (!box) return;
-        const s = (q || '').toLowerCase();
-        const list = this._tenderAktif().filter(t =>
-            !s || (t.nama_tender || t.nama_paket || '').toLowerCase().includes(s) || String(t.kode_tender || '').includes(s)
-        ).slice(0, 30);
+        const s = (q || '').trim().toLowerCase();
+        let list;
+        if (!s) {
+            // tanpa ketikan: 2 tender terakhir (paling baru)
+            list = [...this._tenderAktif()]
+                .sort((a, b) => (new Date(b.created_at || 0).getTime() || 0) - (new Date(a.created_at || 0).getTime() || 0))
+                .slice(0, 2);
+        } else if (s.length < 3) {
+            // < 3 karakter: jangan tampilkan semua (hindari list panjang)
+            box.classList.add('hidden');
+            return;
+        } else {
+            const year = String(new Date().getFullYear());
+            list = this._tenderAktif().filter(t => {
+                const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd].filter(Boolean).join(' ').toLowerCase();
+                if (!hay.includes(s)) return false;
+                // batasi proyek tahun ini agar tidak kebanyakan
+                if (String(t.tahun || '').trim() && String(t.tahun).trim() !== year) return false;
+                return true;
+            });
+        }
         if (!list.length) { box.innerHTML = '<div style="padding:10px 14px; font-size:0.82rem; color:var(--text-muted);">Tidak ketemu.</div>'; }
         else box.innerHTML = list.map(t => `
             <div onmousedown="DocumentsPage._wzTenderChoose('${t.id}')" style="padding:9px 14px; font-size:0.84rem; cursor:pointer; border-bottom:1px solid var(--border-color);"
                 onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
                 <strong>${Fmt.escape(t.nama_tender || t.nama_paket || '')}</strong><br>
-                <small style="color:var(--text-muted);">${Fmt.escape(t.kode_tender || '')}</small>
+                <small style="color:var(--text-muted);">${Fmt.escape(t.kode_tender || '')}${t.klpd ? ' • ' + Fmt.escape(t.klpd) : ''}</small>
             </div>`).join('');
         box.classList.remove('hidden');
         clearTimeout(this._wzDropT);
@@ -1014,7 +1031,7 @@ const DocumentsPage = {
             const kapA = e.kapasitas_angka ?? '';
             const kapS = e.kapasitas_satuan ?? '';
             const inp = 'font-size:0.78rem; padding:3px 6px;';
-            return `<tr>
+            return `<tr style="cursor:pointer;" onclick="DocumentsPage._wzEqToggleRow('${e.id}', event)">
                 <td style="text-align:center;"><input type="checkbox" ${sel ? 'checked' : ''} onchange="DocumentsPage._wzEqToggle('${e.id}', this.checked)" style="accent-color:var(--accent); width:16px; height:16px;"></td>
                 <td><strong>${Fmt.escape(e.jenis)}</strong></td>
                 <td style="white-space:nowrap;"><input class="form-input" style="${inp} width:56px; display:inline-block;" value="${kapA}" onchange="DocumentsPage._wzEqEdit('${e.id}','kapA',this.value)" title="Angka kapasitas"> <input class="form-input" style="${inp} width:56px; display:inline-block;" value="${Fmt.escape(kapS)}" onchange="DocumentsPage._wzEqEdit('${e.id}','kapS',this.value)" title="Satuan (m³/cc/ton...)"></td>
@@ -1115,6 +1132,14 @@ const DocumentsPage = {
         const n = Object.keys(this._wz.equip).length;
         const pg = document.getElementById('wz-eq-pager');
         if (pg) { const s = pg.querySelector('span'); if (s) s.textContent = s.textContent.replace(/• \d+ dipilih/, `• ${n} dipilih`); }
+    },
+
+    // klik baris tabel alat → toggle pilih (kecuali klik input/select/button)
+    _wzEqToggleRow(id, ev) {
+        const t = ev && ev.target;
+        if (t && /^(INPUT|SELECT|BUTTON|TEXTAREA|A)$/i.test(t.tagName || '')) return;
+        const cb = document.querySelector(`input[onchange*="_wzEqToggle('${id}'"]`);
+        this._wzEqToggle(id, !(cb && cb.checked));
     },
 
     async _wzEqFiles(id) {
