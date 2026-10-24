@@ -155,7 +155,7 @@ const DokpilPage = {
       const json = await res.json();
       this.aiModels = json.data?.models || [];
       const def = json.data?.default || '';
-      if (!this.aiModel) this.aiModel = def;
+      if (!this.aiModel || !this.aiModels.some(m => m.id === this.aiModel)) this.aiModel = def;
       const sel = document.getElementById('dokpil-ai-model');
       if (!sel) return;
       sel.innerHTML = this.aiModels.map(m =>

@@ -64,7 +64,7 @@ function applyAiFill(fields, tables, aiDataRaw) {
 // habiskan semua token utk reasoning & balik kosong kalo effort default.
 // json_schema TIDAK dipakai (MiniMax abaikan) → prompt-only + parse defensif di applyAiFill.
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
-const AI_MODEL = process.env.AI_MODEL || 'minimax/minimax-m3.1-flash:free';
+const AI_MODEL = process.env.AI_MODEL || 'openrouter/free';
 const AI_REASONING_EFFORT = process.env.AI_REASONING_EFFORT || 'low';
 
 const AI_SYSTEM_PROMPT = `Anda adalah ekstraktor JSON. Dari teks LEMBAR DATA PEMILIHAN (LDP) di bawah, keluarkan JSON TANPA teks lain, TANPA markdown, TANPA kata pengantar.
