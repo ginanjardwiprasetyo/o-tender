@@ -318,7 +318,7 @@ const DocumentsPage = {
         this._wzTenderPick(t.id);
     },
 
-    _wzTenderPick(id) {
+    async _wzTenderPick(id) {
         const t = (this.tenders || []).find(x => String(x.id) === String(id));
         this._wz.tender = t || null;
         if (!t) return;
@@ -334,17 +334,18 @@ const DocumentsPage = {
         this._wz.vars.nama_paket = nm;
         this._wzTerbilang();
         // ponytail: tarik data dokpil (RKK) tersimpan utk tender ini → pre-fill tab RKK (B1)
-        this._wzLoadDokpilRkk(t.kode_tender || t.id);
+        await this._wzLoadDokpilRkk(t.kode_tender || t.id);
+        if (this._wzStep === 5) this._wzForm5();   // re-render RKK tab bila sudah di sana
     },
 
     async _wzLoadDokpilRkk(kodeTender) {
         if (!kodeTender) return;
         try {
-            const res = await fetch(`/api/dokpil/saved/${encodeURIComponent(kodeTender)}`);
+            const res = await fetch('/api/dokpil/saved/' + encodeURIComponent(kodeTender));
             const json = await res.json();
-            if (!json.success || !json.data) return;
+            if (!json.success || !json.data) { console.warn('[RKK load] tidak ada data tersimpan untuk', kodeTender); return; }
             const rkk = json.data.rkk;
-            if (!Array.isArray(rkk) || !rkk.length) return;
+            if (!Array.isArray(rkk) || !rkk.length) { console.warn('[RKK load] rkk kosong untuk', kodeTender); return; }
             const vars = this._wz.rkk.vars || {};
             const n = rkk.length;
             this._wz.rkk.barisB1 = n;
@@ -358,7 +359,7 @@ const DocumentsPage = {
                 if (bahaya) vars['identifikasi_b' + idx] = bahaya;
             });
             this._wz.rkk.vars = vars;
-        } catch (e) { /* abaikan — RKK tetap default kosong */ }
+        } catch (e) { console.warn('[RKK load] gagal:', e.message); }
     },
 
     // ponytail: pagu tampil bertitik (480.000.000), mentah digit disimpan di dataset
