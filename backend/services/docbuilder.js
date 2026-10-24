@@ -341,7 +341,9 @@ function buildDocHtml(o) {
     const isRkk03 = templates.some(t => /03 ?rkk/i.test(t.nama_template || ''));
     // fit kertas: tabel RKK max 100% lebar area konten, th wrap, font 8pt (B1 15 kolom tdk muat di 12pt)
     // scope .rkk-tbl → cuma tabel RKK ({{tabel_b1}}..{{tabel_e1}}), jgn ganggu tabel layout template
-    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-pgfooter { position: fixed; bottom: 6mm; left: 0; right: 0; text-align: center; font-size: 9pt; color: #555; } .rkk-pgfooter::after { content: "Halaman " counter(page) " dari " counter(pages); }' : '';
+    // ponytail: nomor halaman via @page margin box — counter(page)/counter(pages) di body-context
+    //           (position:fixed ::after) selalu 0 di Chrome; margin box baru dihitung benar per halaman.
+    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } @page { @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #555; } }' : '';
     const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4P { size: 210mm 297mm; margin: 15mm 25mm 25mm 30mm; }@page pg_A4L { size: 297mm 210mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4P { size: 215mm 330mm; margin: 15mm 25mm 25mm 30mm; }@page pg_F4L { size: 330mm 215mm; margin: 15mm 25mm 25mm 30mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }${rkkExtraCss}`;
     const dynCss = [];
     let bodyHtml = '';
@@ -384,6 +386,30 @@ function buildDocHtml(o) {
             return '<p' + b + '>';
         });
         if (!withCapTtd) content = content.replace(/\{\{\s*kota_perusahaan\s*\}\}\s*,\s*\{\{\s*(?:tanggal_surat|tanggal)\s*\}\}[\s\S]*$/i, '');
+        // ponytail: tabel RKK (B1/B2/D2) — format & ambang dari pengaturan halaman RKK
+        // ponytail: nilai isian RKK (halaman RKK) = default; nilai form dokumen tetap menang
+        // ponytail: varsAll+auto-fill dihitung SEBELUM rantai substitusi di bawah, supaya loop
+        //           2-pass (baris ~475) masih menemukan {{nama_k3}}/{{posisi_k3}}/{{keahlian_k3}}
+        //           dsb — dulu dihitung sesudahnya sehingga token sudah terlanjur dihapus jadi ''.
+        const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : (vars || {});
+        if (vars && vars.rkk_e1rows) varsAll._e1rows = vars.rkk_e1rows;
+        // auto-fill variabel pelaksana/K3 dari data personil kalau belum diisi manual (form menang)
+        const _fa = (k, v) => { if (varsAll[k] == null || varsAll[k] === '') varsAll[k] = v; };
+        _fa('nama_pelaksana', pelaksana?.nama || '');
+        _fa('posisi_pelaksana', pelaksana?.jabatan || '');
+        _fa('alamat_pelaksana', pelaksana?.alamat || '-');
+        _fa('pendidikan_pelaksana_terakhir', pelaksana?.tingkat_pendidikan || '-');
+        _fa('pengalaman_pelaksana', (pelaksana?.tahun_pengalaman != null ? pelaksana.tahun_pengalaman + ' tahun' : '-'));
+        _fa('keahlian_pelaksana', pelaksana?.sertifikat_keahlian || '-');
+        _fa('nama_k3', k3?.nama || '');
+        _fa('posisi_k3', k3?.jabatan || '');
+        _fa('alamat_k3', k3?.alamat || '-');
+        _fa('pendidikan_k3_terakhir', k3?.tingkat_pendidikan || '-');
+        _fa('pengalaman_k3', (k3?.tahun_pengalaman != null ? k3.tahun_pengalaman + ' tahun' : '-'));
+        _fa('keahlian_k3', k3?.sertifikat_keahlian || '-');
+        // alias umum template 03 RKK
+        _fa('nama_pekerjaan', vars['nama_paket'] || vars['perihal'] || '');
+        _fa('tanggal_surat_tanpaTempat', tglFormat);
         content = content            .replace(/\{\{header_surat\}\}/g, headerSurat)
             // ponytail: {{kop_surat}} berulang (copy-paste per seksi) → hanya pertama jadi kop, sisanya dibuang
             .replace(/\{\{kop_surat\}\}/, kopUse)
@@ -399,12 +425,9 @@ function buildDocHtml(o) {
             .replace(/\{\{npwp\}\}/g, esc(comp?.npwp_usaha || ''))
             .replace(/\{\{nama_personil\}\}/g, esc(pers?.nama || ''))
             .replace(/\{\{jabatan_personil\}\}/g, esc(pers?.jabatan || 'Pelaksana'))
-            .replace(/\{\{nama_pelaksana\}\}/g, esc(pelaksana?.nama || ''))
-            .replace(/\{\{posisi_pelaksana\}\}/g, esc(pelaksana?.jabatan || ''))
-            .replace(/\{\{alamat_pelaksana\}\}/g, esc(pelaksana?.alamat || '-'))
-            .replace(/\{\{nama_k3\}\}/g, esc(k3?.nama || ''))
-            .replace(/\{\{posisi_k3\}\}/g, esc(k3?.jabatan || ''))
-            .replace(/\{\{alamat_k3\}\}/g, esc(k3?.alamat || '-'))
+            // ponytail: {{nama_pelaksana}}/{{posisi_k3}} dll TIDAK diganti di sini — token dibiarkan
+            //           utuh agar loop 2-pass (varsAll, di atas) yang mengisi; kalau diganti di sini
+            //           dengan personil-null hasilnya '' dan tak bisa dipulihkan (akar "C.2 tak terisi").
             .replace(/\{\{ttd_pelaksana\}\}/g, blokPelaksana)
             .replace(/\{\{ttd_k3\}\}/g, blokK3)
             // ponytail: tiap {{ttd_direktur}} dapat varian selang-seling V1/V2/V3 (+45/+30/+40px)
@@ -420,21 +443,6 @@ function buildDocHtml(o) {
             .replace(/\{\{tabel_personil\}\}/g, tabelPersonil)
             .replace(/\{\{struktur_organisasi\}\}/g, strukturOrganisasi);
 
-        // ponytail: tabel RKK (B1/B2/D2) — format & ambang dari pengaturan halaman RKK
-        // ponytail: nilai isian RKK (halaman RKK) = default; nilai form dokumen tetap menang
-        const varsAll = (rkk && rkk.vals) ? { ...rkk.vals, ...vars } : (vars || {});
-        if (vars && vars.rkk_e1rows) varsAll._e1rows = vars.rkk_e1rows;
-        // auto-fill variabel RKK dari data personil (pelaksana/K3) kalau belum diisi manual
-        if (varsAll['pendidikan_pelaksana_terakhir'] == null) varsAll['pendidikan_pelaksana_terakhir'] = pelaksana?.tingkat_pendidikan || '-';
-        if (varsAll['pengalaman_pelaksana'] == null) varsAll['pengalaman_pelaksana'] = (pelaksana?.tahun_pengalaman != null ? pelaksana.tahun_pengalaman + ' tahun' : '-');
-        if (varsAll['keahlian_pelaksana'] == null) varsAll['keahlian_pelaksana'] = pelaksana?.sertifikat_keahlian || '-';
-        if (varsAll['pendidikan_k3_terakhir'] == null) varsAll['pendidikan_k3_terakhir'] = k3?.tingkat_pendidikan || '-';
-        if (varsAll['pengalaman_k3'] == null) varsAll['pengalaman_k3'] = (k3?.tahun_pengalaman != null ? k3.tahun_pengalaman + ' tahun' : '-');
-        if (varsAll['keahlian_k3'] == null) varsAll['keahlian_k3'] = k3?.sertifikat_keahlian || '-';
-        // alias umum template 03 RKK
-        if (varsAll['nama_pekerjaan'] == null) varsAll['nama_pekerjaan'] = vars['nama_paket'] || vars['perihal'] || '';
-        if (varsAll['tanggal_surat_tanpaTempat'] == null) varsAll['tanggal_surat_tanpaTempat'] = tglFormat;
-        // ...
         if (rkk) {
             const { renderTables } = require('./rkk');
             // edited table HTML dari wizard (contenteditable preview) → dipakai VERBATIM (tanpa re-render)
@@ -584,7 +592,7 @@ function buildDocHtml(o) {
         bodyHtml += `<div class="attachment-page"><img src="${absUrl(att.url)}" class="attachment-img"></div>`;
         if (idx < imgAtts.length - 1) bodyHtml += '<div class="page-break"></div>';
     });
-    const fullHtml = headOpen + dynCss.join('') + '</style></head><body>' + bodyHtml + (isRkk03 ? '<div class="rkk-pgfooter"></div>' : '') + '</body></html>';
+    const fullHtml = headOpen + dynCss.join('') + '</style></head><body>' + bodyHtml + '</body></html>';
     return { html: fullHtml, paper: { pwmm: mainPaper.w, phmm: mainPaper.h, landscape: mainTpl?.orientation === 'landscape' }, capVariants: capVariantsUsed, sigMarks, capSize: capSz };
 }
 

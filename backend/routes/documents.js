@@ -188,7 +188,11 @@ async function loadContext(body) {
         const { rows } = await db.query('SELECT * FROM templates WHERE id = ANY($1)', [template_ids]);
         tpl = template_ids.map(id => rows.find(t => t.id === id)).filter(Boolean);
     }
-    const getSigner = (sid, over) => sid ? db.query('SELECT * FROM personnel WHERE id = $1', [sid]).then(r => ({ ...(r.rows[0] || {}), ...(over || {}) })) : null;
+    // ponytail: override (jabatan pilihan wizard) tetap dipakai walau sid kosong —
+    // dulu `: null` membuat {{posisi_k3}}/{{ttd_k3}} hilang saat user tak memilih personil.
+    const getSigner = (sid, over) => sid
+        ? db.query('SELECT * FROM personnel WHERE id = $1', [sid]).then(r => ({ ...(r.rows[0] || {}), ...(over || {}) }))
+        : (over && Object.keys(over).length ? { ...over } : null);
     const [comp, signer, signer2, signer3, personil, equip] = await Promise.all([
         db.query('SELECT * FROM companies WHERE id = $1', [company_id]).then(r => r.rows[0]),
         getSigner(signer_id), getSigner(signer2_id, body.signer2_data), getSigner(signer3_id, body.signer3_data),

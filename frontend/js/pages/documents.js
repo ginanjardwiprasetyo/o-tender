@@ -1067,7 +1067,11 @@ const DocumentsPage = {
                 const rk = this._wz.rkk || {};
                 jobs.push({ label: '03 RKK', payload: {
                     ...payload, template_ids: [tpl03.id],
-                    signer2_id: null, signer3_id: null, signer2_data: undefined, signer3_data: undefined,
+                    // ponytail: RKK tetap butuh pelaksana & K3 ({{ttd_k3}}/{{posisi_k3}}/tabel C.2·C.4·D.1).
+                    //           Dulu di-null-kan → k3=null → token jadi '' & tanda tangan K3 tak tercetak.
+                    signer2_id: this._wz.pelaksana.id || null, signer3_id: this._wz.k3.id || null,
+                    signer2_data: { jabatan: this._wz.pelaksana.posisi || undefined },
+                    signer3_data: { jabatan: this._wz.k3.posisi || undefined },
                     equipment_ids: [], attachments: [],
                     vars: { ...vars, ...(rk.vars || {}),
                         rkk_baris_b1: rk.barisB1 || 1, rkk_baris_b2: rk.barisB2 || 1, rkk_baris_d2: rk.barisD2 || 1,
