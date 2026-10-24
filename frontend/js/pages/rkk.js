@@ -1,11 +1,19 @@
 /**
- * TenderBuild — Halaman RKK
- * Pengaturan variabel + format tabel RKK (B1/B2/D2) untuk dokumen.
- * ponytail: E1 formatnya menyusul — langsung di form pembuatan dokumen.
+ * TenderBuild — Halaman RKK (tabel builder)
+ * "Format Tabel & VARIABEL" kini berupa tabel visual: klik sel untuk mengedit teks,
+ * chip variabel untuk nilai (rkk_val_*), sel hitungan terkunci (F×A / Tingkat).
+ * Tidak ada lagi textarea kode HTML, daftar "Isian Tabel", maupun tabel referensi variabel.
+ * ponytail: format menyimpan 1 baris template — jumlah baris di Pengaturan Umum,
+ *            nilai per tender diisi di form pembuatan dokumen.
  */
 const RkkPage = {
     cfg: null,
     _tab: 'b1',
+    // tabel builder (edit sel in-place)
+    _tbl: null,          // <table> live yg sedang diedit
+    _draftHtml: {},      // tab -> format HTML hasil edit (belum disimpan)
+    _dirtyVals: {},      // 'rkk_val_x' -> nilai (diedit di sel value)
+    _dirtyTabs: {},      // tab -> true (tab itu diedit)
 
     TABS: [
         { id: 'b1', label: 'Tabel B1', icon: 'triangle-alert' },
@@ -19,7 +27,7 @@ const RkkPage = {
         <div class="page-header">
             <div>
                 <h2>Pengaturan RKK</h2>
-                <p>Variabel &amp; format tabel RKK (B1/B2/D2) yang dipakai di dokumen</p>
+                <p>Builder tabel RKK (B1/B2/D2/E1) — klik sel untuk mengedit teks &amp; nilai langsung</p>
             </div>
             <button class="btn btn-primary" id="rkk-save-btn" onclick="RkkPage.save()">
                 <i data-lucide="save"></i> Simpan Pengaturan
@@ -33,6 +41,7 @@ const RkkPage = {
     async load() {
         const el = document.getElementById('rkk-body');
         if (!el) return;
+        this._tbl = null; this._draftHtml = {}; this._dirtyVals = {}; this._dirtyTabs = {};
         try {
             const res = await API.getSettings();
             this.cfg = res.data || {};
@@ -56,9 +65,16 @@ const RkkPage = {
 
     set(key, value) { this.cfg = this.cfg || {}; this.cfg[key] = value; },
 
+    // nilai terbaru utk satu key: draft edit > settings
+    _cur(key) {
+        const v = this._dirtyVals[key];
+        return v !== undefined ? v : (this.cfg ? this.cfg[key] : '');
+    },
+
     renderBody() {
         const el = document.getElementById('rkk-body');
         if (!el) return;
+        const upd = 'oninput="RkkPage._updateCalc()"';
         el.innerHTML = `
             <div class="card" style="margin-bottom:16px;">
                 <div class="card-title" style="display:flex;gap:8px;align-items:center;">
@@ -73,17 +89,17 @@ const RkkPage = {
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Default Kemungkinan (F)</label>
-                        <input type="number" min="1" max="5" class="form-input" id="rkk-mungkin" value="${this.val('rkk_default_mungkin', 1)}"></div>
+                        <input type="number" min="1" max="5" class="form-input" id="rkk-mungkin" value="${this.val('rkk_default_mungkin', 1)}" ${upd}></div>
                     <div class="form-group"><label class="form-label">Default Keparahan (A)</label>
-                        <input type="number" min="1" max="5" class="form-input" id="rkk-parah" value="${this.val('rkk_default_parah', 1)}"></div>
+                        <input type="number" min="1" max="5" class="form-input" id="rkk-parah" value="${this.val('rkk_default_parah', 1)}" ${upd}></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Ambang Risiko Kecil (nilai ≤)</label>
-                        <input type="number" min="0" class="form-input" id="rkk-kecil" value="${this.val('rkk_ambang_kecil', 4)}"></div>
+                        <input type="number" min="0" class="form-input" id="rkk-kecil" value="${this.val('rkk_ambang_kecil', 4)}" ${upd}></div>
                     <div class="form-group"><label class="form-label">Ambang Risiko Sedang (nilai ≤)</label>
-                        <input type="number" min="0" class="form-input" id="rkk-sedang" value="${this.val('rkk_ambang_sedang', 12)}"></div>
+                        <input type="number" min="0" class="form-input" id="rkk-sedang" value="${this.val('rkk_ambang_sedang', 12)}" ${upd}></div>
                     <div class="form-group"><label class="form-label">Ambang Risiko Besar (nilai ≤)</label>
-                        <input type="number" min="0" class="form-input" id="rkk-besar" value="${this.val('rkk_ambang_besar', 25)}"></div>
+                        <input type="number" min="0" class="form-input" id="rkk-besar" value="${this.val('rkk_ambang_besar', 25)}" ${upd}></div>
                 </div>
                 <p style="font-size:0.75rem;color:var(--text-muted);margin:0;">
                     Nilai risiko = Kemungkinan (F) × Keparahan (A). Tingkat: ≤ kecil → Risiko Kecil, ≤ sedang → Risiko Sedang, selainnya Risiko Besar.
@@ -93,10 +109,11 @@ const RkkPage = {
             <div class="card" style="margin-bottom:16px;">
                 <div class="card-title" style="display:flex;gap:8px;align-items:center;">
                     <i data-lucide="table-2" style="width:16px;height:16px;"></i>
-                    Format Tabel &amp; Variabel
+                    Format Tabel &amp; VARIABEL
+                    <span style="font-weight:400;font-size:0.75rem;color:var(--text-muted);">— builder visual, klik sel untuk mengedit</span>
                 </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
-                    ${this.TABS.map(t => `<button class="btn ${t.id === this._tab ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="RkkPage.setTab('${t.id}')">
+                <div id="rkk-tablist" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+                    ${this.TABS.map(t => `<button class="btn ${t.id === this._tab ? 'btn-primary' : 'btn-secondary'} btn-sm" data-tab="${t.id}" onclick="RkkPage.setTab('${t.id}')">
                         <i data-lucide="${t.icon}" style="width:13px;height:13px;"></i> ${t.label}</button>`).join('')}
                 </div>
                 <div id="rkk-tab-body"></div>
@@ -105,129 +122,222 @@ const RkkPage = {
         lucide.createIcons();
     },
 
-    setTab(id) { this._tab = id; this.renderBody(); },
+    // pindah tab tanpa merender ulang Pengaturan Umum (input umum tdk hilang)
+    setTab(id) {
+        if (id === this._tab) return;
+        this._stashDraft();
+        this._tab = id;
+        document.querySelectorAll('#rkk-tablist [data-tab]').forEach(b => {
+            const on = b.dataset.tab === id;
+            b.classList.toggle('btn-primary', on);
+            b.classList.toggle('btn-secondary', !on);
+        });
+        this.renderTab();
+    },
+
+    // simpan tabel live tab aktif ke draft
+    _stashDraft() {
+        if (this._tbl) this._draftHtml[this._tab] = this._serialize(this._tbl);
+    },
 
     renderTab() {
         const el = document.getElementById('rkk-tab-body');
         if (!el) return;
+        this._tbl = null;
         const t = this._tab;
-        if (t === 'e1') {
+        const src = this._draftHtml[t] || this.val('rkk_tabel_' + t, '') || (this.defaults || {})[t] || '';
+        if (!src.trim() || !/<table/i.test(src)) {
             el.innerHTML = `
-                <div style="padding:14px;border:1px dashed var(--border-strong);border-radius:8px;margin-bottom:14px;color:var(--text-muted);">
-                    <i data-lucide="clipboard-list" style="width:20px;height:20px;margin-bottom:4px;"></i>
-                    <div style="font-size:0.88rem;color:var(--text-primary);margin-bottom:3px;">Format Tabel E1 menyusul</div>
-                    <div style="font-size:0.78rem;">Tabel E1 akan langsung ditampilkan di form pembuatan dokumen. Isian di bawah tetap bisa diisi di sini.</div>
+                <div class="rkk-builder-empty">
+                    <i data-lucide="table-2" style="width:22px;height:22px;margin-bottom:6px;"></i>
+                    <div style="font-weight:600;color:var(--text-primary);margin-bottom:3px;">Format Tabel ${t.toUpperCase()} belum tersedia</div>
+                    <div style="font-size:0.8rem;">Simpan tabel dari form pembuatan dokumen, lalu kembali ke sini untuk mengeditnya.</div>
                 </div>`;
             lucide.createIcons({ nodes: [el] });
             return;
         }
-        const key = 'rkk_tabel_' + t;
-        const def = (this.defaults || {})[t] || '';
-        const vlist = (this.varDefs || {})[t] || [];
-        const baris = Number(this.val('rkk_baris_' + t, 1)) || 1;
+        const holder = document.createElement('div');
+        holder.innerHTML = src;
+        const table = holder.querySelector('table');
+        if (!table) {
+            el.innerHTML = `<div class="rkk-builder-empty"><div style="font-size:0.8rem;">Format Tabel ${t.toUpperCase()} tidak berbentuk tabel.</div></div>`;
+            return;
+        }
+        this._decorate(table);
+        this._tbl = table;
         el.innerHTML = `
-            ${vlist.length ? `
-            <div style="margin-bottom:14px;">
-                <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px;">Isian Tabel ${t.toUpperCase()}</div>
-                <div style="display:grid;gap:8px;">
-                    ${vlist.map(v => {
-                        if (!v.perBaris) {
-                            return `<div class="form-group" style="margin:0;">
-                                <label class="form-label">${Fmt.escape(v.label)} <code style="font-size:0.7rem;color:var(--text-muted);">{{${Fmt.escape(v.key)}}}</code></label>
-                                <input class="form-input" data-rkk-val="${Fmt.escape(v.key)}" value="${Fmt.escape(this.val('rkk_val_' + v.key, ''))}" placeholder="${Fmt.escape(v.ket || '')}">
-                            </div>`;
-                        }
-                        return `<div class="form-group" style="margin:0;">
-                            <label class="form-label">${Fmt.escape(v.label)} <code style="font-size:0.7rem;color:var(--text-muted);">(per baris)</code></label>
-                            <div style="display:grid;gap:6px;">
-                                ${Array.from({length: baris}, (_, i) => {
-                                    const key = v.key + (i + 1);
-                                    return `<input class="form-input" data-rkk-val="${Fmt.escape(key)}" value="${Fmt.escape(this.val('rkk_val_' + key, ''))}" placeholder="baris ${i + 1} — ${Fmt.escape(v.ket || '')}">`;
-                                }).join('')}
-                            </div>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </div>` : ''}
-            ${vlist.length ? `
-            <div style="margin-bottom:14px;">
-                <div style="font-size:0.8rem;font-weight:600;margin-bottom:6px;">Variabel Tabel ${t.toUpperCase()}</div>
-                <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
-                    <table class="table" style="width:100%;font-size:0.78rem;">
-                        <thead><tr><th style="width:210px;">Nama Variabel</th><th>Keterangan</th><th style="width:120px;">Default</th></tr></thead>
-                        <tbody>
-                            ${vlist.map(v => `<tr>
-                                <td><code>{{${Fmt.escape(v.key)}}}</code>${v.perBaris ? ' <span style="font-size:0.68rem;color:var(--text-muted);">(per baris)</span>' : ''}</td>
-                                <td>${Fmt.escape(v.label)}${v.ket ? ' — ' + Fmt.escape(v.ket) : ''}</td>
-                                <td>${v.default !== undefined ? Fmt.escape(String(v.default)) : '-'}</td>
-                            </tr>`).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>` : ''}
-            <div class="form-group" style="margin-bottom:12px;">
-                <label class="form-label">Format Tabel ${t.toUpperCase()} (HTML)</label>
-                <textarea class="form-input" id="rkk-html-${t}" rows="14" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.75rem;line-height:1.5;white-space:pre;overflow:auto;">${Fmt.escape(this.val(key, def))}</textarea>
-                <p style="font-size:0.72rem;color:var(--text-muted);margin:6px 0 0;">
-                    Placeholder baris: <code>{{1mungkin}}</code> <code>{{1parah}}</code> <code>{{1resiko}}</code> <code>{{1tingkat}}</code> — angka depan otomatis menyesuaikan baris.
-                    Nilai <code>{{1resiko}}</code> = F × A, <code>{{1tingkat}}</code> otomatis dari ambang risiko di atas.
-                </p>
+            <div class="rkk-legend">
+                <span><b class="rkk-dot rkk-dot--ce"></b> sel teks — klik untuk mengedit</span>
+                <span><b class="rkk-dot rkk-dot--val"></b> chip nilai — klik untuk mengisi (tersimpan ke variabel)</span>
+                <span><b class="rkk-dot rkk-dot--ref"></b> otomatis dari data dokumen</span>
+                <span><b class="rkk-dot rkk-dot--calc"></b> hitungan (F×A / Tingkat)</span>
             </div>
-            <div class="form-row">
-                <div class="form-group" style="width:100%;min-width:0;">
-                    <label class="form-label">Pratinjau (contoh: 1 baris, F=3, A=4)</label>
-                    <small style="display:block;font-size:0.7rem;color:var(--text-muted);margin:2px 0 6px;">Tabel 15 kolom — geser horizontal bila belum seluruhnya terlihat.</small>
-                    <div id="rkk-preview" class="rkk-preview"></div>
-                </div>
-            </div>`;
-        this.renderPreview();
-        lucide.createIcons({ nodes: [el] });
+            <div class="rkk-preview rkk-builder" oninput="RkkPage._onEdit(event)"></div>
+            <p class="rkk-builder-note">Format menyimpan satu baris template; jumlah baris diatur di Pengaturan Umum, nilai per baris &amp; data tender diisi saat pembuatan dokumen.
+            Sel bernilai kosong menampilkan label variabelnya.</p>`;
+        const box = el.querySelector('.rkk-builder');
+        box.appendChild(table);
+        // tempel = teks polos, agar struktur tabel tdk terkontaminasi HTML eksternal
+        table.addEventListener('paste', e => {
+            if (!e.clipboardData) return;
+            e.preventDefault();
+            document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+        });
+        this._updateCalc();
     },
 
-    // pratinjau: pakai engine backend (/api/rkk/preview) biar sama persis dgn hasil dokumen
-    async renderPreview() {
-        const el = document.getElementById('rkk-preview');
-        if (!el) return;
-        const t = this._tab;
-        const html = this.val('rkk_tabel_' + t, '');
-        try {
-            const res = await API.request('/rkk/preview', {
-                method: 'POST',
-                body: { tabel: t, html, baris: Number(this.val('rkk_baris_' + t, 1)) || 1,
-                        mungkin: Number(this.val('rkk_default_mungkin', 1)) || 1,
-                        parah: Number(this.val('rkk_default_parah', 1)) || 1,
-                        ambang: { kecil: Number(this.val('rkk_ambang_kecil', 4)), sedang: Number(this.val('rkk_ambang_sedang', 12)), besar: Number(this.val('rkk_ambang_besar', 25)) } }
+    /* ── klasifikasi & dekorasi sel ─────────────────────────────── */
+
+    // jenis token: 'calc' (hitungan terkunci), 'val' (nilai bisa diedit), 'ref' (dari dokumen)
+    _classify(key, vlist) {
+        let m = key.match(/^(\d+)(resiko|tingkat)$/);
+        if (m) return { k: 'calc', row: m[1], name: m[2] };
+        m = key.match(/^(\d+)(mungkin|parah)$/);
+        if (m) return { k: 'val', key: m[2] + '_b' + m[1] };
+        if (vlist.some(v => v.key === key)) return { k: 'val', key };
+        if (/^[A-Za-z_]\w*_b\d+$/.test(key) && vlist.some(v => v.perBaris && key.startsWith(v.key))) return { k: 'val', key };
+        return { k: 'ref' };
+    },
+
+    _labelFor(key, vlist) {
+        const v = vlist.find(x => x.key === key) || vlist.find(x => x.perBaris && key.startsWith(x.key));
+        return v ? v.label : key;
+    },
+
+    // nilai utk chip: rkk_val_* (draft > settings) → default F/A → kosong
+    _valueOf(key) {
+        const v = this._cur('rkk_val_' + key);
+        if (v !== '' && v !== undefined && v !== null) return String(v);
+        const d = this._def(key);
+        return d === '' ? '' : String(d);
+    },
+
+    _def(key) {
+        if (/^mungkin_b\d+$/.test(key)) return document.getElementById('rkk-mungkin')?.value ?? this.val('rkk_default_mungkin', 1);
+        if (/^parah_b\d+$/.test(key)) return document.getElementById('rkk-parah')?.value ?? this.val('rkk_default_parah', 1);
+        return '';
+    },
+
+    _chipVal(origKey, varKey, vlist) {
+        const ph = this._labelFor(varKey, vlist);
+        return `<span class="rkk-vval" contenteditable="true" data-rkk-key="${varKey}" data-rkk-token="{{${origKey}}}" data-ph="${Fmt.escape(ph)}">${Fmt.escape(this._valueOf(varKey))}</span>`;
+    },
+
+    _chipCalc(origKey, row, name) {
+        return `<span class="rkk-vc" contenteditable="false" data-rkk-calc="${row}" data-rkk-name="${name}" data-rkk-token="{{${origKey}}}" title="Hitungan otomatis (F × A / ambang risiko)">0</span>`;
+    },
+
+    _chipRef(origKey) {
+        return `<span class="rkk-vref" contenteditable="false" data-rkk-token="{{${origKey}}}" title="Variabel terisi otomatis dari data dokumen">${Fmt.escape(origKey.replace(/^\d+/, ''))}</span>`;
+    },
+
+    // ubah tiap sel: teks biasa → contenteditable; token → chip (nilai/hitungan/ref)
+    _decorate(table) {
+        const vlist = (this.varDefs || {})[this._tab] || [];
+        const TOKRE = /\{\{\s*(\w+)\s*\}\}/g;   // \w+ → ikut token berawalan angka ({{1mungkin}})
+        table.querySelectorAll('td, th').forEach(cell => {
+            const html = cell.innerHTML;
+            const toks = html.match(TOKRE) || [];
+            if (!toks.length) {
+                cell.setAttribute('contenteditable', 'true');
+                cell.classList.add('rkk-ce');
+                return;
+            }
+            const pure = toks.length === 1 && cell.textContent.replace(/\{\{[^}]*\}\}/g, '').trim() === '';
+            if (pure) {
+                const key = toks[0].replace(/^\{\{\s*/, '').replace(/\s*\}\}$/, '');
+                const kind = this._classify(key, vlist);
+                // penanda: bila chip dihapus user, token dipulihkan saat serialisasi
+                cell.dataset.rkkPure = '{{' + key + '}}';
+                cell.innerHTML = kind.k === 'val' ? this._chipVal(key, kind.key, vlist)
+                    : kind.k === 'calc' ? this._chipCalc(key, kind.row, kind.name)
+                    : this._chipRef(key);
+                return;
+            }
+            // campuran: tiap placeholder jadi chip, sel tetap bisa diedit di sekitarnya
+            cell.innerHTML = html.replace(TOKRE, (m, key) => {
+                const kind = this._classify(key, vlist);
+                return kind.k === 'val' ? this._chipVal(key, kind.key, vlist)
+                    : kind.k === 'calc' ? this._chipCalc(key, kind.row, kind.name)
+                    : this._chipRef(key);
             });
-            el.innerHTML = (res.data && res.data.html
-                ? `<div class="rkk-preview-inner">${res.data.html}</div>`
-                : '<span style="color:var(--text-muted);font-size:0.8rem;">Pratinjau tidak tersedia.</span>');
-            this.fitPreview();
-        } catch (e) {
-            el.innerHTML = `<span style="color:var(--danger);font-size:0.8rem;">${Fmt.escape(e.message)}</span>`;
+            cell.setAttribute('contenteditable', 'true');
+            cell.classList.add('rkk-ce');
+        });
+    },
+
+    /* ── hitungan live (F×A, Tingkat, chip F/A mengikuti default) ── */
+
+    _updateCalc() {
+        if (!this._tbl) return;
+        // chip F/A tanpa nilai manual → ikut input default
+        this._tbl.querySelectorAll('[data-rkk-key]').forEach(ch => {
+            const k = ch.dataset.rkkKey;
+            if (!/^(mungkin|parah)_b\d+$/.test(k)) return;
+            if (this._cur('rkk_val_' + k) !== '') return;
+            ch.textContent = String(this._def(k));
+        });
+        const num = (id, def) => { const v = document.getElementById(id)?.value; const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; };
+        const amb = {
+            kecil: num('rkk-kecil', parseInt(this.val('rkk_ambang_kecil', 4), 10)),
+            sedang: num('rkk-sedang', parseInt(this.val('rkk_ambang_sedang', 12), 10)),
+        };
+        this._tbl.querySelectorAll('[data-rkk-calc]').forEach(ch => {
+            const row = ch.dataset.rkkCalc || '1';
+            const F = parseInt(this._valueOf('mungkin_b' + row), 10) || 0;
+            const A = parseInt(this._valueOf('parah_b' + row), 10) || 0;
+            const n = F * A;
+            ch.textContent = (ch.dataset.rkkName === 'resiko')
+                ? String(n)
+                : (n <= amb.kecil ? 'Risiko Kecil' : n <= amb.sedang ? 'Risiko Sedang' : 'Risiko Besar');
+        });
+    },
+
+    _onEdit(e) {
+        this._dirtyTabs[this._tab] = true;
+        const t = e.target;
+        const k = t && t.dataset ? t.dataset.rkkKey : null;
+        if (k) {
+            this._dirtyVals['rkk_val_' + k] = t.textContent;
+            this._updateCalc();
         }
     },
 
-    // Tabel RKK 15 kolom → tetap 100% (biar terbaca) & card punya scroll horizontal
-    fitPreview() {
-        const box = document.getElementById('rkk-preview');
-        const inner = box && box.querySelector('.rkk-preview-inner');
-        const table = inner && inner.querySelector('table');
-        if (!box || !table) return;
-        inner.style.transform = '';
-        inner.style.width = '';
-        box.style.height = '';
-        const nat = table.scrollWidth;
-        if (nat > box.clientWidth - 20) {
-            box.classList.add('rkk-preview--scroll');
-        } else {
-            box.classList.remove('rkk-preview--scroll');
-        }
+    /* ── serialisasi: tabel live → HTML format ──────────────────── */
+
+    _serialize(table) {
+        const clone = table.cloneNode(true);
+        // sel murni yg chip-nya dihapus → pulihkan token aslinya
+        clone.querySelectorAll('[data-rkk-pure]').forEach(c => {
+            if (!c.querySelector('[data-rkk-token]')) c.textContent = c.dataset.rkkPure;
+            c.removeAttribute('data-rkk-pure');
+        });
+        // chip → token asli (nilai tdk pernah bocor ke format)
+        clone.querySelectorAll('[data-rkk-token]').forEach(ch => {
+            ch.replaceWith(document.createTextNode(ch.dataset.rkkToken));
+        });
+        clone.querySelectorAll('td, th').forEach(c => {
+            c.removeAttribute('contenteditable');
+            c.removeAttribute('data-ph');
+            (c.className || '').split(/\s+/).forEach(cl => { if (cl.startsWith('rkk-')) c.classList.remove(cl); });
+            c.innerHTML = this._cleanCell(c.innerHTML);
+        });
+        return clone.outerHTML;
+    },
+
+    // artefak contenteditable (<div> dari Enter, br ganda) → HTML rapi
+    _cleanCell(h) {
+        return String(h)
+            .replace(/<div\b[^>]*>/gi, '<br>').replace(/<\/div>/gi, '')
+            .replace(/(?:<br>\s*){2,}/g, '<br>')
+            .replace(/^\s*(?:<br>\s*)+/i, '').replace(/(?:\s*<br>)+\s*$/i, '');
     },
 
     async save() {
         const btn = document.getElementById('rkk-save-btn');
         if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span> Menyimpan...'; }
         try {
+            this._stashDraft();
             const payload = {
                 rkk_baris_b1: Number(document.getElementById('rkk-baris-b1')?.value) || 1,
                 rkk_baris_b2: Number(document.getElementById('rkk-baris-b2')?.value) || 1,
@@ -236,16 +346,16 @@ const RkkPage = {
                 rkk_ambang_kecil: Number(document.getElementById('rkk-kecil')?.value) || 0,
                 rkk_ambang_sedang: Number(document.getElementById('rkk-sedang')?.value) || 0,
                 rkk_ambang_besar: Number(document.getElementById('rkk-besar')?.value) || 0,
-                rkk_tabel_b1: document.getElementById('rkk-html-b1')?.value || '',
-                rkk_tabel_b2: document.getElementById('rkk-html-b2')?.value || '',
-                rkk_tabel_d2: document.getElementById('rkk-html-d2')?.value || '',
             };
-            // nilai isian manual
-            document.querySelectorAll('[data-rkk-val]').forEach(inp => {
-                payload['rkk_val_' + inp.dataset.rkkVal] = inp.value;
+            // format tabel: hanya tab yg diedit (tab lain tdk ditimpa)
+            Object.keys(this._dirtyTabs).forEach(t => {
+                if (this._draftHtml[t] !== undefined) payload['rkk_tabel_' + t] = this._draftHtml[t];
             });
+            // nilai isian dari chip builder
+            Object.keys(this._dirtyVals).forEach(k => { payload[k] = this._dirtyVals[k]; });
             await API.updateSettings(payload);
             this.cfg = { ...(this.cfg || {}), ...payload };
+            this._draftHtml = {}; this._dirtyVals = {}; this._dirtyTabs = {};
             Toast.success('Pengaturan RKK disimpan');
         } catch (e) {
             Toast.error('Gagal menyimpan: ' + e.message);
