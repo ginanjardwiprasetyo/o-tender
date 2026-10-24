@@ -435,7 +435,13 @@ function buildDocHtml(o) {
         // ...
         if (rkk) {
             const { renderTables } = require('./rkk');
-            const tRkk = renderTables(rkk, varsAll);
+            // edited table HTML dari wizard (contenteditable preview) menang atas settings
+            const cfg = { ...rkk };
+            if (varsAll.rkk_tabel_b1) cfg.b1 = varsAll.rkk_tabel_b1;
+            if (varsAll.rkk_tabel_b2) cfg.b2 = varsAll.rkk_tabel_b2;
+            if (varsAll.rkk_tabel_d2) cfg.d2 = varsAll.rkk_tabel_d2;
+            if (varsAll.rkk_tabel_e1) cfg.e1 = varsAll.rkk_tabel_e1;
+            const tRkk = renderTables(cfg, varsAll);
             content = content
                 .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
                 .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)

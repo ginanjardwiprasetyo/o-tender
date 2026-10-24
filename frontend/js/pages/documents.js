@@ -351,6 +351,10 @@ const DocumentsPage = {
             this._wz.rkk.barisB1 = n;
             this._wz.rkk.barisB2 = this._wz.rkk.barisB2 || 1;
             this._wz.rkk.barisD2 = this._wz.rkk.barisD2 || 1;
+            // jangka waktu (hari) → jumlah minggu untuk E1
+            const jw = parseInt(json.data.jangka_waktu, 10);
+            if (Number.isFinite(jw) && jw > 0) this._wz.rkk.jangkaWaktu = jw;
+            this._wz.rkk.weeks = Number.isFinite(jw) && jw > 0 ? Math.ceil(jw / 7) : 7;
             rkk.forEach((row, i) => {
                 const idx = i + 1;
                 const uraian = Array.isArray(row) ? (row[1] || '') : (row.uraian || row.uraian_pekerjaan || '');
@@ -684,10 +688,11 @@ const DocumentsPage = {
             '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="' + prefix + '_b' + (i + 1) + '" placeholder="uraian pekerjaan baris ' + (i + 1) + '">' +
             '<input class="form-input" style="font-size:0.82rem;" data-rkk-var="identifikasi_b' + (i + 1) + '" placeholder="identifikasi bahaya baris ' + (i + 1) + '">' +
             '</div></div>').join('');
+        const w = r.weeks || 7;
         const e1 = r.e1rows && r.e1rows.length ? r.e1rows : [
-            { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', '', '', '', 'x', '', ''] },
-            { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', 'x', 'x', 'x', 'x', 'x', 'x'] },
-            { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: ['', 'x', '', 'x', '', 'x', ''] },
+            { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', '', '', '', 'x', '', ''][i] || '')) },
+            { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', 'x', 'x', 'x', 'x', 'x', 'x'][i] || '')) },
+            { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['', 'x', '', 'x', '', 'x', ''][i] || '')) },
         ];
         const e1Html = this._wzRkkE1Html(e1);
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:12px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— tabel B1/B2/D2/E1 (jumlah baris B1/B2/D2 bisa ditambah)</span></div>' +
@@ -723,10 +728,10 @@ const DocumentsPage = {
         '<div class="form-group"><label class="form-label">Keparahan default (A)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-parah" value="' + (r.parah || 1) + '"></div></div>' +
         '<div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px;">' +
         '<div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Preview Tabel RKK (dari data tender + #rkk)</div>' +
-        '<div id="wz-rkk-preview-b1" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
-        '<div id="wz-rkk-preview-b2" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
-        '<div id="wz-rkk-preview-d2" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
-        '<div id="wz-rkk-preview-e1" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>' +
+        '<div id="wz-rkk-preview-b1" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'b1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
+        '<div id="wz-rkk-preview-b2" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'b2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
+        '<div id="wz-rkk-preview-d2" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'d2\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
+        '<div id="wz-rkk-preview-e1" contenteditable="true" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);" onblur="DocumentsPage._wzRkkSavePreview(\'e1\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>' +
         '</div>';
         lucide.createIcons();
         this._wzRkkLoadPreview();
@@ -745,6 +750,15 @@ const DocumentsPage = {
                 '</tr>').join('') + '</tbody></table>';
     },
 
+    _wzRkkSavePreview(key, el) {
+        if (!el) return;
+        const html = el.innerHTML;
+        this._wz.rkk = this._wz.rkk || {};
+        this._wz.rkk['rkk_tabel_' + key] = html;
+        if (!this._wz.rkk.vars) this._wz.rkk.vars = {};
+        this._wz.rkk.vars['rkk_tabel_' + key] = html;
+    },
+
     async _wzRkkLoadPreview() {
         try {
             const settings = await API.getSettings();
@@ -757,10 +771,11 @@ const DocumentsPage = {
             const mungkin = Number(s.rkk_default_mungkin) || 1;
             const parah = Number(s.rkk_default_parah) || 1;
             const ambang = { kecil: Number(s.rkk_ambang_kecil) || 4, sedang: Number(s.rkk_ambang_sedang) || 12, besar: Number(s.rkk_ambang_besar) || 25 };
+            const w = r.weeks || 7;
             const e1rows = (r.e1rows && r.e1rows.length) ? r.e1rows : [
-                { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', '', '', '', 'x', '', ''] },
-                { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', 'x', 'x', 'x', 'x', 'x', 'x'] },
-                { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: ['', 'x', '', 'x', '', 'x', ''] },
+                { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', '', '', '', 'x', '', ''][i] || '')) },
+                { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['x', 'x', 'x', 'x', 'x', 'x', 'x'][i] || '')) },
+                { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: Array.from({ length: w }, (_, i) => (['', 'x', '', 'x', '', 'x', ''][i] || '')) },
             ];
             const [h1, h2, h3, h4] = await Promise.all([
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'b1', html: s.rkk_tabel_b1 || '', baris: b1, mungkin, parah, ambang, vars } }),
@@ -950,7 +965,11 @@ const DocumentsPage = {
                     equipment_ids: [], attachments: [],
                     vars: { ...vars, ...(rk.vars || {}),
                         rkk_baris_b1: rk.barisB1 || 1, rkk_baris_b2: rk.barisB2 || 1, rkk_baris_d2: rk.barisD2 || 1,
-                        ...(rk.e1rows?.length ? { rkk_e1rows: rk.e1rows } : {}) },
+                        ...(rk.e1rows?.length ? { rkk_e1rows: rk.e1rows } : {}),
+                        ...(rk.rkk_tabel_b1 ? { rkk_tabel_b1: rk.rkk_tabel_b1 } : {}),
+                        ...(rk.rkk_tabel_b2 ? { rkk_tabel_b2: rk.rkk_tabel_b2 } : {}),
+                        ...(rk.rkk_tabel_d2 ? { rkk_tabel_d2: rk.rkk_tabel_d2 } : {}),
+                        ...(rk.rkk_tabel_e1 ? { rkk_tabel_e1: rk.rkk_tabel_e1 } : {}) },
                 } });
             }
             const dt = new Date(L.tgl);
