@@ -343,7 +343,7 @@ function buildDocHtml(o) {
     // scope .rkk-tbl → cuma tabel RKK ({{tabel_b1}}..{{tabel_e1}}), jgn ganggu tabel layout template
     // ponytail: nomor halaman via @page margin box — counter(page)/counter(pages) di body-context
     //           (position:fixed ::after) selalu 0 di Chrome; margin box baru dihitung benar per halaman.
-    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } @page { @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #555; } }' : '';
+    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl.rkk-d2 table, .rkk-tbl.rkk-e1 table { font-size: 12pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } @page { @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #555; } }' : '';
     const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 25.4mm; }@page pg_A4P { size: 210mm 297mm; margin: 25.4mm; }@page pg_A4L { size: 297mm 210mm; margin: 25.4mm; }@page pg_F4P { size: 215mm 330mm; margin: 25.4mm; }@page pg_F4L { size: 330mm 215mm; margin: 25.4mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media screen { .doc-page { padding: 25.4mm !important; } } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }${rkkExtraCss}`;
     const dynCss = [];
     let bodyHtml = '';
@@ -457,12 +457,12 @@ function buildDocHtml(o) {
             content = content
                 .replace(/\{\{rkk_b1\}\}/g, w(tRkk.b1))
                 .replace(/\{\{rkk_b2\}\}/g, w(tRkk.b2))
-                .replace(/\{\{rkk_d2\}\}/g, w(tRkk.d2))
+                .replace(/\{\{rkk_d2\}\}/g, w(tRkk.d2, 'rkk-d2'))
                 .replace(/\{\{rkk_e1\}\}/g, w(tRkk.e1 || '', 'rkk-e1'))
                 // alias template 03 RKK: nama placeholder tabel_* pakai makna sama
                 .replace(/\{\{tabel_b1\}\}/g, w(tRkk.b1))
                 .replace(/\{\{tabel_b2\}\}/g, w(tRkk.b2))
-                .replace(/\{\{tabel_d2\}\}/g, w(tRkk.d2))
+                .replace(/\{\{tabel_d2\}\}/g, w(tRkk.d2, 'rkk-d2'))
                 .replace(/\{\{tabel_e1\}\}/g, w(tRkk.e1 || '', 'rkk-e1'));
         }
         const paguNum = vars['nilai_pagu'] || vars['pagu'] || vars['pagu_anggaran'];
@@ -547,7 +547,7 @@ function buildDocHtml(o) {
             }
             return out + content.slice(last);
         })();
-        const kopAuto = /\{\{kop_surat\}\}/.test(t.html_content || '') ? '' : kopUse;
+        const kopAuto = /\{\{kop_surat\}\}/.test(t.html_content || '') ? '' : (isRkk03 ? '' : kopUse);
         // (gugusan paragraf tengah dinonaktifkan — bikin halaman kaku & kosong separuh; cukup wrap TTD)
         const segParts = content.split(BRK);
         content = segParts.map((sg, i) => {
