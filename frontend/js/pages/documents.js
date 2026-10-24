@@ -296,9 +296,9 @@ const DocumentsPage = {
         const s = (q || '').trim().toLowerCase();
         let list;
         if (!s) {
-            // tanpa ketikan: 2 tender terakhir (paling baru)
-            list = [...this._tenderAktif()]
-                .sort((a, b) => (new Date(b.created_at || 0).getTime() || 0) - (new Date(a.created_at || 0).getTime() || 0))
+            // tanpa ketikan: 2 tender terakhir (paling baru diikuti)
+            list = [...(this.tenders || [])]
+                .sort((a, b) => (new Date(b.followed_at || 0).getTime() || 0) - (new Date(a.followed_at || 0).getTime() || 0))
                 .slice(0, 2);
         } else if (s.length < 3) {
             // < 3 karakter: jangan tampilkan semua (hindari list panjang)
@@ -309,7 +309,7 @@ const DocumentsPage = {
             // cari di semua tender (bukan cuma aktif) supaya proyek lama tetap ketemu
             const pool = (this.tenders || []);
             list = pool.filter(t => {
-                const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd, t.lokasi].filter(Boolean).join(' ').toLowerCase();
+                const hay = [t.nama_tender, t.kode_tender, t.klpd, t.satuan_kerja, t.lokasi_pekerjaan].filter(Boolean).join(' ').toLowerCase();
                 if (!hay.includes(s)) return false;
                 // batasi proyek tahun ini agar tidak kebanyakan; tapi jangan buang kalau tahun kosong
                 if (String(t.tahun || '').trim() && String(t.tahun).trim() !== year) return false;
@@ -318,7 +318,7 @@ const DocumentsPage = {
             // kalau filter tahun bikin kosong, coba lagi tanpa batas tahun
             if (!list.length) {
                 list = pool.filter(t => {
-                    const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd, t.lokasi].filter(Boolean).join(' ').toLowerCase();
+                    const hay = [t.nama_tender, t.kode_tender, t.klpd, t.satuan_kerja, t.lokasi_pekerjaan].filter(Boolean).join(' ').toLowerCase();
                     return hay.includes(s);
                 });
             }
