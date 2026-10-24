@@ -188,7 +188,7 @@ const DocumentsPage = {
         // ponytail: Enter di langkah Review = Generate; guard overlay biar tak nyasar setelah modal tutup
         document.removeEventListener('keydown', this._wzKeyH);
         this._wzKeyH = (e) => {
-            if (e.key !== 'Enter' || this._wzStep !== 5) return;
+            if (e.key !== 'Enter' || this._wzStep !== 6) return;
             if (document.getElementById('modal-overlay')?.classList.contains('hidden')) return;
             const gen = document.getElementById('doc-generate-btn');
             if (!gen || gen.style.display === 'none' || gen.disabled) return;
@@ -203,20 +203,21 @@ const DocumentsPage = {
         this._wzStep = n;
         document.querySelectorAll('.doc-wiz-pane').forEach(p => { p.style.display = +p.dataset.pane === n ? '' : 'none'; });
         document.querySelectorAll('.doc-wiz-step').forEach(s => {
-            const active = +s.dataset.s === Math.min(n, 5);
+            const active = +s.dataset.s === Math.min(n, 6);
             s.style.background = active ? 'var(--accent)' : (+s.dataset.s < n ? 'var(--success)' : 'var(--bg-tertiary)');
             s.style.color = (active || +s.dataset.s < n) ? '#fff' : 'var(--text-muted)';
         });
         document.getElementById('doc-wiz-back').style.display = n > 1 ? '' : 'none';
-        document.getElementById('doc-wiz-next').style.display = n < 5 ? '' : 'none';
+        document.getElementById('doc-wiz-next').style.display = n < 6 ? '' : 'none';
         const gen = document.getElementById('doc-generate-btn');
-        if (gen) gen.style.display = n === 5 ? '' : 'none';
+        if (gen) gen.style.display = n === 6 ? '' : 'none';
         const hints = {
             1: 'Pilih paket yang belum lewat upload — data terisi otomatis, semua bisa diubah.',
             2: 'Nomor tersusun otomatis. Perihal menentukan segmen. Tanggal bisa diklik.',
             3: 'Ceklis alat yang dipakai. Klik nilai untuk ubah. Sewa → lampirkan file.',
             4: 'Pilih pelaksana & K3 — profil terisi otomatis, riwayat boleh kosong.',
-            5: 'Periksa ringkasan, lalu generate PDF.',
+            5: 'Tabel RKK B1/B2/D2/E1 — isian untuk dokumen 03 RKK.',
+            6: 'Periksa ringkasan, lalu generate PDF (semua dokumen: 01–04).',
         };
         const hint = document.getElementById('doc-wiz-hint');
         if (hint) hint.textContent = hints[n] || '';
@@ -894,6 +895,19 @@ const DocumentsPage = {
                     equipment_ids: [], attachments: [],
                 } });
             }
+            // 03 RKK — selalu ikut batch; isian dari tab RKK (B1/B2/D2/E1) + baris dinamis
+            const tpl03 = this.templates.find(x => /03 ?rkk/i.test(x.nama_template));
+            if (tpl03?.id) {
+                const rk = this._wz.rkk || {};
+                jobs.push({ label: '03 RKK', payload: {
+                    ...payload, template_ids: [tpl03.id],
+                    signer2_id: null, signer3_id: null, signer2_data: undefined, signer3_data: undefined,
+                    equipment_ids: [], attachments: [],
+                    vars: { ...vars, ...(rk.vars || {}),
+                        rkk_baris_b1: rk.barisB1 || 1, rkk_baris_b2: rk.barisB2 || 1, rkk_baris_d2: rk.barisD2 || 1,
+                        ...(rk.e1rows?.length ? { rkk_e1rows: rk.e1rows } : {}) },
+                } });
+            }
             const dt = new Date(L.tgl);
             if (L.urut && L.sdg) {
                 await API.createLetter({
@@ -913,19 +927,25 @@ const DocumentsPage = {
         }
     },
 
-    // ponytail: generate di background — tidak memblokir UI; notif toast setelah selesai
+    // ponytail: generate di background — 1 job gagal TIDAK membatalkan sisanya; laporan per-dokumen
     async _runGenerateBg(jobs) {
         const list = Array.isArray(jobs) ? jobs : [{ label: 'PDF', payload: jobs }];
-        const outs = [];
-        try {
-            for (const j of list) {
+        const outs = [], fails = [];
+        for (const j of list) {
+            try {
                 const res = await API.generateDocument(j.payload);
                 outs.push({ label: j.label, d: res.data });
                 if (res.data?.scan_error) Toast.warning(`${j.label}: efek scan GAGAL (${res.data.scan_error}) — PDF tetap normal`);
+            } catch (e) {
+                fails.push(`${j.label}: ${e.message}`);
+                Toast.error(`${j.label} gagal: ${e.message}`);
             }
-            Toast.success(outs.map(o => `✅ ${o.label} (${o.d.pages} hal.) — <a href="${o.d.url}" target="_blank" style="color:var(--accent); font-weight:700;">Unduh</a>`).join('<br>'));
+        }
+        if (outs.length) {
+            Toast.success(outs.map(o => `✅ ${o.label} (${o.d.pages} hal.) — <a href="${o.d.url}" target="_blank" style="color:var(--accent); font-weight:700;">Unduh</a>`).join('<br>')
+                + (fails.length ? `<br><span style="color:var(--warning); font-weight:700;">⚠ gagal: ${fails.length}</span>` : ''));
             this.loadRecords();
-        } catch (e) { Toast.error('Generate gagal: ' + e.message); }
+        } else if (fails.length) Toast.error('Generate gagal: ' + fails.join('; '));
     },
 
     // ── FORM 3: 01 alat (tabel + pagination + ceklis + lampiran per alat) ──
@@ -1267,18 +1287,19 @@ const DocumentsPage = {
             if (this._wzStep === 2) this._wzCollect2();
             if (this._wzStep === 3) this._wzCollect3();
             if (this._wzStep === 4) this._wzCollect4();
+            if (this._wzStep === 5) this._wzCollect5();   // RKK — data utk dokumen 03
             if (n === 2) this._wzForm2();
             if (n === 3) this._wzForm3();
             if (n === 4) this._wzForm4();
-            if (n === 5) this._wzReview();
-        if (n === 5) { this._wzForm5(); }
+            if (n === 5) this._wzForm5();
+            if (n === 6) this._wzReview();
         }
         this._wizShow(n);
     },
 
     // ponytail: lompat via step — mundur bebas, maju wajib valid + collect tiap tahap terlewati
     _wizGo(n) {
-        n = Math.min(5, Math.max(1, n));
+        n = Math.min(6, Math.max(1, n));
         if (n === this._wzStep) return;
         if (n < this._wzStep) { this._wizShow(n); return; }
         for (let s = this._wzStep; s < n; s++) {
@@ -1287,13 +1308,12 @@ const DocumentsPage = {
             if (s === 3) this._wzCollect3();
             if (s === 4) this._wzCollect4();
             if (s === 5) this._wzCollect5();
-            if (s === 5) this._wzCollect5();
         }
         if (n === 2) this._wzForm2();
         if (n === 3) this._wzForm3();
         if (n === 4) this._wzForm4();
-        if (n === 5) this._wzReview();
-        if (n === 5) { this._wzForm5(); }
+        if (n === 5) this._wzForm5();
+        if (n === 6) this._wzReview();
         this._wizShow(n);
     },
 

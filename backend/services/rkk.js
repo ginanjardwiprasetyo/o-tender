@@ -293,14 +293,16 @@ function renderTables(cfg = {}, vars = {}) {
         defaultParah: cfg.defaultParah,
         ambang: cfg.ambang || AMBANG,
     };
+    // jumlah baris per-dokumen menang (dari form) → fallback pengaturan → 1
+    const jumlah = (k, d) => { const n = parseInt(vars['rkk_baris_' + k], 10); return Number.isFinite(n) && n >= 1 ? n : d; };
     return {
-        b1: renderB1(cfg.b1 || DEFAULTS.b1, vars, { ...opt, jumlahBaris: cfg.barisB1 || 1 }),
-        b2: renderSimple(cfg.b2 || DEFAULTS.b2, vars, { ...opt, jumlahBaris: cfg.barisB2 || 1 }),
+        b1: renderB1(cfg.b1 || DEFAULTS.b1, vars, { ...opt, jumlahBaris: jumlah('b1', cfg.barisB1) || 1 }),
+        b2: renderSimple(cfg.b2 || DEFAULTS.b2, vars, { ...opt, jumlahBaris: jumlah('b2', cfg.barisB2) || 1 }),
     // E1: formatnya dari user; kalau ada data e1rows, rakit; kalau tidak, pakai format apa adanya
     e1: (cfg.e1 && cfg.e1.trim())
         ? (vars && Array.isArray(vars._e1rows) ? renderE1(vars._e1rows, cfg.e1) : cfg.e1)
         : '',
-        d2: renderSimple(cfg.d2 || DEFAULTS.d2, vars, { ...opt, jumlahBaris: 1 }),
+        d2: renderSimple(cfg.d2 || DEFAULTS.d2, vars, { ...opt, jumlahBaris: jumlah('d2', 1) }),
     };
 }
 

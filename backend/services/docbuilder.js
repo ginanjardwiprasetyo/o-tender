@@ -427,7 +427,12 @@ function buildDocHtml(o) {
                 .replace(/\{\{rkk_b1\}\}/g, tRkk.b1)
                 .replace(/\{\{rkk_b2\}\}/g, tRkk.b2)
                 .replace(/\{\{rkk_d2\}\}/g, tRkk.d2)
-                .replace(/\{\{rkk_e1\}\}/g, tRkk.e1 || '');
+                .replace(/\{\{rkk_e1\}\}/g, tRkk.e1 || '')
+                // alias template 03 RKK: nama placeholder tabel_* pakai makna sama
+                .replace(/\{\{tabel_b1\}\}/g, tRkk.b1)
+                .replace(/\{\{tabel_b2\}\}/g, tRkk.b2)
+                .replace(/\{\{tabel_d2\}\}/g, tRkk.d2)
+                .replace(/\{\{tabel_e1\}\}/g, tRkk.e1 || '');
         }
         const paguNum = vars['nilai_pagu'] || vars['pagu'] || vars['pagu_anggaran'];
         // ponytail: angka murni → "Rp. 480.000.000"; terbilang selalu dalam kurung
