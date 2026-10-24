@@ -693,7 +693,7 @@ const DocumentsPage = {
             '<div class="wz-rkk-box" style="border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:420px; background:var(--bg-secondary);" id="wz-rkk-preview-' + key + '" contenteditable="true" onblur="DocumentsPage._wzRkkSavePreview(\'' + key + '\', this)"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat ' + title + '...</span></div>';
         pane.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">5. RKK <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— preview tabel siap pakai; klik & edit langsung di tabel</span></div>' +
         // th & td wrap (overflow-wrap:anywhere) supaya tabel tidak melebihi lebar area kertas
-        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle;} .wz-rkk-box th{text-align:justify;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);}</style>' +
+        '<style>.wz-rkk-box table{font-size:0.72rem; width:100%; max-width:100%; table-layout:fixed;} .wz-rkk-box th,.wz-rkk-box td{border:1px solid var(--border-color); padding:3px 5px; white-space:normal; overflow-wrap:anywhere; word-break:break-word; vertical-align:middle; position:relative;} .wz-rkk-box th{text-align:justify;} .wz-rkk-box th:first-child,.wz-rkk-box td:first-child{white-space:nowrap; width:1%;} .wz-rkk-box [data-wz-calc]{background:var(--bg-overlay);} .wz-rsz-col{position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;} .wz-rsz-col:hover{background:var(--accent);} .wz-rsz-row{position:absolute;left:0;right:0;bottom:-3px;height:6px;cursor:row-resize;z-index:10;background:transparent;} .wz-rsz-row:hover{background:var(--accent);}</style>' +
         box('b1', 'Tabel B1 — Identifikasi Bahaya & Penilaian Risiko', 'data dari tender + #rkk') +
         box('b2', 'Tabel B2 — Program Pengendalian Risiko', 'isi dari #rkk') +
         box('d2', 'Tabel D2 — Langkah Pekerjaan & Pengendalian', 'data dari tender + #rkk') +
@@ -704,15 +704,68 @@ const DocumentsPage = {
 
     _wzRkkSavePreview(key, el) {
         if (!el) return;
-        // atribut dekorasi preview (kunci sel hitungan) jangan ikut tersimpan ke dokumen
-        const html = el.innerHTML.replace(/\scontenteditable="false"/g, '').replace(/\sdata-wz-calc="1"/g, '');
+        // buang handle resize (data-rsz) & atribut dekorasi (data-wz-calc/contenteditable) sebelum simpan
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('[data-rsz="1"]').forEach(n => n.remove());
+        clone.querySelectorAll('[data-wz-calc="1"]').forEach(td => { td.removeAttribute('data-wz-calc'); td.removeAttribute('contenteditable'); });
+        const html = clone.innerHTML;
         this._wz.rkk = this._wz.rkk || {};
         this._wz.rkk['rkk_tabel_' + key] = html;
         if (!this._wz.rkk.vars) this._wz.rkk.vars = {};
         this._wz.rkk.vars['rkk_tabel_' + key] = html;
     },
 
-    // B1: "Nilai Risiko (FxA)" & "Tingkat Risiko (TR)" = fungsi (F×A + ambang) → non-editabel,
+    // Geser (resize) kolom & baris tabel preview; ukuran terkunci setelah dilepas (fixed layout).
+    _wzRkkMakeResizable(el) {
+        if (!el) return;
+        [...el.querySelectorAll('table')].forEach(table => {
+            table.style.tableLayout = 'fixed';
+            // kolom: handle di tiap th baris header terakhir
+            const headerRow = table.tHead ? table.tHead.rows[table.tHead.rows.length - 1] : null;
+            if (headerRow) {
+                [...headerRow.cells].forEach((th, idx) => {
+                    const h = document.createElement('div');
+                    h.className = 'wz-rsz-col';
+                    h.setAttribute('data-rsz', '1');
+                    th.appendChild(h);
+                    let startX = 0, startW = 0;
+                    h.addEventListener('mousedown', (e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        startX = e.clientX; startW = th.offsetWidth;
+                        const onMove = (ev) => {
+                            const newW = Math.max(24, startW + (ev.clientX - startX));
+                            [...table.rows].forEach(r => { if (r.cells[idx]) r.cells[idx].style.width = newW + 'px'; });
+                        };
+                        const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup', onUp);
+                    });
+                });
+            }
+            // baris: handle di sel pertama tiap tr body
+            [...table.tBodies].forEach(tb => [...tb.rows].forEach(tr => {
+                if (!tr.cells.length) return;
+                const cell = tr.cells[0];
+                const h = document.createElement('div');
+                h.className = 'wz-rsz-row';
+                h.setAttribute('data-rsz', '1');
+                cell.appendChild(h);
+                let startY = 0, startH = 0;
+                h.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    startY = e.clientY; startH = tr.offsetHeight;
+                    const onMove = (ev) => {
+                        const newH = Math.max(16, startH + (ev.clientY - startY));
+                        tr.style.height = newH + 'px';
+                        [...tr.cells].forEach(c => c.style.height = newH + 'px');
+                    };
+                    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            }));
+        });
+    },
     // dihitung ulang otomatis saat F/A di baris yang sama diedit.
     _wzRkkDecorateB1(el, ambang) {
         if (!el) return;
@@ -758,9 +811,11 @@ const DocumentsPage = {
             tr.cells[nc].textContent = String(nilai);
             tr.cells[tc].textContent = nilai <= (ambang?.kecil || 4) ? 'Risiko Kecil' : nilai <= (ambang?.sedang || 12) ? 'Risiko Sedang' : 'Risiko Besar';
         });
-        if (el._wzRkkHitung) el.removeEventListener('input', el._wzRkkHitung);
-        el._wzRkkHitung = (e) => { const tr = e.target.closest?.('tbody tr'); if (tr) hitung(tr); };
-        el.addEventListener('input', el._wzRkkHitung);
+        // pasang listener langsung di tiap sel F/A (event 'input' pada contenteditable tidak selalu bubble dgn target yang tepat)
+        rows.forEach(tr => {
+            C.f.forEach(fc => { const td = tr.cells[fc]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
+            C.a.forEach(ac => { const td = tr.cells[ac]; if (td && !td._wzCalc) { td._wzCalc = true; td.addEventListener('input', () => hitung(tr)); } });
+        });
     },
 
     // bangun vars lengkap utk preview RKK — mirror dr path generate (wzGenerate)
@@ -801,10 +856,10 @@ const DocumentsPage = {
                 API.request('/rkk/preview', { method: 'POST', body: { tabel: 'e1', html: s.rkk_tabel_e1 || '', baris: 1, mungkin, parah, ambang, vars } }),
             ]);
             const el1 = document.getElementById('wz-rkk-preview-b1'); if (el1) el1.innerHTML = (h1.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
-            if (el1) this._wzRkkDecorateB1(el1, ambang);   // FxA & TR jadi fungsi (non-editabel)
-            const el2 = document.getElementById('wz-rkk-preview-b2'); if (el2) el2.innerHTML = (h2.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
-            const el3 = document.getElementById('wz-rkk-preview-d2'); if (el3) el3.innerHTML = (h3.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
-            const el4 = document.getElementById('wz-rkk-preview-e1'); if (el4) el4.innerHTML = (h4.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+            if (el1) { this._wzRkkDecorateB1(el1, ambang); this._wzRkkMakeResizable(el1); }
+            const el2 = document.getElementById('wz-rkk-preview-b2'); if (el2) el2.innerHTML = (h2.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>'); if (el2) this._wzRkkMakeResizable(el2);
+            const el3 = document.getElementById('wz-rkk-preview-d2'); if (el3) el3.innerHTML = (h3.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>'); if (el3) this._wzRkkMakeResizable(el3);
+            const el4 = document.getElementById('wz-rkk-preview-e1'); if (el4) el4.innerHTML = (h4.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>'); if (el4) this._wzRkkMakeResizable(el4);
         } catch (e) {
             console.warn('[RKK preview] gagal:', e.message);
         }
