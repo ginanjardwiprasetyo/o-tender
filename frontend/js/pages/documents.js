@@ -306,13 +306,22 @@ const DocumentsPage = {
             return;
         } else {
             const year = String(new Date().getFullYear());
-            list = this._tenderAktif().filter(t => {
-                const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd].filter(Boolean).join(' ').toLowerCase();
+            // cari di semua tender (bukan cuma aktif) supaya proyek lama tetap ketemu
+            const pool = (this.tenders || []);
+            list = pool.filter(t => {
+                const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd, t.lokasi].filter(Boolean).join(' ').toLowerCase();
                 if (!hay.includes(s)) return false;
-                // batasi proyek tahun ini agar tidak kebanyakan
+                // batasi proyek tahun ini agar tidak kebanyakan; tapi jangan buang kalau tahun kosong
                 if (String(t.tahun || '').trim() && String(t.tahun).trim() !== year) return false;
                 return true;
             });
+            // kalau filter tahun bikin kosong, coba lagi tanpa batas tahun
+            if (!list.length) {
+                list = pool.filter(t => {
+                    const hay = [t.nama_tender, t.nama_paket, t.kode_tender, t.klpd, t.lokasi].filter(Boolean).join(' ').toLowerCase();
+                    return hay.includes(s);
+                });
+            }
         }
         if (!list.length) { box.innerHTML = '<div style="padding:10px 14px; font-size:0.82rem; color:var(--text-muted);">Tidak ketemu.</div>'; }
         else box.innerHTML = list.map(t => `
