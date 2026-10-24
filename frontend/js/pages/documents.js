@@ -716,8 +716,16 @@ const DocumentsPage = {
         '<div style="margin-top:10px;"><div id="wz-rkk-e1-wrap">' + e1Html + '</div>' +
         '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="DocumentsPage._wzRkkE1Add()">+ Tambah Kegiatan</button></div></details>' +
         '<div class="form-row" style="margin-top:8px;"><div class="form-group"><label class="form-label">Kemungkinan default (F)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-mungkin" value="' + (r.mungkin || 1) + '"></div>' +
-        '<div class="form-group"><label class="form-label">Keparahan default (A)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-parah" value="' + (r.parah || 1) + '"></div></div>';
+        '<div class="form-group"><label class="form-label">Keparahan default (A)</label><input type="number" min="1" max="5" class="form-input" id="wz-rkk-parah" value="' + (r.parah || 1) + '"></div></div>' +
+        '<div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px;">' +
+        '<div style="font-weight:700; font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Preview Tabel RKK (dari data tender + #rkk)</div>' +
+        '<div id="wz-rkk-preview-b1" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B1...</span></div>' +
+        '<div id="wz-rkk-preview-b2" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat B2...</span></div>' +
+        '<div id="wz-rkk-preview-d2" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat D2...</span></div>' +
+        '<div id="wz-rkk-preview-e1" style="margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px; padding:8px; overflow:auto; max-height:360px; background:var(--bg-secondary);"><span style="color:var(--text-muted); font-size:0.8rem;">Memuat E1...</span></div>' +
+        '</div>';
         lucide.createIcons();
+        this._wzRkkLoadPreview();
     },
 
     _wzRkkE1Html(rows) {
@@ -731,6 +739,38 @@ const DocumentsPage = {
                 (r2.minggu || []).map(m => '<td style="text-align:center;"><input type="checkbox" data-e1="minggu" ' + (m === 'x' ? 'checked' : '') + ' style="accent-color:var(--accent);"></td>').join('') +
                 '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm" style="padding:2px 6px;" onclick="this.closest(\'tr\').remove(); DocumentsPage._wzRkkE1Renumber();">×</button></td>' +
                 '</tr>').join('') + '</tbody></table>';
+    },
+
+    async _wzRkkLoadPreview() {
+        try {
+            const settings = await API.getSettings();
+            const s = settings.data || {};
+            const r = this._wz.rkk || {};
+            const vars = r.vars || {};
+            const b1 = Number(r.barisB1) || Number(s.rkk_baris_b1) || 1;
+            const b2 = Number(r.barisB2) || Number(s.rkk_baris_b2) || 1;
+            const d2 = Number(r.barisD2) || 1;
+            const mungkin = Number(s.rkk_default_mungkin) || 1;
+            const parah = Number(s.rkk_default_parah) || 1;
+            const ambang = { kecil: Number(s.rkk_ambang_kecil) || 4, sedang: Number(s.rkk_ambang_sedang) || 12, besar: Number(s.rkk_ambang_besar) || 25 };
+            const e1rows = (r.e1rows && r.e1rows.length) ? r.e1rows : [
+                { kegiatan: 'Inspeksi Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', '', '', '', 'x', '', ''] },
+                { kegiatan: 'Patroli Keselamatan Konstruksi', pic: '{{posisi_k3}}', minggu: ['x', 'x', 'x', 'x', 'x', 'x', 'x'] },
+                { kegiatan: 'Audit Internal', pic: '{{posisi_k3}}', minggu: ['', 'x', '', 'x', '', 'x', ''] },
+            ];
+            const [h1, h2, h3, h4] = await Promise.all([
+                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'b1', html: s.rkk_tabel_b1 || '', baris: b1, mungkin, parah, ambang, vars } }),
+                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'b2', html: s.rkk_tabel_b2 || '', baris: b2, mungkin, parah, ambang, vars } }),
+                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'd2', html: s.rkk_tabel_d2 || '', baris: d2, mungkin, parah, ambang, vars } }),
+                API.request('/rkk/preview', { method: 'POST', body: { tabel: 'e1', html: s.rkk_tabel_e1 || '', baris: 1, mungkin, parah, ambang, vars: { ...vars, _e1rows: e1rows } } }),
+            ]);
+            const el1 = document.getElementById('wz-rkk-preview-b1'); if (el1) el1.innerHTML = (h1.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+            const el2 = document.getElementById('wz-rkk-preview-b2'); if (el2) el2.innerHTML = (h2.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+            const el3 = document.getElementById('wz-rkk-preview-d2'); if (el3) el3.innerHTML = (h3.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+            const el4 = document.getElementById('wz-rkk-preview-e1'); if (el4) el4.innerHTML = (h4.data?.html || '<span style="color:var(--text-muted);">Tidak tersedia</span>');
+        } catch (e) {
+            console.warn('[RKK preview] gagal:', e.message);
+        }
     },
 
     _wzRkkE1Add() {
