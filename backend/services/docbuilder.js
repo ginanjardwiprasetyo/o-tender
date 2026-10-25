@@ -343,7 +343,7 @@ function buildDocHtml(o) {
     // scope .rkk-tbl → cuma tabel RKK ({{tabel_b1}}..{{tabel_e1}}), jgn ganggu tabel layout template
     // ponytail: nomor halaman via @page margin box — counter(page)/counter(pages) di body-context
     //           (position:fixed ::after) selalu 0 di Chrome; margin box baru dihitung benar per halaman.
-    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl.rkk-d2 table, .rkk-tbl.rkk-e1 table { font-size: 12pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } @page { @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #555; } }' : '';
+    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl.rkk-d2 table, .rkk-tbl.rkk-e1 table { font-size: 12pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } .doc-page a.toc-link { display: flex; align-items: baseline; } .doc-page a.toc-link .toc-title { min-width: 0; } .doc-page a.toc-link .toc-lead { flex: 1 1 auto; min-width: 14pt; margin: 0 6pt; align-self: stretch; background-image: radial-gradient(circle, #000 0.9pt, transparent 1.2pt); background-size: 5pt 100%; background-position: 0 100%; background-repeat: repeat-x; } @page { @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9pt; color: #555; } }' : '';
     const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 25.4mm; }@page pg_A4P { size: 210mm 297mm; margin: 25.4mm; }@page pg_A4L { size: 297mm 210mm; margin: 25.4mm; }@page pg_F4P { size: 215mm 330mm; margin: 25.4mm; }@page pg_F4L { size: 330mm 215mm; margin: 25.4mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media screen { .doc-page { padding: 25.4mm !important; } } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }${rkkExtraCss}`;
     const dynCss = [];
     let bodyHtml = '';
@@ -400,13 +400,13 @@ function buildDocHtml(o) {
         _fa('alamat_pelaksana', pelaksana?.alamat || '-');
         _fa('pendidikan_pelaksana_terakhir', pelaksana?.tingkat_pendidikan || '-');
         _fa('pengalaman_pelaksana', (pelaksana?.tahun_pengalaman != null ? pelaksana.tahun_pengalaman + ' tahun' : '-'));
-        _fa('keahlian_pelaksana', pelaksana?.sertifikat_keahlian || '-');
+        _fa('keahlian_pelaksana', pelaksana?.sertifikat_keahlian || pelaksana?.ska?.[0]?.nama_sertifikat || '-');
         _fa('nama_k3', k3?.nama || '');
         _fa('posisi_k3', k3?.jabatan || '');
         _fa('alamat_k3', k3?.alamat || '-');
         _fa('pendidikan_k3_terakhir', k3?.tingkat_pendidikan || '-');
         _fa('pengalaman_k3', (k3?.tahun_pengalaman != null ? k3.tahun_pengalaman + ' tahun' : '-'));
-        _fa('keahlian_k3', k3?.sertifikat_keahlian || '-');
+        _fa('keahlian_k3', k3?.sertifikat_keahlian || k3?.ska?.[0]?.nama_sertifikat || '-');
         // alias umum template 03 RKK
         _fa('nama_pekerjaan', vars['nama_paket'] || vars['perihal'] || '');
         _fa('tanggal_surat_tanpaTempat', tglFormat);
@@ -485,6 +485,10 @@ function buildDocHtml(o) {
         content = content.replace(/\{\{[^}]+\}\}/g, '.........');
         // ponytail: font Docs dilucuti → mutlak ikut font_surat #company (mekanisme !important terbukti tak mempan)
         content = content.replace(/font-family\s*:(\s*[^;"<>&]|&(quot|apos|amp|lt|gt);)+;?/gi, '');
+        // ponytail: ekspor GDocs buang tab-stop → leader TOC cuma &nbsp; (angka tak sejajar, tanpa titik).
+        // Ubah jadi flex: judul | titik-titik yang tumbuh | angka rata kanan (visual sama dgn Docs).
+        if (isRkk03) content = content.replace(/<a\b([^>]*)>([^<]*?)(?:&nbsp;){3,}(\d+)(<\/a>)/g,
+            (m, attr, txt, num) => `<a${attr} class="toc-link"><span class="toc-title">${txt}</span><span class="toc-lead"></span>${num}</a>`);
         // ponytail: <p> kosong tepat sebelum blok TTD dibuang (1 baris mati per <p>) → TTD naik rapat ke isi
         // ponytail: HANYA gaya 04 surat (ada ttd_pelaksana/ttd_k3); dokumen direktur-saja (01 alat/02 personil)
         //           menyimpan paragraf kosong sebagai ruang tanda tangan basah + ruang cap
@@ -547,7 +551,8 @@ function buildDocHtml(o) {
         const segParts = content.split(BRK);
         content = segParts.map((sg, i) => {
             const hasText = /[^<>\s]/.test(sg.replace(/<[^>]*>|&(nbsp|#160|#32);/g, ''));
-            return (i > 0 ? BRK : '') + (i > 0 && hasText ? kopUse : '') + sg;
+            // ponytail: RKK 03 → kop+hanya cover, jangan disuntik tiap segmen (BRK antar section)
+            return (i > 0 ? BRK : '') + (i > 0 && hasText && !isRkk03 ? kopUse : '') + sg;
         }).join('');
         const pp = paperOf(t);
         // ponytail: padding inline per-doc-page pakai simetris 25.4mm (sesuai @page margin simetris baru)
@@ -565,13 +570,19 @@ function buildDocHtml(o) {
         const secs = Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
         if (secs) {
             const { text, map } = indexedText(content);
+            // ponytail: judul seksi juga dikutip daftar isi (teks dlm <a href="#...">) —
+            // split di situ memecah halaman di tengah TOC; lompati kandidat dalam link TOC.
+            const inTocLink = (pos) => {
+                const open = content.lastIndexOf('<a', pos);
+                if (open < 0) return false;
+                return open > content.lastIndexOf('</a>', pos) && /^<a\s[^>]*href="#/i.test(content.slice(open, open + 300));
+            };
             const bounds = [];
             let from = 0;
             for (let k = 1; k < secs.length; k++) {
-                // ponytail: RKK 03 sec1="daftar isi" → skip split agar TOC+cover tetap 1 halaman, bukan potong 6 halaman
-                if (isRkk03 && k === 1) continue;
                 const a = secs[k].anchor || '';
-                const p = a ? text.indexOf(a, from) : -1;
+                let p = a ? text.indexOf(a, from) : -1;
+                while (p >= 0 && inTocLink(map[p])) p = text.indexOf(a, p + 1);
                 if (p < 0) { console.warn('[docbuilder] anchor section tak ditemukan:', t.nama_template, JSON.stringify(a).slice(0, 60)); continue; }
                 from = p + a.length;
                 const cut = sectionSplitPos(content, map[p]);

@@ -44,6 +44,67 @@ async function htmlToPdf(html, paper) {
     }
 }
 
+// ---- TOC RKK 03 (2-pass) -------------------------------------------------
+// Angka daftar isi diekspor statis dari GDocs → tidak cocok dgn paginasi Chrome.
+// Render 1x, cari halaman asli tiap judul di teks PDF, tulis ulang angka, render ulang.
+// Kunci: baris TOC selalu berakhiran angka (dan baris panjang ter-wrap) → tak akan
+//        cocok persis dgn judul badan; jadi kecocokan = halaman badan yang benar.
+const stripTocPrefix = s => s.replace(/^[a-z0-9]+(?:\.[a-z0-9]+)*\.\s*/i, '');
+const normToc = s => stripTocPrefix(String(s).trim()).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+async function tocPageLines(pdfBytes) {
+    try {
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBytes), useSystemFonts: true }).promise;
+        const lines = [];
+        for (let i = 1; i <= doc.numPages; i++) {
+            const tc = await (await doc.getPage(i)).getTextContent();
+            const byY = {};
+            tc.items.forEach(it => { const y = Math.round(it.transform[5]); (byY[y] = byY[y] || []).push(it); });
+            // y PDF dari bawah → urut desc = urut baca atas→bawah; halaman naik → urutan dokumen
+            Object.keys(byY).map(Number).sort((a, b) => b - a).forEach(y => {
+                const items = byY[y].sort((a, b) => a.transform[4] - b.transform[4]);
+                lines.push({ page: i, text: normToc(items.map(o => o.str).join(' ')) });
+            });
+        }
+        if (typeof doc.destroy === 'function') await doc.destroy();
+        return lines;
+    } catch (e) {
+        console.warn('[toc] gagal baca PDF (angka dibiarkan statis):', e.message);
+        return null;
+    }
+}
+
+async function patchTocNumbers(html, paper) {
+    const hasToc = /<a\b[^>]*href="#[^"]*"[^>]*>[\s\S]*?(?:&nbsp;|<\/span>)\d+\s*<\/a>/.test(html);
+    if (!hasToc) return html;
+    const lines = await tocPageLines(await htmlToPdf(html, paper));
+    if (!lines || !lines.length) return html;
+    const misses = new Set();
+    let fixed = 0, lastPage = 0;
+    const out = html.replace(/<a\b[^>]*href="#[^"]*"[^>]*>([\s\S]*?)<\/a>/g, (m, inner) => {
+        if (!/(?:&nbsp;|<\/span>)\d+\s*$/.test(inner)) return m;
+        // bentuk dot-leader: judul di dlm <span class="toc-title">; bentuk lama: teks + &nbsp;
+        const mt = /<span class="toc-title">([\s\S]*?)<\/span>/.exec(inner);
+        const raw = mt ? mt[1] : inner.replace(/(?:&nbsp;|\s)+\d+\s*$/, '');
+        const title = normToc(raw);
+        if (!title) return m;
+        // urut dokumen; judul bisa muncul lg (mis. judul tabel) → ambil cocok pertama
+        // setelah halaman entri sebelumnya agar halaman selalu naik spt urutan TOC
+        const hits = lines.filter(l => l.text === title);
+        const hit = hits.find(l => l.page >= lastPage) || hits[0];
+        if (!hit) { misses.add(title); return m; }
+        lastPage = hit.page;
+        const newInner = inner.replace(/(\d+)(\s*)$/, String(hit.page) + '$2');
+        if (newInner === inner) return m;
+        fixed++;
+        return m.replace(inner, newInner);
+    });
+    console.log('[toc] angka ditulis ulang:', fixed + ' entri');
+    if (misses.size) console.log('[toc] judul tak cocok:', [...misses].map(s => JSON.stringify(s.slice(0, 45))).join(', '));
+    return out;
+}
+
 /** Ambil bytes lampiran: URL http(s) atau path lokal /uploads/... */
 async function fetchBytes(url) {
     if (/^https?:/i.test(url)) {
@@ -188,11 +249,15 @@ async function loadContext(body) {
         const { rows } = await db.query('SELECT * FROM templates WHERE id = ANY($1)', [template_ids]);
         tpl = template_ids.map(id => rows.find(t => t.id === id)).filter(Boolean);
     }
-    // ponytail: override (jabatan pilihan wizard) tetap dipakai walau sid kosong —
-    // dulu `: null` membuat {{posisi_k3}}/{{ttd_k3}} hilang saat user tak memilih personil.
-    const getSigner = (sid, over) => sid
-        ? db.query('SELECT * FROM personnel WHERE id = $1', [sid]).then(r => ({ ...(r.rows[0] || {}), ...(over || {}) }))
-        : (over && Object.keys(over).length ? { ...over } : null);
+    // ponytail: nama sertifikat (kolom Profesi/Keahlian C.2) ada di personnel_ska, bukan kolom
+    // sertifikat_keahlian (sering NULL) → sertakan daftar ska agar auto-fill docbuilder bisa baca
+    const getSigner = (sid, over) => {
+        if (!sid) return over && Object.keys(over).length ? { ...over } : null;
+        return Promise.all([
+            db.query('SELECT * FROM personnel WHERE id = $1', [sid]),
+            db.query('SELECT * FROM personnel_ska WHERE personnel_id = $1 ORDER BY berlaku_sampai DESC NULLS LAST', [sid]),
+        ]).then(([r, s]) => ({ ...(r.rows[0] || {}), ska: s.rows, ...(over || {}) }));
+    };
     const [comp, signer, signer2, signer3, personil, equip] = await Promise.all([
         db.query('SELECT * FROM companies WHERE id = $1', [company_id]).then(r => r.rows[0]),
         getSigner(signer_id), getSigner(signer2_id, body.signer2_data), getSigner(signer3_id, body.signer3_data),
@@ -208,7 +273,7 @@ async function loadContext(body) {
 router.post('/preview', async (req, res) => {
     try {
         const ctx = await loadContext(req.body);
-        const { html } = buildDocHtml({
+        const built = buildDocHtml({
             templates: ctx.tpl, company: ctx.comp, signer: ctx.signer,
             signer2: ctx.signer2, signer3: ctx.signer3, show: req.body.show || {},
             personil: ctx.personil, equip: ctx.equip,
@@ -218,6 +283,9 @@ router.post('/preview', async (req, res) => {
             attachments: req.body.attachments || [],
             rkk: await loadSettings(db),
         });
+        // RKK 03: samakan angka daftar isi dgn paginasi sebenarnya (render 1x utk baca halaman)
+        const isRkk03 = ctx.tpl.some(t => /03 ?rkk/i.test(t.nama_template || ''));
+        const html = isRkk03 ? await patchTocNumbers(built.html, built.paper) : built.html;
         res.json({ success: true, html });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -251,6 +319,9 @@ router.post('/generate', async (req, res) => {
             stampMode: true, // TTD/cap jadi jangkar ukur → di-stamp presisi di bawah
             rkk: await loadSettings(db),
         });
+        // RKK 03: angka daftar isi ditulis ulang sesuai paginasi → render ulang sekali
+        const isRkk03 = ctx.tpl.some(t => /03 ?rkk/i.test(t.nama_template || ''));
+        if (isRkk03) built.html = await patchTocNumbers(built.html, built.paper);
         const mainPdf = await htmlToPdf(built.html, built.paper);
         const stamped = await stampSignatures(mainPdf, {
             built, comp: ctx.comp, ttdAdjust,
