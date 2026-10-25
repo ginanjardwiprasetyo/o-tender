@@ -36,7 +36,7 @@ async function htmlToPdf(html, paper) {
     const b = await getBrowser();
     const page = await b.newPage();
     try {
-        await page.setContent(html, { waitUntil: 'networkidle', timeout: 60000 });
+        await page.setContent(html, { waitUntil: 'load', timeout: 120000 });
         // ponytail: kertas 100% dari CSS (@page + named pages campur orientasi) — tanpa format/width JS
         return await page.pdf({ printBackground: true, preferCSSPageSize: true });
     } finally {
