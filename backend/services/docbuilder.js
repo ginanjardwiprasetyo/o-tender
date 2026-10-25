@@ -395,7 +395,7 @@ function buildDocHtml(o) {
                 <td style="border:1px solid #000; padding:4px;">${esc(p.tingkat_pendidikan || '-')}</td>
                 <td style="border:1px solid #000; padding:4px;">${esc(p.jabatan || '-')}</td>
                 <td style="border:1px solid #000; padding:4px; text-align:center;">${esc(String(p.tahun_pengalaman ?? 0))}</td>
-                <td style="border:1px solid #000; padding:4px;">${esc(p.sertifikat_keahlian || '-')}</td>
+                <td style="border:1px solid #000; padding:4px;">${esc(p.ska?.[0]?.nama_sertifikat || p.sertifikat_keahlian || '-')}</td>
             </tr>`).join('')}
             </tbody>
         </table>` : '<p style="color:#999; font-style:italic; text-align:center; border:1px dashed #ccc; padding:12px;">Tidak ada personil terpilih.</p>';

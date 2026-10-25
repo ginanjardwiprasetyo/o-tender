@@ -267,9 +267,46 @@ async function loadContext(body) {
         personil_ids.length ? db.query('SELECT * FROM personnel WHERE id = ANY($1)', [personil_ids]).then(r => r.rows) : [],
         equipment_ids.length ? db.query('SELECT * FROM equipments WHERE id = ANY($1)', [equipment_ids]).then(r => r.rows) : [],
     ]);
+    // ponytail: dokumen 02 personil — lampirkan ijazah (education_history.ijazah_url)
+    // dan sertifikat SKK (personnel.skk_url) otomatis; isi sertifikat dari personnel_ska.nama_sertifikat
+    let autoAttachments = [];
+    let reqBodyAttachments = body.attachments || [];
+    if (personil_ids.length) {
+        const skaRes = await db.query('SELECT * FROM personnel_ska WHERE personnel_id = ANY($1) ORDER BY berlaku_sampai DESC NULLS LAST', [personil_ids]);
+        const eduRes = await db.query('SELECT * FROM education_history WHERE personnel_id = ANY($1) ORDER BY tahun_tamat DESC', [personil_ids]);
+        const skaByPerson = {};
+        skaRes.rows.forEach(sk => { if (!skaByPerson[sk.personnel_id]) skaByPerson[sk.personnel_id] = []; skaByPerson[sk.personnel_id].push(sk); });
+        const eduByPerson = {};
+        eduRes.rows.forEach(ed => { if (!eduByPerson[ed.personnel_id]) eduByPerson[ed.personnel_id] = []; eduByPerson[ed.personnel_id].push(ed); });
+        const enrichedPersonil = personil.map(p => ({
+            ...p,
+            ska: skaByPerson[p.id] || [],
+            education_history: eduByPerson[p.id] || [],
+        }));
+        // lampirkan file: ijazah_url (terbaru) + skk_url per personil
+        for (const p of enrichedPersonil) {
+            const skkUrl = p.skk_url;
+            if (skkUrl) autoAttachments.push({ url: skkUrl, label: `SKK - ${p.nama || 'Personil'}` });
+            const edus = p.education_history || [];
+            for (const ed of edus) {
+                if (ed.ijazah_url) autoAttachments.push({ url: ed.ijazah_url, label: `Ijazah - ${p.nama || 'Personil'} (${ed.jenjang || ''})`.trim() });
+            }
+        }
+        // hapus duplikat URL, pertahankan urutan
+        const seenUrls = new Set();
+        const uniqueAuto = autoAttachments.filter(a => { if (seenUrls.has(a.url)) return false; seenUrls.add(a.url); return true; });
+        // update personil array dengan data ska (digunakan docbuilder)
+        for (let i = 0; i < personil.length; i++) {
+            personil[i] = enrichedPersonil.find(ep => ep.id === personil[i].id) || personil[i];
+        }
+        // gabungkan dengan attachments yang sudah dikirim user
+        reqBodyAttachments = [...(body.attachments || []), ...uniqueAuto];
+    } else {
+        reqBodyAttachments = body.attachments || [];
+    }
     if (!comp) throw new Error('Perusahaan tidak ditemukan');
     if (!tpl.length) throw new Error('Template tidak ditemukan');
-    return { comp, tpl, signer, signer2, signer3, personil, equip };
+    return { comp, tpl, signer, signer2, signer3, personil, equip, attachments: reqBodyAttachments };
 }
 
 // POST /api/documents/preview — kembalikan HTML final (untuk preview + drag TTD/cap)
@@ -283,7 +320,7 @@ router.post('/preview', async (req, res) => {
             vars: req.body.vars || {}, capOpts: req.body.cap_opts || {},
             ttdAdjust: req.body.ttd_adjust || {},
             withCapTtd: req.body.with_cap_ttd !== false,
-            attachments: req.body.attachments || [],
+            attachments: ctx.attachments || [],
             rkk: await loadSettings(db),
         });
         // RKK 03: samakan angka daftar isi dgn paginasi sebenarnya (render 1x utk baca halaman)
@@ -318,7 +355,7 @@ router.post('/generate', async (req, res) => {
             vars: req.body.vars || {}, capOpts: req.body.cap_opts || {},
             ttdAdjust,
             withCapTtd: req.body.with_cap_ttd !== false,
-            attachments: req.body.attachments || [],
+            attachments: ctx.attachments || [],
             stampMode: true, // TTD/cap jadi jangkar ukur → di-stamp presisi di bawah
             rkk: await loadSettings(db),
         });
