@@ -95,7 +95,10 @@ async function patchTocNumbers(html, paper) {
         const hit = hits.find(l => l.page >= lastPage) || hits[0];
         if (!hit) { misses.add(title); return m; }
         lastPage = hit.page;
-        const newInner = inner.replace(/(\d+)(\s*)$/, String(hit.page) + '$2');
+        // angka TOC = nomor halaman tercetak di footer; cover tanpa nomor & @page:first reset 0
+        // → footer = halaman fisik − 1 (p2 = "1"), spt docs
+        const shown = String(Math.max(1, hit.page - 1));
+        const newInner = inner.replace(/(\d+)(\s*)$/, shown + '$2');
         if (newInner === inner) return m;
         fixed++;
         return m.replace(inner, newInner);

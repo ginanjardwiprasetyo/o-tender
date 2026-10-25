@@ -111,6 +111,94 @@ function sectionSplitPos(html, srcPos) {
     return -1;
 }
 
+/**
+ * Peta posisi konten → deklarasi `counter-reset` untuk counter lst-ctn-* agar numbering GDocs
+ * (A.2., B.1., …) tetap jalan setelah konten dipecah jadi segmen .doc-page — tiap segmen div
+ * terpisah, counter tak lagi mewarisi dari <ol> di segmen sebelumnya (Chromium scope per-subtree).
+ * Hitung dari <ol>/<ul class="lst-…"> (reset inline/start) + jumlah <li> langsung di dalamnya.
+ */
+function buildCounterIndex(html) {
+    const states = [];
+    let map = {};
+    const stack = [];
+    const re = /<(\/?)(ol|ul|li)\b[^>]*>/g;
+    let m;
+    while ((m = re.exec(html))) {
+        const isClose = m[1] === '/', tag = m[2];
+        if (tag === 'li') {
+            if (!isClose) {
+                const top = stack[stack.length - 1];
+                if (top && top.counter) map = { ...map, [top.counter]: (map[top.counter] || 0) + 1 };
+            }
+        } else if (!isClose) {
+            const cls = (/\bclass="([^"]*)"/i.exec(m[0]) || [])[1] || '';
+            const first = cls.trim().split(/\s+/)[0] || '';
+            let counter = null;
+            if (/^lst-/i.test(first)) {
+                counter = 'lst-ctn-' + first.replace(/^lst-/i, '');
+                const st = /\bstart="(\d+)"/i.exec(m[0]);
+                const inl = new RegExp('counter-reset:\\s*' + counter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d+)', 'i').exec(m[0]);
+                const reset = inl ? (parseInt(inl[1], 10) || 0)
+                    : st ? Math.max(0, (parseInt(st[1], 10) || 1) - 1)
+                        : /\bstart\b/.test(cls) ? 0 : null;
+                if (reset != null) map = { ...map, [counter]: reset };
+            }
+            stack.push({ counter });
+        } else {
+            stack.pop();
+        }
+        states.push({ pos: m.index, map });
+    }
+    return (pos) => {
+        let lo = 0, hi = states.length - 1, best = null;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (states[mid].pos <= pos) { best = states[mid]; lo = mid + 1; } else hi = mid - 1;
+        }
+        return best ? best.map : {};
+    };
+}
+
+const crDecl = (vals, min) => {
+    const keys = Object.keys(vals).filter(k => (min ? vals[k] > 0 : true));
+    // pemisah antar counter dalam satu counter-reset: spasi (bukan ; — ; mengakhiri deklarasi)
+    return keys.length ? `counter-reset:${keys.map(k => `${k} ${vals[k]}`).join(' ')};` : '';
+};
+
+/**
+ * Injeksi counter-reset gabungan ke setiap <ol>/<ul class="lst-…">: heading (li di ol subsection)
+ * di Chromium TIDAK mewarisi increment <li> row section dari <ol> sibling sebelumnya — hanya
+ * counter-reset pada ancestor yang terbaca. Nilai = state index di posisi tag, ditimpa reset inline
+ * yang sudah ada (own counter) supaya counter sendiri (start/inl) tetap menang.
+ * off = offset tag dalam konten ASLI (index dibangun dari konten sebelum injeksi ini).
+ */
+function injectCounterScope(html, at) {
+    return html.replace(/<(ol|ul)\b[^>]*>/g, (tag, _g, off) => {
+        const st = at(off);
+        const own = {};
+        const ex = /counter-reset:\s*([^;"]+)/i.exec(tag);
+        if (ex) ex[1].split(';').forEach(p => { const [n, v] = p.trim().split(/\s+/); if (n) own[n] = v; });
+        const decl = crDecl({ ...st, ...own }, false);
+        if (!decl) return tag;
+        if (ex) return tag.replace(/\s*style="([^"]*)"/i, (_m, sty) => ` style="${sty.replace(/counter-reset:[^;"]*;?/i, '')}${decl}"`);
+        if (/\sstyle="/.test(tag)) return tag.replace(/style="/, `style="${decl}`);
+        return tag.replace(/^<(ol|ul)/, m => `${m} style="${decl}"`);
+    });
+}
+
+/** Buang paragraf kosong di ekor segmen (sisa ekspor GDocs) — kalau tidak, sisa tingginya bikin halaman kosong. */
+function trimTrailingEmpty(s) {
+    const re = /<p\b[^>]*>(?:(?!<\/p>).)*?<\/p>\s*$/i;
+    for (let i = 0; i < 20; i++) {
+        const m = re.exec(s);
+        if (!m) break;
+        const text = m[0].replace(/<[^>]+>/g, '').replace(/&nbsp;|&#160;/gi, '').trim();
+        if (text) break;
+        s = s.slice(0, m.index);
+    }
+    return s;
+}
+
 function fmtDateID(s) {    if (!s || s === '-') return '-';
     const d = new Date(s);
     if (isNaN(d.getTime())) return s;
@@ -180,6 +268,8 @@ function buildDocHtml(o) {
     const tglSurat = kota ? `${kota}, ${tglFormat}` : tglFormat;
     const headerSurat = `<table style="width:100%; max-width:550px; margin-bottom:20px; border-collapse:collapse; font-size:inherit; font-family:inherit;"><tr><td style="width:90px; vertical-align:top; padding:2px 0;">Nomor</td><td style="width:12px; vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${esc(vars.nomor_surat)}</td></tr><tr><td style="vertical-align:top; padding:2px 0;">Lampiran</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;">${esc(vars.lampiran || '-')}</td></tr><tr><td style="vertical-align:top; padding:2px 0;">Perihal</td><td style="vertical-align:top; padding:2px 0;">:</td><td style="padding:2px 0;"><strong>${esc(vars.perihal)}</strong></td></tr></table>`;
 
+    // isRkk03 dipakai juga oleh blok TTD di bawah → definisikan sebelum sigBox
+    const isRkk03 = templates.some(t => /03 ?rkk/i.test(t.nama_template || ''));
     // ── Cap & TTD (+adjust drag/rotasi dari preview) ──
     // ponytail: ukuran cap ikut master #company (tanpa batas 130)
     const capSz = ttdAdjust.cap_size || parseInt(capOpts?.size) || parseInt(comp?.cap_size) || 110;
@@ -220,10 +310,13 @@ function buildDocHtml(o) {
             : `<div id="srv-ttd" style="text-align:center; position:relative; display:block; margin:10px 0 -48px 0; z-index:5; break-inside:avoid; break-after:avoid; ${ttdShift}">${cap}${imgTtdDir}</div>`;
     };
     // ponytail: kotak gambar TTD 110px + rata bawah — direktur/pelaksana/K3 sejajar
-    const sigBox = (inner) => `<div style="height:110px; display:flex; align-items:flex-end; justify-content:center;">${inner}</div>`;
+    // RKK 03 tanpa gambar TTD → kotak 0px: docs menampilkan {{ttd_k3}} sebagai teks 1 baris,
+    // kotak 110px di dalam tabel B.1/B.2 membuat section melebih 1 halaman (paginasi beda dgn docs)
+    const sigH = isRkk03 ? 0 : 110;
+    const sigBox = (inner, h = 110) => `<div style="height:${h}px; display:flex; align-items:flex-end; justify-content:center;">${inner}</div>`;
     // ponytail: TTD direktur lebih besar dari pelaksana — box 110px, gambar 95px
-    const sigBoxDir = (inner) => `<div style="height:110px; display:flex; align-items:flex-end; justify-content:center;">${inner}</div>`;
-    const imgTtdDir = comp?.ttd_image_url ? sigBoxDir(`<img src="${absUrl(comp.ttd_image_url)}" style="max-height:95px; position:relative; z-index:1;">`) : sigBoxDir('<br><br><br>');
+    const sigBoxDir = (inner, h = 110) => `<div style="height:${h}px; display:flex; align-items:flex-end; justify-content:center;">${inner}</div>`;
+    const imgTtdDir = comp?.ttd_image_url ? sigBoxDir(`<img src="${absUrl(comp.ttd_image_url)}" style="max-height:95px; position:relative; z-index:1;">`) : sigBoxDir('<br><br><br>', sigH);
     const tdx = parseInt(ttdAdjust.ttd_dx) || 0, tdy = parseInt(ttdAdjust.ttd_dy) || 0;
     const trot = parseFloat(ttdAdjust.ttd_rotate) || 0;
     const ttdShift = (tdx || tdy || trot) ? `left:${tdx}px; top:${tdy}px; transform:rotate(${trot}deg);` : '';
@@ -233,7 +326,7 @@ function buildDocHtml(o) {
     const ttdDirektur = buildTtdDirektur(cdx);
     let ttdPersonil = '';
     if (pers && showPelaksana) {
-        const imgTtdPers = pers.ttd_image_url ? sigBox(`<img src="${absUrl(pers.ttd_image_url)}" style="max-height:65px;">`) : sigBox('<br><br><br>');
+        const imgTtdPers = pers.ttd_image_url ? sigBox(`<img src="${absUrl(pers.ttd_image_url)}" style="max-height:65px;">`) : sigBox('<br><br><br>', sigH);
         const tglLine = tglSurat ? `<div style="margin-bottom:6px;">${esc(tglSurat)}</div>` : '';
         ttdPersonil = `<div id="srv-personil" style="text-align:center; display:block; margin:14px 0 26px 0; break-inside:avoid;">${tglLine}<div style="margin-bottom:8px;"><strong>Hormat saya,</strong></div>${imgTtdPers}<div style="margin-top:8px; font-weight:bold; text-decoration:underline;">${esc(pers.nama)}</div><div>${esc(pers.jabatan || 'Pelaksana')}</div></div>`;
     }
@@ -245,7 +338,7 @@ function buildDocHtml(o) {
     const signerBlock = (s, on, bid) => {
         if (!s) return '';
         if (!on) return withCapTtd ? ttdSpacer : '';
-        const img = s.ttd_image_url ? sigBox(`<img src="${absUrl(s.ttd_image_url)}" style="max-height:65px;">`) : sigBox('<br><br><br>');
+        const img = s.ttd_image_url ? sigBox(`<img src="${absUrl(s.ttd_image_url)}" style="max-height:65px;">`) : sigBox('<br><br><br>', sigH);
         // ponytail: margin-bottom 0 = nama sejajar blok direktur
         return `<div${bid ? ` id="${bid}"` : ''} style="text-align:center; position:relative; display:block; margin:10px 0 0 0; padding:0; z-index:5; break-inside:avoid; break-after:avoid;">${img}</div>`;
     };
@@ -338,12 +431,11 @@ function buildDocHtml(o) {
     // tanpa ini marker list jatuh ke native <ol> dan beda dgn Docs
     const gdocsCss = templates.map(t => String(t.html_content || '').match(/<style[^>]*>[\s\S]*?<\/style>/gi) || []).flat().join('\n');
     // ponytail: @page per-section (orientasi/margin GDocs) diisi dari dynCss — head ditutup SETELAH loop
-    const isRkk03 = templates.some(t => /03 ?rkk/i.test(t.nama_template || ''));
     // fit kertas: tabel RKK max 100% lebar area konten, th wrap, font 8pt (B1 15 kolom tdk muat di 12pt)
     // scope .rkk-tbl → cuma tabel RKK ({{tabel_b1}}..{{tabel_e1}}), jgn ganggu tabel layout template
     // ponytail: nomor halaman via @page margin box — counter(page)/counter(pages) di body-context
     //           (position:fixed ::after) selalu 0 di Chrome; margin box baru dihitung benar per halaman.
-    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl.rkk-d2 table, .rkk-tbl.rkk-e1 table { font-size: 12pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } .doc-page a.toc-link { display: flex; align-items: baseline; } .doc-page a.toc-link .toc-title { min-width: 0; } .doc-page a.toc-link .toc-lead { flex: 1 1 auto; min-width: 14pt; margin: 0 6pt; align-self: stretch; background-image: radial-gradient(circle, #000 0.9pt, transparent 1.2pt); background-size: 5pt 100%; background-position: 0 100%; background-repeat: repeat-x; } @page { @bottom-center { content: counter(page); font-size: 9pt; color: #555; } }' : '';
+    const rkkExtraCss = isRkk03 ? ' .rkk-tbl table { max-width: 100% !important; table-layout: auto !important; font-size: 8pt !important; } .rkk-tbl.rkk-d2 table, .rkk-tbl.rkk-e1 table { font-size: 12pt !important; } .rkk-tbl colgroup, .rkk-tbl col { width: auto !important; } .rkk-tbl td, .rkk-tbl th { word-break: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; vertical-align: middle; text-align: center; } .rkk-tbl thead th { text-align: center !important; } .rkk-tbl thead tr:first-child th:first-child, .rkk-tbl tbody td:first-child { white-space: nowrap !important; min-width: 6mm !important; } .rkk-e1 tbody td:nth-child(n+4), .rkk-e1 thead tr:nth-child(2) th { min-width: 9mm !important; } .doc-page table { margin-left: auto !important; margin-right: auto !important; } .doc-page a.toc-link { display: flex; align-items: baseline; } .doc-page a.toc-link .toc-title { min-width: 0; } .doc-page a.toc-link .toc-lead { flex: 1 1 auto; min-width: 14pt; margin: 0 6pt; align-self: stretch; background-image: radial-gradient(circle, #000 0.9pt, transparent 1.2pt); background-size: 5pt 100%; background-position: 0 100%; background-repeat: repeat-x; } @page { @bottom-right { content: counter(page); font-size: 9pt; color: #555; } } @page:first { counter-reset: page 0; @bottom-right { content: none; } }' + (isRkk03 ? ' /* RKK 03: paksa Arial (Docs juga merender Aptos sbg Arial) — deterministik, tak bergantung font remote */ .doc-page, .doc-page * { font-family: Arial, Helvetica, sans-serif !important; }' : '') : '';
     const headOpen = `<!DOCTYPE html><html><head><title>${esc(vars.nomor_surat)}</title>${gdocsCss}<style>@import url('https://db.onlinewebfonts.com/c/7dd5f4bf5d38875ca1822a830b6e6fe4?family=Aptos');@page { size: ${mainPaper.w}mm ${mainPaper.h}mm; margin: 25.4mm; }@page pg_A4P { size: 210mm 297mm; margin: 25.4mm; }@page pg_A4L { size: 297mm 210mm; margin: 25.4mm; }@page pg_F4P { size: 215mm 330mm; margin: 25.4mm; }@page pg_F4L { size: 330mm 215mm; margin: 25.4mm; }.doc-page.pg_A4P { page: pg_A4P; }.doc-page.pg_A4L { page: pg_A4L; }.doc-page.pg_F4P { page: pg_F4P; }.doc-page.pg_F4L { page: pg_F4L; } body { font-family: ${fontStack}; font-size: 12pt; line-height: 1.5; color: black; margin: 0; padding: 0; }         /* ponytail: garansi — seluruh isi lembar ikut font #company */ .doc-page, .doc-page * { font-family: ${fontStack} !important; } .page-break { page-break-after: always; } .doc-page { position: relative; box-sizing: border-box; } .doc-page > *:nth-child(2) { margin-top: 0; } @media screen { .doc-page { padding: 25.4mm !important; } } @media print { .doc-page { padding: 0 !important; min-height: auto !important; } } .attachment-page { display: flex; align-items: center; justify-content: center; height: 100vh; padding: 20mm; } .attachment-img { max-width: 100%; max-height: 100%; object-fit: contain; } table { border-collapse: collapse; } table:has(div[id^="srv-"]) { break-inside: avoid; break-before: avoid; } * { box-sizing: border-box; }${rkkExtraCss}`;
     const dynCss = [];
     let bodyHtml = '';
@@ -568,6 +660,8 @@ function buildDocHtml(o) {
         // ponytail: segmen tunggal (1 section) sengaja TIDAK dipakai — surat/alat/personil pakai hardcode yang sudah terverifikasi
         // ponytail: RKK 03 punya 7 section → split nyasar, TOC terpencar 6 doc-page kecil. Bypass segmentasi RKK 03, gunakan doc-page tunggal.
         const secs = Array.isArray(t.layout_sections) && t.layout_sections.length > 1 ? t.layout_sections : null;
+        // nilai counter lst-ctn-* di tiap posisi → di-reset inline per segmen (counter tak lintas div)
+        const counterAt = buildCounterIndex(content);
         if (secs) {
             const { text, map } = indexedText(content);
             // ponytail: judul seksi juga dikutip daftar isi (teks dlm <a href="#...">) —
@@ -594,9 +688,16 @@ function buildDocHtml(o) {
                 if (end <= start) return;
                 const st = secs[segSec] || secs[0];
                 const page = `x${idx}s${si}`;
-                dynCss.push(`@page ${page}{size:${st.orient === 'L' ? `${pp.bh}mm ${pp.bw}mm` : `${pp.bw}mm ${pp.bh}mm`};margin:${st.mt}mm ${st.mr}mm ${st.mb}mm ${st.ml}mm;} .doc-page.${page}{page:${page};}`);
+                // ponytail: nomor halaman RKK 03 di kanan-bawah sejajar docs (baseline 51pt dari bawah);
+                // Chrome menggambar margin-box di tengah margin bawah → pad = 108 - mb_pt (mb 72pt→36pt, 90pt→18pt)
+                const foot = isRkk03 ? `@bottom-right{padding-bottom:${(108 - (+st.mb || 0) * 2.8346457).toFixed(1)}pt;}` : '';
+                // cover RKK 03: margin bawah 18mm (docs) — 25.4mm membuat konten cover overflow → halaman kosong
+                const mbMm = isRkk03 && si === 0 ? 18 : st.mb;
+                dynCss.push(`@page ${page}{size:${st.orient === 'L' ? `${pp.bh}mm ${pp.bw}mm` : `${pp.bw}mm ${pp.bh}mm`};margin:${st.mt}mm ${st.mr}mm ${mbMm}mm ${st.ml}mm;${foot}} .doc-page.${page}{page:${page};}`);
                 const bk = si > 0 ? 'page-break-before:always; ' : '';
-                bodyHtml += `<div class="doc-page ${page}" style="${bk}padding: ${tmt}mm ${tmr}mm ${tmb}mm ${tml}mm;">${si === 0 ? kopAuto : ''}${content.slice(start, end)}</div>`;
+                // ekor paragraf kosong dibuang — sisa tingginya bisa mendorong segmen ke halaman ekor kosong
+                const segBody = injectCounterScope(trimTrailingEmpty(content.slice(start, end)), off => counterAt(start + off));
+                bodyHtml += `<div class="doc-page ${page}" style="${bk}padding: ${tmt}mm ${tmr}mm ${tmb}mm ${tml}mm;${crDecl(counterAt(start), true)}">${si === 0 ? kopAuto : ''}${segBody}</div>`;
                 si++;
             };
             bounds.forEach(b => { emitSeg(b.cut); start = b.cut; segSec = b.sec; });

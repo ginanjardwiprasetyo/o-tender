@@ -32,12 +32,15 @@ async function layoutSections(gdocId) {
         if (i === 0) { secs.push({ anchor: null, orient, ...m }); return; }
         // ponytail: CONTINUOUS di tengah tanpa page break → ikut segmen sebelumnya
         if (s.sectionType !== 'NEXT_PAGE') return;
+        // ponytail: paragraf pertama sesudah break bisa hanya "\n" (baris kosong) —
+        // lanjut mencari sampai ada teks, kalau tidak section hilang dari segmentasi
         let txt = '';
         for (let j = i + 1; j < c.length && !txt; j++) {
             const p = c[j].paragraph;
-            if (p) txt = (p.elements || []).map(x => (x.textRun || {}).content || '').join('');
+            if (!p) continue;
+            txt = normText((p.elements || []).map(x => (x.textRun || {}).content || '').join('') || '');
         }
-        txt = normText(txt).slice(0, 80);
+        txt = txt.slice(0, 80);
         if (txt) secs.push({ anchor: txt, orient, ...m });
     });
     return { orient: docOrient, sections: secs };
@@ -74,4 +77,4 @@ async function syncFolderTemplates(folder) {
     return { added, updated, removed: del.rowCount, total: files.length };
 }
 
-module.exports = { syncFolderTemplates };
+module.exports = { syncFolderTemplates, layoutSections };
