@@ -368,7 +368,8 @@ router.post('/generate', async (req, res) => {
             showCap: req.body.with_cap_ttd !== false && (req.body.show || {}).cap !== false,
             baseUrl: `${req.protocol}://${req.get('host')}`,
         });
-        const merged = await mergeAttachments(stamped.bytes, req.body.attachments || []);
+        // ctx.attachments = body.attachments + auto (ijazah/SKK) — req.body tanpa auto → lampiran hilang
+        const merged = await mergeAttachments(stamped.bytes, ctx.attachments || []);
         // Efek scan (opsional) — berlaku utk SEMUA dokumen di batch ini
         let finalBytes = merged.bytes, finalPages = merged.pages;
         let scanApplied = false, scanError = null;

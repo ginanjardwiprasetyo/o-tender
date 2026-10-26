@@ -647,6 +647,38 @@ function buildDocHtml(o) {
             return (i > 0 ? BRK : '') + (i > 0 && hasText && !isRkk03 ? kopUse : '') + sg;
         }).join('');
         const pp = paperOf(t);
+        // ponytail: RKK 03 — sinkron GDocs basi menyimpan paragraf judul "Tabel 1." SETELAH tabelnya;
+        // docs rujukan menampilkan judul di ATAS tabel (Y 498 > header 475) → pindahkan sebelum
+        // <table> isu agar segmen landscape p3 persis docs (judul + tabel dalam satu section L)
+        if (isRkk03) {
+            // (1) TOC: <br> + line-height 1.15 membuat TOC+A.1 melebihi 1 halaman (docs muat 1) —
+            //     rapatkan baris dot-leader agar segmen ini pas satu halaman seperti docs
+            content = content.replace(/<p(\b[^>]*)>((?:(?!<\/p>)[\s\S])*?)<\/p>/gi, (m, attr, inner) =>
+                /&(?:hellip|#8230);(?:\s*&(?:hellip|#8230);){2,}/.test(inner)
+                    ? `<p${attr.replace(/line-height:\s*[\d.]+/, 'line-height:1.0')}>${inner.replace(/<br\s*\/?>/gi, ' ')}</p>`
+                    : m);
+            // (2) A.2: docs memecah daftar komitmen setelah butir 5 (butir 6-8 di hal. berikutnya);
+            //     flow Arial ≠ Aptos → paksa break di titik yg sama agar paginasi identik
+            const b5 = content.indexOf('Pengobatan pekerja yang menderita sakit.');
+            if (b5 > 0) {
+                const li = content.lastIndexOf('<li', b5);
+                const st = li >= 0 ? content.indexOf('style="', li) : -1;
+                if (st >= 0 && st < b5 && !/page-break-after/.test(content.slice(st, b5))) {
+                    content = content.slice(0, st + 7) + 'page-break-after:always;' + content.slice(st + 7);
+                }
+            }
+            const jp = content.indexOf('Tabel 1. Daftar identifikasi');
+            const ps = jp > 0 ? content.lastIndexOf('<p', jp) : -1;
+            const pe = ps >= 0 ? content.indexOf('</p>', ps) : -1;
+            if (ps >= 0 && pe > 0) {
+                const para = content.slice(ps, pe + 4), before = content.slice(0, ps);
+                let ti = -1;
+                for (let i = before.indexOf('<table'); i >= 0; i = before.indexOf('<table', i + 1)) {
+                    if (content.slice(i, before.indexOf('</table>', i)).includes('Jadwal pekerjaan normal')) { ti = i; break; }
+                }
+                if (ti >= 0) content = before.slice(0, ti) + para + before.slice(ti) + content.slice(pe + 4);
+            }
+        }
         // ponytail: padding inline per-doc-page pakai simetris 25.4mm (sesuai @page margin simetris baru)
         // template margin_* diabaikan agar preview=PDF pixel; inline hanya untuk fallback warisan
         const symPad = '25.4'; // simetris semua sisi → preview padding = @page margin = PDF margin
@@ -671,12 +703,19 @@ function buildDocHtml(o) {
                 if (open < 0) return false;
                 return open > content.lastIndexOf('</a>', pos) && /^<a\s[^>]*href="#/i.test(content.slice(open, open + 300));
             };
+            // ponytail: TOC RKK 03 polos <p><span> (bukan <a>) → deteksi via dot-leader:
+            // paragraf berisi &hellip; berantai = baris daftar isi, anchor badan tak boleh cocok di situ
+            const inTocPara = (pos) => {
+                const s = content.lastIndexOf('<p', pos), e = content.indexOf('</p>', pos);
+                if (s < 0 || e < 0) return false;
+                return /&(?:hellip|#8230);(?:\s*&(?:hellip|#8230);){2,}/.test(content.slice(s, e));
+            };
             const bounds = [];
             let from = 0;
             for (let k = 1; k < secs.length; k++) {
                 const a = secs[k].anchor || '';
                 let p = a ? text.indexOf(a, from) : -1;
-                while (p >= 0 && inTocLink(map[p])) p = text.indexOf(a, p + 1);
+                while (p >= 0 && (inTocLink(map[p]) || inTocPara(map[p]))) p = text.indexOf(a, p + 1);
                 if (p < 0) { console.warn('[docbuilder] anchor section tak ditemukan:', t.nama_template, JSON.stringify(a).slice(0, 60)); continue; }
                 from = p + a.length;
                 const cut = sectionSplitPos(content, map[p]);
