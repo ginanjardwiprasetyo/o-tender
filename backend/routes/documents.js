@@ -283,10 +283,18 @@ async function loadContext(body) {
             ska: skaByPerson[p.id] || [],
             education_history: eduByPerson[p.id] || [],
         }));
-        // lampirkan file: ijazah_url (terbaru) + skk_url per personil
+        // lampirkan file: semua SKA + semua ijazah, dikelompokkan per personil (SKK dulu, lalu ijazah)
         for (const p of enrichedPersonil) {
-            const skkUrl = p.skk_url;
-            if (skkUrl) autoAttachments.push({ url: skkUrl, label: `SKK - ${p.nama || 'Personil'}` });
+            const skaFiles = p.ska || [];
+            // SKK utama (skk_url) dulu, lalu semua SKA file_url sebagai lampiran sertifikat
+            if (p.skk_url) {
+                autoAttachments.push({ url: p.skk_url, label: `SKK - ${p.nama || 'Personil'} (${skaFiles[0]?.nama_sertifikat || 'Sertifikat SKK'})`.trim() });
+            }
+            for (const sk of skaFiles) {
+                if (sk.file_url && sk.file_url !== p.skk_url) {
+                    autoAttachments.push({ url: sk.file_url, label: `Sertifikat SKK - ${p.nama || 'Personil'} (${sk.nama_sertifikat || 'SKA'})`.trim() });
+                }
+            }
             const edus = p.education_history || [];
             for (const ed of edus) {
                 if (ed.ijazah_url) autoAttachments.push({ url: ed.ijazah_url, label: `Ijazah - ${p.nama || 'Personil'} (${ed.jenjang || ''})`.trim() });
