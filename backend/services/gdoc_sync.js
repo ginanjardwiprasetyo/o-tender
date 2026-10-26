@@ -50,7 +50,7 @@ async function syncFolderTemplates(folder) {
     folder = folder || process.env.GDRIVE_TEMPLATE_FOLDER;
     if (!folder) throw new Error('Folder Drive belum dikonfigurasi (GDRIVE_TEMPLATE_FOLDER)');
     const files = await gdoc.listDocs(folder);
-    const existing = await db.query('SELECT id, gdoc_id, gdoc_synced_at FROM templates WHERE gdoc_id IS NOT NULL');
+    const existing = await db.query('SELECT id, gdoc_id, gdoc_synced_at, layout_sections FROM templates WHERE gdoc_id IS NOT NULL');
     const byGdoc = Object.fromEntries(existing.rows.map(r => [r.gdoc_id, r]));
     let added = 0, updated = 0;
     for (const f of files) {
@@ -61,9 +61,12 @@ async function syncFolderTemplates(folder) {
         let layout = null, orient = null;
         try { ({ orient, sections: layout } = await layoutSections(f.id)); }
         catch (e) { console.warn('[gdoc_sync] struktur section gagal (' + f.name + '):', e.message); }
+        // ponytail: jangan turunkan jumlah section (layout DB 9 > GDocs 7 → sync GDocs
+        // merusak segmentasi 03 RKK: Tabel 1 L + B.2 L hilang). Update hanya jika >= lama.
+        if (cur?.layout_sections?.length && (!layout || layout.length < cur.layout_sections.length)) { layout = null; }
         const orientCol = orient === 'L' ? 'landscape' : orient === 'P' ? 'portrait' : null;
         if (cur) {
-            await db.query('UPDATE templates SET nama_template = $1, html_content = $2, layout_sections = $3, orientation = COALESCE($4, orientation), gdoc_synced_at = NOW() WHERE id = $5',
+            await db.query('UPDATE templates SET nama_template = $1, html_content = $2, layout_sections = COALESCE($3, layout_sections), orientation = COALESCE($4, orientation), gdoc_synced_at = NOW() WHERE id = $5',
                 [f.name, exp.html, layout ? JSON.stringify(layout) : null, orientCol, cur.id]);
             updated++;
         } else {
@@ -75,7 +78,7 @@ async function syncFolderTemplates(folder) {
     // Fallback: jika folder kosong (file shared, tidak listable), refresh semua template
     // yang punya gdoc_id langsung dari DB — ini memastikan 03 RKK tetap tersinkron
     if (files.length === 0 && folder) {
-        const dbGdocIds = await db.query('SELECT id, gdoc_id, gdoc_synced_at, nama_template FROM templates WHERE gdoc_id IS NOT NULL');
+        const dbGdocIds = await db.query('SELECT id, gdoc_id, gdoc_synced_at, nama_template, layout_sections FROM templates WHERE gdoc_id IS NOT NULL');
         for (const row of dbGdocIds.rows) {
             try {
                 const meta = await gdoc.getDrive().files.get({ fileId: row.gdoc_id, fields: 'id,name,modifiedTime' });
@@ -84,8 +87,10 @@ async function syncFolderTemplates(folder) {
                 const exp = await gdoc.exportDocHtml(row.gdoc_id);
                 let layout = null, orient = null;
                 try { ({ orient, sections: layout } = await layoutSections(row.gdoc_id)); } catch (e) { console.warn('[gdoc_sync] struktur section gagal:', row.nama_template, e.message); }
+                // ponytail: sama — jangan turunkan section count (03 RKK layout custom 9 > GDocs 7)
+                if (row.layout_sections?.length && (!layout || layout.length < row.layout_sections.length)) { layout = null; }
                 const orientCol = orient === 'L' ? 'landscape' : orient === 'P' ? 'portrait' : null;
-                await db.query('UPDATE templates SET nama_template = $1, html_content = $2, layout_sections = $3, orientation = COALESCE($4, orientation), gdoc_synced_at = NOW() WHERE id = $5',
+                await db.query('UPDATE templates SET nama_template = $1, html_content = $2, layout_sections = COALESCE($3, layout_sections), orientation = COALESCE($4, orientation), gdoc_synced_at = NOW() WHERE id = $5',
                     [fMeta.name, exp.html, layout ? JSON.stringify(layout) : null, orientCol, row.id]);
                 updated++;
             } catch (e) {
