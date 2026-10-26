@@ -267,11 +267,11 @@ async function loadContext(body) {
         personil_ids.length ? db.query('SELECT * FROM personnel WHERE id = ANY($1)', [personil_ids]).then(r => r.rows) : [],
         equipment_ids.length ? db.query('SELECT * FROM equipments WHERE id = ANY($1)', [equipment_ids]).then(r => r.rows) : [],
     ]);
-    // ponytail: dokumen 02 personil — lampirkan ijazah (education_history.ijazah_url)
-    // dan sertifikat SKK (personnel.skk_url) otomatis; isi sertifikat dari personnel_ska.nama_sertifikat
+    // ponytail: lampiran ijazah+SKK HANYA untuk dokumen 02 personil, bukan 03 RKK/lainnya
+    const is02Personil = tpl.some(t => /02\s*personil/i.test(t.nama_template || ''));
     let autoAttachments = [];
     let reqBodyAttachments = body.attachments || [];
-    if (personil_ids.length) {
+    if (personil_ids.length && is02Personil) {
         const skaRes = await db.query('SELECT * FROM personnel_ska WHERE personnel_id = ANY($1) ORDER BY berlaku_sampai DESC NULLS LAST', [personil_ids]);
         const eduRes = await db.query('SELECT * FROM education_history WHERE personnel_id = ANY($1) ORDER BY tahun_tamat DESC', [personil_ids]);
         const skaByPerson = {};
