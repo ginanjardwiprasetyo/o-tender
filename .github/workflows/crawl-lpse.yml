@@ -147,7 +147,21 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:crawler
-          args: --accept-routes
+          # accept-dns=false: kalau MagicDNS mengambil alih resolver runner,
+          # *.actions.githubusercontent.com gagal resolve -> lease renewal gagal ->
+          # GitHub batalkan job (tailscale/github-action#315). Efek samping: hostname
+          # exit node tak bisa di-resolve, jadi pakai IP 100.x di TAILSCALE_EXIT_NODE.
+          args: --accept-routes --accept-dns=false
+
+      # Annotation (bukan log biasa) karena GitHub menyimpan annotation terpisah dari
+      # log - terbukti di run 113/115 log-nya kosong tapi annotation masih terbaca.
+      # Kalau job mati lagi di step connect, tak ada annotation baru = connect masih jadi pembunuh.
+      - name: Diagnosa Tailscale (annotation)
+        if: runner.os == 'Linux'
+        run: |
+          STATUS=$(sudo -E tailscale status --json 2>/dev/null | jq -c '{BackendState, ExitNodeStatus, MagicDNSEnabled}' 2>/dev/null || echo '{"error":"tailscale status gagal"}')
+          DNS=$(resolvectl status 2>/dev/null | grep -iE 'current dns servers|dns domain' | head -4 | tr '\n' ' ' || echo "resolvectl n/a")
+          echo "::notice title=Diagnosa Tailscale::status=$STATUS | dns=$DNS | exit_node=$EXIT_NODE"
 
       - name: Aktifkan exit node
         if: runner.os == 'Linux' && env.EXIT_NODE != ''
